@@ -6,12 +6,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "covers:granth": "node scripts/generate_granth_covers.mjs",
+    "index:granth:stream": "node scripts/index_granth_from_db_pdftotext_stream.mjs",
+    "index:granth:ocr500": "node scripts/index_granth_from_db_ocr500.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.95.3",
+    "csv-parse": "^6.1.0",
+    "dotenv": "^17.2.4",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "uploadthing": "^7.7.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
