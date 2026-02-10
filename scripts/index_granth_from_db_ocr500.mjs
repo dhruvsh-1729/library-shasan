@@ -29,10 +29,12 @@ Options:
   --limit N         Process at most N files (default: unlimited)
   --startAt N       Skip first N after filtering (default: 0)
   --concurrency N   Files processed in parallel (default: 1)
+  --pageConcurrency N  Pages OCRed in parallel per file (default: 1)
   --collection X    Only process one collection value
   --reprocess       Re-process already processed docs
   --dpi N           OCR render DPI (default: 500)
   --langs X         Tesseract langs, e.g. guj+hin+eng
+  --tessThreads N   Threads per tesseract process via OMP_THREAD_LIMIT (default: 1)
   --maxPages N      Optional debug cap per PDF (default: all pages)
   --dry-run         Show queue only, no writes
   --verbose         Extra logs
@@ -60,10 +62,12 @@ function parseArgs(argv) {
     limit: null,
     startAt: 0,
     concurrency: 1,
+    pageConcurrency: Number.parseInt(process.env.OCR_PAGE_CONCURRENCY || "1", 10) || 1,
     collection: null,
     reprocess: false,
     dpi: DEFAULT_DPI,
     langs: process.env.OCR_LANGS || DEFAULT_LANGS,
+    tessThreads: Number.parseInt(process.env.OCR_TESSERACT_THREADS || "1", 10) || 1,
     maxPages: null,
     dryRun: false,
     verbose: false,
@@ -104,6 +108,11 @@ function parseArgs(argv) {
       args.concurrency = parseIntFlag("--concurrency", raw, 1);
       continue;
     }
+    if (arg === "--pageConcurrency" || arg.startsWith("--pageConcurrency=")) {
+      const raw = arg.includes("=") ? arg.slice("--pageConcurrency=".length) : argv[++i];
+      args.pageConcurrency = parseIntFlag("--pageConcurrency", raw, 1);
+      continue;
+    }
     if (arg === "--collection" || arg.startsWith("--collection=")) {
       args.collection = arg.includes("=") ? arg.slice("--collection=".length) : argv[++i];
       continue;
@@ -115,6 +124,11 @@ function parseArgs(argv) {
     }
     if (arg === "--langs" || arg.startsWith("--langs=")) {
       args.langs = arg.includes("=") ? arg.slice("--langs=".length) : argv[++i];
+      continue;
+    }
+    if (arg === "--tessThreads" || arg.startsWith("--tessThreads=")) {
+      const raw = arg.includes("=") ? arg.slice("--tessThreads=".length) : argv[++i];
+      args.tessThreads = parseIntFlag("--tessThreads", raw, 1);
       continue;
     }
     if (arg === "--maxPages" || arg.startsWith("--maxPages=")) {
@@ -132,6 +146,16 @@ function parseArgs(argv) {
 function shortErr(error, max = 1800) {
   const message = error instanceof Error ? error.stack || error.message : String(error);
   return message.length > max ? `${message.slice(0, max)}...` : message;
+}
+
+function toErrorText(value) {
+  if (value instanceof Error) return value.stack || value.message;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function normalizeText(raw) {
@@ -152,10 +176,12 @@ function csvEscape(value) {
   return /[",\n\r]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 }
 
-async function runCommand(bin, args) {
+async function runCommand(bin, args, options = {}) {
+  const env = options.env ? { ...process.env, ...options.env } : process.env;
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, args, {
       cwd: process.cwd(),
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -390,7 +416,7 @@ async function renderPageToPng(pdfPath, pageNumber, imageBase, dpi) {
   return `${imageBase}.png`;
 }
 
-async function runTesseract(imagePath, langs, psm) {
+async function runTesseract(imagePath, langs, psm, tessThreads) {
   const { stdout } = await runCommand("tesseract", [
     imagePath,
     "stdout",
@@ -400,7 +426,12 @@ async function runTesseract(imagePath, langs, psm) {
     "1",
     "--psm",
     String(psm),
-  ]);
+  ], {
+    env: {
+      OMP_THREAD_LIMIT: String(tessThreads),
+      OMP_NUM_THREADS: String(tessThreads),
+    },
+  });
   return normalizeText(stdout);
 }
 
@@ -417,28 +448,27 @@ async function uploadCsv(utapi, csvPath, csvName, csvCustomId, appId) {
 
   if (!first) throw new Error(`uploadFiles returned empty`);
   if (first.error) {
-    const text = shortErr(first.error);
-    if (/already exists|409/i.test(text)) {
-      try {
-        const urls = await utapi.getFileUrls(csvCustomId, { keyType: "customId" });
-        const hit = Array.isArray(urls?.data) ? urls.data[0] : null;
-        if (hit?.url || hit?.key) {
-          return {
-            csvUrl: hit.url ?? (appId ? `https://${appId}.ufs.sh/f/${csvCustomId}` : null),
-            csvKey: hit.key ?? null,
-          };
-        }
-      } catch {
-        // ignore
-      }
-      if (appId) {
+    const text = toErrorText(first.error);
+    try {
+      const urls = await utapi.getFileUrls(csvCustomId, { keyType: "customId" });
+      const hit = Array.isArray(urls?.data) ? urls.data[0] : null;
+      if (hit?.url || hit?.key) {
         return {
-          csvUrl: `https://${appId}.ufs.sh/f/${csvCustomId}`,
-          csvKey: null,
+          csvUrl: hit.url ?? (appId ? `https://${appId}.ufs.sh/f/${csvCustomId}` : null),
+          csvKey: hit.key ?? null,
         };
       }
+    } catch {
+      // ignore and continue to fallback/error
     }
-    throw new Error(`uploadFiles error: ${text}`);
+
+    if (/already exists|409/i.test(text) && appId) {
+      return {
+        csvUrl: `https://${appId}.ufs.sh/f/${csvCustomId}`,
+        csvKey: null,
+      };
+    }
+    throw new Error(`uploadFiles error: ${shortErr(text)}`);
   }
 
   const data = first.data || {};
@@ -511,9 +541,9 @@ async function main() {
 
   console.log(`   ${withUrl.length - filtered.length} skipped, ${batch.length} to process.`);
   console.log(
-    `OCR mode: image-per-page, dpi=${args.dpi}, langs=${langSpec}, psm=${PSM_PRIMARY} fallback=${PSM_FALLBACK}`
+    `OCR mode: image-per-page, dpi=${args.dpi}, langs=${langSpec}, psm=${PSM_PRIMARY} fallback=${PSM_FALLBACK}, tessThreads=${args.tessThreads}`
   );
-  console.log(`Processing (concurrency=${args.concurrency})\n`);
+  console.log(`Processing (fileConcurrency=${args.concurrency}, pageConcurrency=${args.pageConcurrency})\n`);
 
   if (args.dryRun) {
     console.log(`DRY RUN sample:`);
@@ -572,80 +602,85 @@ async function main() {
       const pagesToProcess = args.maxPages == null ? totalPages : Math.min(totalPages, args.maxPages);
       console.log(`${label} pageCount=${totalPages}, processingPages=${pagesToProcess}`);
 
+      /** @type {{ page_number: number; text: string; chars: number }[]} */
+      const pageResults = [];
+      const pageNumbers = Array.from({ length: pagesToProcess }, (_, i) => i + 1);
+
+      await runConcurrent(pageNumbers, args.pageConcurrency, async (page) => {
+        const t0 = Date.now();
+        const imageBase = `${temp.imageBase}_${page}`;
+        const imagePath = `${imageBase}.png`;
+        let psmUsed = PSM_PRIMARY;
+
+        try {
+          console.log(`${label} page ${page}/${pagesToProcess} render start`);
+          await renderPageToPng(temp.pdfPath, page, imageBase, args.dpi);
+
+          console.log(`${label} page ${page}/${pagesToProcess} ocr start`);
+          let text = await runTesseract(imagePath, langSpec, PSM_PRIMARY, args.tessThreads);
+
+          if (!hasMeaningfulText(text)) {
+            text = await runTesseract(imagePath, langSpec, PSM_FALLBACK, args.tessThreads);
+            psmUsed = PSM_FALLBACK;
+          }
+
+          const normalized = normalizeText(text);
+          const charCount = normalized.replace(/\s+/g, "").length;
+          const elapsedMs = Date.now() - t0;
+          pageResults.push({ page_number: page, text: normalized, chars: charCount });
+
+          const sample =
+            args.verbose && charCount > 0 ? ` sample="${normalized.slice(0, 90).replace(/\n/g, " ")}"` : "";
+          console.log(
+            `${label} page ${page}/${pagesToProcess} done chars=${charCount} psm=${psmUsed} elapsedMs=${elapsedMs}${sample}`
+          );
+        } finally {
+          await unlinkSafe(imagePath);
+        }
+      });
+
+      pageResults.sort((a, b) => a.page_number - b.page_number);
+      const nonEmptyPages = pageResults.filter((p) => p.chars > 0);
+      const emptyPages = pageResults.length - nonEmptyPages.length;
+
+      if (nonEmptyPages.length === 0) {
+        throw new Error(
+          `No extractable text found after OCR. totalPages=${totalPages}, processedPages=${pagesToProcess}, emptyPages=${emptyPages}`
+        );
+      }
+
       await clearPages(supabase, customId);
 
       csvWriter = fsSync.createWriteStream(temp.csvPath, { encoding: "utf8" });
       await writeCsvLine("pdf_name,custom_id,pdf_url,page_number,text\n");
 
       let chunk = [];
-      let storedPages = 0;
-      let emptyPages = 0;
+      for (const page of nonEmptyPages) {
+        const pageRow = {
+          custom_id: customId,
+          page_number: page.page_number,
+          text: page.text,
+        };
+        chunk.push(pageRow);
 
-      for (let page = 1; page <= pagesToProcess; page += 1) {
-        const t0 = Date.now();
-        const imageBase = `${temp.imageBase}_${page}`;
-        const imagePath = `${imageBase}.png`;
-
-        console.log(`${label} page ${page}/${pagesToProcess} render start`);
-        await renderPageToPng(temp.pdfPath, page, imageBase, args.dpi);
-
-        console.log(`${label} page ${page}/${pagesToProcess} ocr start`);
-        let text = await runTesseract(imagePath, langSpec, PSM_PRIMARY);
-        let psmUsed = PSM_PRIMARY;
-
-        if (!hasMeaningfulText(text)) {
-          text = await runTesseract(imagePath, langSpec, PSM_FALLBACK);
-          psmUsed = PSM_FALLBACK;
-        }
-
-        await unlinkSafe(imagePath);
-
-        const normalized = normalizeText(text);
-        const charCount = normalized.replace(/\s+/g, "").length;
-        const elapsedMs = Date.now() - t0;
-
-        if (charCount > 0) {
-          storedPages += 1;
-
-          const pageRow = {
-            custom_id: customId,
-            page_number: page,
-            text: normalized,
-          };
-          chunk.push(pageRow);
-
-          await writeCsvLine(
-            [
-              csvEscape(pdfName),
-              csvEscape(customId),
-              csvEscape(pdfUrl),
-              String(page),
-              csvEscape(normalized),
-            ].join(",") + "\n"
-          );
-
-          if (chunk.length >= PAGE_CHUNK_SIZE) {
-            await upsertPageChunk(supabase, chunk);
-            chunk = [];
-          }
-        } else {
-          emptyPages += 1;
-        }
-
-        const sample = args.verbose && charCount > 0 ? ` sample="${normalized.slice(0, 90).replace(/\n/g, " ")}"` : "";
-        console.log(
-          `${label} page ${page}/${pagesToProcess} done chars=${charCount} psm=${psmUsed} elapsedMs=${elapsedMs}${sample}`
+        await writeCsvLine(
+          [
+            csvEscape(pdfName),
+            csvEscape(customId),
+            csvEscape(pdfUrl),
+            String(page.page_number),
+            csvEscape(page.text),
+          ].join(",") + "\n"
         );
+
+        if (chunk.length >= PAGE_CHUNK_SIZE) {
+          await upsertPageChunk(supabase, chunk);
+          chunk = [];
+        }
       }
 
       await upsertPageChunk(supabase, chunk);
       await closeCsv();
-
-      if (storedPages === 0) {
-        throw new Error(
-          `No extractable text found after OCR. totalPages=${totalPages}, processedPages=${pagesToProcess}, emptyPages=${emptyPages}`
-        );
-      }
 
       const csvName = `${path.basename(pdfName, path.extname(pdfName))}__pages.csv`;
       const csvCustomId = `${customId}__pages_csv_ocr500`;
@@ -656,7 +691,7 @@ async function main() {
       await markDocProcessed(supabase, customId, csvUrl, csvKey);
 
       ok += 1;
-      console.log(`✅ ${label} done storedPages=${storedPages}, emptyPages=${emptyPages}\n`);
+      console.log(`✅ ${label} done storedPages=${nonEmptyPages.length}, emptyPages=${emptyPages}\n`);
     } catch (error) {
       failed += 1;
       const msg = shortErr(error);
