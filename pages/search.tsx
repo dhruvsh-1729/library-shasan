@@ -27,6 +27,11 @@ type GranthGroup = {
 
 type SelectionMode = "all" | "single" | "multi";
 
+type DocumentStats = {
+  total_documents: number;
+  processed_documents: number;
+};
+
 function escapeRegExp(input: string) {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -44,18 +49,34 @@ export default function SearchPage() {
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("all");
   const [nameFilter, setNameFilter] = useState("");
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
+  const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
 
   useEffect(() => {
     let active = true;
 
-    async function loadGranths() {
+    async function loadInitialData() {
       setLoadingGranths(true);
       try {
-        const res = await fetch("/api/search-granths?limit=5000");
-        const json = (await res.json()) as { items?: GranthOption[]; error?: string };
-        if (!res.ok) throw new Error(json.error || `Failed to load granths (${res.status})`);
+        const granthsRes = await fetch("/api/search-granths?limit=5000");
+        const granthsJson = (await granthsRes.json()) as { items?: GranthOption[]; error?: string };
+
+        if (!granthsRes.ok) {
+          throw new Error(granthsJson.error || `Failed to load granths (${granthsRes.status})`);
+        }
         if (!active) return;
-        setGranthOptions(json.items ?? []);
+        setGranthOptions(granthsJson.items ?? []);
+
+        try {
+          const statsRes = await fetch("/api/document-stats");
+          const statsJson = (await statsRes.json()) as DocumentStats | { error?: string };
+          if (statsRes.ok) {
+            setDocumentStats(statsJson as DocumentStats);
+          } else {
+            console.error(("error" in statsJson && statsJson.error) || "Failed to load document stats");
+          }
+        } catch (statsErr) {
+          console.error(statsErr);
+        }
       } catch (e) {
         if (!active) return;
         console.error(e);
@@ -64,7 +85,7 @@ export default function SearchPage() {
       }
     }
 
-    void loadGranths();
+    void loadInitialData();
     return () => {
       active = false;
     };
@@ -240,6 +261,12 @@ export default function SearchPage() {
           <h1 style={{ margin: 0, fontSize: 30, letterSpacing: "0.01em" }}>Granth Search</h1>
           <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 12 }}>
             <Link href="/">Back to library</Link>
+            <Link href="/scannable-documents">Scannable document list</Link>
+            {documentStats ? (
+              <span style={{ fontWeight: 700 }}>
+                Scannable documents: {documentStats.total_documents} (processed: {documentStats.processed_documents})
+              </span>
+            ) : null}
             <span style={{ opacity: 0.78 }}>Filter by granth names and search inside selected PDFs.</span>
           </div>
         </header>

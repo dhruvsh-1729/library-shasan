@@ -25,6 +25,11 @@ type ApiResponse = {
   };
 };
 
+type DocumentStats = {
+  total_documents: number;
+  processed_documents: number;
+};
+
 function toMB(sizeBytes: number | null) {
   if (sizeBytes == null || !Number.isFinite(sizeBytes)) return null;
   return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
@@ -41,6 +46,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [coverColumnAvailable, setCoverColumnAvailable] = useState(true);
   const [brokenCoverIds, setBrokenCoverIds] = useState<Record<number, boolean>>({});
+  const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -49,17 +55,31 @@ export default function HomePage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/granths?limit=250");
-        const json = (await res.json()) as ApiResponse | { error?: string };
+        const granthRes = await fetch("/api/granths?limit=250");
+        const granthJson = (await granthRes.json()) as ApiResponse | { error?: string };
 
-        if (!res.ok) {
-          throw new Error(("error" in json && json.error) || `Request failed (${res.status})`);
+        if (!granthRes.ok) {
+          throw new Error(
+            ("error" in granthJson && granthJson.error) || `Request failed (${granthRes.status})`
+          );
         }
 
         if (!active) return;
-        const payload = json as ApiResponse;
+        const payload = granthJson as ApiResponse;
         setItems(payload.items ?? []);
         setCoverColumnAvailable(payload.meta?.coverColumnAvailable ?? true);
+
+        try {
+          const statsRes = await fetch("/api/document-stats");
+          const statsJson = (await statsRes.json()) as DocumentStats | { error?: string };
+          if (statsRes.ok) {
+            setDocumentStats(statsJson as DocumentStats);
+          } else {
+            console.error(("error" in statsJson && statsJson.error) || "Failed to load document stats");
+          }
+        } catch (statsErr) {
+          console.error(statsErr);
+        }
       } catch (e) {
         if (!active) return;
         setError(e instanceof Error ? e.message : String(e));
@@ -96,6 +116,12 @@ export default function HomePage() {
           <h1 style={{ margin: 0, fontSize: 30, letterSpacing: "0.01em" }}>{heading}</h1>
           <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap" }}>
             <Link href="/search">Search inside pages</Link>
+            <Link href="/scannable-documents">Scannable document list</Link>
+            {documentStats ? (
+              <span style={{ fontWeight: 700 }}>
+                Scannable documents: {documentStats.total_documents} (processed: {documentStats.processed_documents})
+              </span>
+            ) : null}
             {!coverColumnAvailable ? (
               <span style={{ color: "#a65400", fontWeight: 600 }}>
                 Cover columns missing in DB; run cover migration before storing covers.
