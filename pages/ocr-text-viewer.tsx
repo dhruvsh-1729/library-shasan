@@ -1,6 +1,8 @@
 import OcrReplacePanel from "@/components/OcrReplacePanel";
+import { type OCRSearchMode, findOCRSearchMatches, parseOCRSearchMode } from "@/lib/ocr-search";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type GranthMeta = {
@@ -26,39 +28,22 @@ function readSingleQuery(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? "";
 }
 
-function escapeRegExp(input: string) {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+function buildOccurrenceSummary(content: string, query: string, mode: OCRSearchMode, maxChars = 120) {
+  const normalized = String(content ?? "").replace(/\s+/g, " ").trim();
+  if (!normalized || !query.trim()) return null;
 
-function buildOccurrenceSummary(content: string, terms: string[], maxChars = 120) {
-  if (!content || terms.length === 0) return null;
+  const matches = findOCRSearchMatches(normalized, query, mode);
+  if (matches.length === 0) return null;
 
-  const pattern = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
-  let firstIndex = -1;
-  let firstLength = 0;
-  let count = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(content)) !== null) {
-    count += 1;
-    if (firstIndex < 0) {
-      firstIndex = typeof match.index === "number" ? match.index : 0;
-      firstLength = match[0]?.length ?? 0;
-    }
-  }
-
-  if (count === 0 || firstIndex < 0) return null;
-
-  const normalized = content.replace(/\s+/g, " ").trim();
-  const compactIndex = normalized.toLowerCase().indexOf((content.slice(firstIndex, firstIndex + firstLength) || "").toLowerCase());
-  const effectiveIndex = compactIndex >= 0 ? compactIndex : firstIndex;
-  const start = Math.max(0, effectiveIndex - Math.floor((maxChars - firstLength) / 2));
-  const end = Math.min(normalized.length, effectiveIndex + firstLength + Math.floor((maxChars - firstLength) / 2));
+  const firstMatch = matches[0];
+  const matchLength = Math.max(1, firstMatch.end - firstMatch.start);
+  const start = Math.max(0, firstMatch.start - Math.floor((maxChars - matchLength) / 2));
+  const end = Math.min(normalized.length, firstMatch.end + Math.floor((maxChars - matchLength) / 2));
   let excerpt = normalized.slice(start, end).trim();
   if (start > 0) excerpt = `…${excerpt}`;
   if (end < normalized.length) excerpt = `${excerpt}…`;
 
-  return { count, excerpt };
+  return { count: matches.length, excerpt };
 }
 
 export default function OCRTextViewerPage() {
@@ -76,21 +61,13 @@ export default function OCRTextViewerPage() {
   const pageRaw = readSingleQuery(router.query.page);
   const targetPage = pageRaw ? Number(pageRaw) : null;
   const q = readSingleQuery(router.query.q);
-
-  const queryTerms = useMemo(() => {
-    const terms = q
-      .trim()
-      .split(/\s+/)
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean);
-    return Array.from(new Set(terms)).sort((a, b) => b.length - a.length);
-  }, [q]);
+  const matchMode = parseOCRSearchMode(readSingleQuery(router.query.matchMode));
 
   const occurrenceItems = useMemo<OccurrenceItem[]>(() => {
-    if (queryTerms.length === 0) return [];
+    if (!q.trim()) return [];
     return rows
       .map((row) => {
-        const summary = buildOccurrenceSummary(row.content, queryTerms);
+        const summary = buildOccurrenceSummary(row.content, q, matchMode);
         if (!summary) return null;
         return {
           pageNumber: row.page_number,
@@ -99,7 +76,7 @@ export default function OCRTextViewerPage() {
         };
       })
       .filter((value): value is OccurrenceItem => Boolean(value));
-  }, [queryTerms, rows]);
+  }, [matchMode, q, rows]);
 
   const totalOccurrenceCount = useMemo(
     () => occurrenceItems.reduce((sum, item) => sum + item.count, 0),
@@ -113,18 +90,19 @@ export default function OCRTextViewerPage() {
   }, [activePageNumber, rows]);
 
   function renderHighlightedText(text: string) {
-    if (!text || queryTerms.length === 0) return text;
-    const pattern = new RegExp(`(${queryTerms.map(escapeRegExp).join("|")})`, "gi");
-    const lowerTermSet = new Set(queryTerms);
-    const parts = text.split(pattern);
+    const matches = findOCRSearchMatches(text, q, matchMode);
+    if (!text || matches.length === 0) return text;
 
-    return parts.map((part, idx) => {
-      if (!part) return null;
-      const isMatch = lowerTermSet.has(part.toLowerCase());
-      if (!isMatch) return <span key={idx}>{part}</span>;
-      return (
+    const parts: ReactNode[] = [];
+    let cursor = 0;
+
+    matches.forEach((match, idx) => {
+      if (match.start > cursor) {
+        parts.push(text.slice(cursor, match.start));
+      }
+      parts.push(
         <mark
-          key={idx}
+          key={`${match.start}_${idx}`}
           style={{
             background: "#fff100",
             color: "#111",
@@ -133,10 +111,17 @@ export default function OCRTextViewerPage() {
             fontWeight: 700,
           }}
         >
-          {part}
+          {text.slice(match.start, match.end)}
         </mark>
       );
+      cursor = match.end;
     });
+
+    if (cursor < text.length) {
+      parts.push(text.slice(cursor));
+    }
+
+    return parts.map((part, idx) => <span key={idx}>{part}</span>);
   }
 
   function scrollToPage(pageNumber: number, updateUrl = true) {
@@ -150,6 +135,7 @@ export default function OCRTextViewerPage() {
             granthKey,
             page: String(pageNumber),
             ...(q ? { q } : {}),
+            matchMode,
           },
         },
         undefined,
@@ -247,10 +233,12 @@ export default function OCRTextViewerPage() {
                 {" "}| Focus page: <strong>{activePageNumber}</strong>
               </>
             ) : null}
-            {queryTerms.length > 0 ? (
+            {q.trim() ? (
               <>
                 {" "}| Matching pages in this granth: <strong>{occurrenceItems.length}</strong>
                 {" "}| Total visible matches: <strong>{totalOccurrenceCount}</strong>
+                {" "}| Match mode:{" "}
+                <strong>{matchMode === "exact_word" ? "Exact word only" : "Contains inside word"}</strong>
               </>
             ) : null}
           </div>
@@ -301,14 +289,14 @@ export default function OCRTextViewerPage() {
                 <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb" }}>
                   <div style={{ fontWeight: 700, fontSize: 18 }}>Occurrences In This Granth</div>
                   <div style={{ marginTop: 6, fontSize: 14, opacity: 0.78, lineHeight: 1.55 }}>
-                    {queryTerms.length > 0
+                    {q.trim()
                       ? `Click a page to jump directly to that occurrence inside ${title}.`
                       : "Open this viewer from OCR search with a word query to see matching pages here."}
                   </div>
                 </div>
 
                 <div style={{ maxHeight: "75vh", overflow: "auto", padding: 10, display: "grid", gap: 8 }}>
-                  {queryTerms.length === 0 ? (
+                  {!q.trim() ? (
                     <div style={{ fontSize: 15, opacity: 0.72 }}>No search word was provided for occurrence navigation.</div>
                   ) : occurrenceItems.length === 0 ? (
                     <div style={{ fontSize: 15, opacity: 0.72 }}>This granth has no visible occurrence for the current query.</div>

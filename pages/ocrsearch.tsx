@@ -1,6 +1,7 @@
 import OcrReplacePanel from "@/components/OcrReplacePanel";
+import { type OCRSearchMode, findOCRSearchMatches, parseOCRSearchMode } from "@/lib/ocr-search";
 import Link from "next/link";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type OCRSearchResult = {
@@ -49,10 +50,6 @@ type ReplaceGranthTarget = {
 
 const RESULTS_PER_PAGE = 48;
 
-function escapeRegExp(input: string) {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function buildResultTitle(result: Pick<OCRSearchResult, "book_number" | "library_code" | "granth_name">) {
   return `${result.book_number}${result.library_code ? ` ${result.library_code}` : ""} ${result.granth_name}`;
 }
@@ -74,6 +71,8 @@ export default function OCRSearchPage() {
   const [nameFilter, setNameFilter] = useState("");
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [documentStats, setDocumentStats] = useState<OCRDocumentStats | null>(null);
+  const [searchMode, setSearchMode] = useState<OCRSearchMode>("exact_word");
+  const [showCoverageDialog, setShowCoverageDialog] = useState(false);
 
   const [activePageTarget, setActivePageTarget] = useState<ReplacePageTarget | null>(null);
   const [activeGranthTarget, setActiveGranthTarget] = useState<ReplaceGranthTarget | null>(null);
@@ -152,15 +151,6 @@ export default function OCRSearchPage() {
     return `${selectedNames.length} granth name(s), ${selectedGranthKeys.length} file(s)`;
   }, [selectedGranthKeys.length, selectedNames.length, selectionMode]);
 
-  const queryTerms = useMemo(() => {
-    const terms = q
-      .trim()
-      .split(/\s+/)
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean);
-    return Array.from(new Set(terms)).sort((a, b) => b.length - a.length);
-  }, [q]);
-
   const totalPages = useMemo(() => {
     if (total <= 0) return 1;
     return Math.max(1, Math.ceil(total / RESULTS_PER_PAGE));
@@ -175,19 +165,49 @@ export default function OCRSearchPage() {
     return pages;
   }, [currentPage, totalPages]);
 
-  function renderHighlightedSnippet(text: string) {
-    if (!text || queryTerms.length === 0) return text;
-    const pattern = new RegExp(`(${queryTerms.map(escapeRegExp).join("|")})`, "gi");
-    const lowerTermSet = new Set(queryTerms);
-    const parts = text.split(pattern);
+  const codeCoverage = useMemo(() => {
+    const presentByCode = new Map<string, number>();
 
-    return parts.map((part, idx) => {
-      if (!part) return null;
-      const isMatch = lowerTermSet.has(part.toLowerCase());
-      if (!isMatch) return <span key={idx}>{part}</span>;
-      return (
+    for (const row of granthOptions) {
+      const numericValue = Number(row.book_number);
+      if (!Number.isFinite(numericValue) || numericValue <= 0) continue;
+      const code = String(Math.floor(numericValue)).padStart(3, "0");
+      presentByCode.set(code, (presentByCode.get(code) ?? 0) + 1);
+    }
+
+    const presentCodes: Array<{ code: string; count: number }> = [];
+    const missingCodes: string[] = [];
+
+    for (let index = 1; index <= 471; index += 1) {
+      const code = String(index).padStart(3, "0");
+      const count = presentByCode.get(code) ?? 0;
+      if (count > 0) {
+        presentCodes.push({ code, count });
+      } else {
+        missingCodes.push(code);
+      }
+    }
+
+    return {
+      presentCodes,
+      missingCodes,
+    };
+  }, [granthOptions]);
+
+  function renderHighlightedSnippet(text: string) {
+    const matches = findOCRSearchMatches(text, q, searchMode);
+    if (!text || matches.length === 0) return text;
+
+    const parts: ReactNode[] = [];
+    let cursor = 0;
+
+    matches.forEach((match, idx) => {
+      if (match.start > cursor) {
+        parts.push(text.slice(cursor, match.start));
+      }
+      parts.push(
         <mark
-          key={idx}
+          key={`${match.start}_${idx}`}
           style={{
             background: "#fff100",
             color: "#111",
@@ -196,10 +216,17 @@ export default function OCRSearchPage() {
             fontWeight: 700,
           }}
         >
-          {part}
+          {text.slice(match.start, match.end)}
         </mark>
       );
+      cursor = match.end;
     });
+
+    if (cursor < text.length) {
+      parts.push(text.slice(cursor));
+    }
+
+    return parts.map((part, idx) => <span key={idx}>{part}</span>);
   }
 
   function setMode(mode: SelectionMode) {
@@ -252,6 +279,7 @@ export default function OCRSearchPage() {
       params.set("q", q);
       params.set("limit", String(RESULTS_PER_PAGE));
       params.set("page", String(page));
+      params.set("matchMode", searchMode);
       if (selectionMode !== "all" && selectedGranthKeys.length > 0) {
         params.set("granths", selectedGranthKeys.join(","));
       }
@@ -261,6 +289,7 @@ export default function OCRSearchPage() {
         results?: OCRSearchResult[];
         total?: number;
         page?: number;
+        match_mode?: string;
         error?: string;
       };
       if (!res.ok) {
@@ -270,6 +299,7 @@ export default function OCRSearchPage() {
       setResults(json.results ?? []);
       setTotal(Number(json.total ?? 0));
       setCurrentPage(Number(json.page ?? page));
+      setSearchMode(parseOCRSearchMode(json.match_mode));
       setHasSearched(true);
     } catch (searchError) {
       setError(searchError instanceof Error ? searchError.message : String(searchError));
@@ -330,6 +360,22 @@ export default function OCRSearchPage() {
               </span>
             ) : null}
             <span style={{ opacity: 0.8 }}>48 results per page with highlighted OCR excerpts.</span>
+            <button
+              type="button"
+              onClick={() => setShowCoverageDialog(true)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: "1px solid #bcc4ce",
+                background: "#fff",
+                color: "#222",
+                cursor: "pointer",
+                fontSize: 15,
+                fontWeight: 600,
+              }}
+            >
+              Show OCR coverage
+            </button>
           </div>
         </header>
 
@@ -375,6 +421,45 @@ export default function OCRSearchPage() {
               >
                 {loading ? "Searching..." : "Search"}
               </button>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: 16 }}>Word match:</strong>
+              <button
+                type="button"
+                onClick={() => setSearchMode("exact_word")}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  border: "1px solid #bcc4ce",
+                  background: searchMode === "exact_word" ? "#1f2120" : "#fff",
+                  color: searchMode === "exact_word" ? "#fff" : "#222",
+                  cursor: "pointer",
+                  fontSize: 15,
+                }}
+              >
+                Exact word only
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchMode("contains")}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  border: "1px solid #bcc4ce",
+                  background: searchMode === "contains" ? "#1f2120" : "#fff",
+                  color: searchMode === "contains" ? "#fff" : "#222",
+                  cursor: "pointer",
+                  fontSize: 15,
+                }}
+              >
+                Contains inside word
+              </button>
+              <span style={{ fontSize: 14, opacity: 0.8 }}>
+                {searchMode === "exact_word"
+                  ? "Matches only full-word occurrences."
+                  : "Matches anywhere inside a word or phrase."}
+              </span>
             </div>
 
             <div style={{ display: "grid", gap: 8 }}>
@@ -511,6 +596,12 @@ export default function OCRSearchPage() {
             </div>
           ) : null}
 
+          {hasSearched ? (
+            <div style={{ marginBottom: 10, fontSize: 15, opacity: 0.8 }}>
+              Match mode: <strong>{searchMode === "exact_word" ? "Exact word only" : "Contains inside word"}</strong>
+            </div>
+          ) : null}
+
           {hasSearched && totalPages > 1 ? (
             <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
               <button
@@ -578,7 +669,9 @@ export default function OCRSearchPage() {
                 const title = buildResultTitle(result);
                 const textViewerHref = `/ocr-text-viewer?granthKey=${encodeURIComponent(
                   result.granth_key
-                )}&page=${encodeURIComponent(String(result.page_number))}&q=${encodeURIComponent(q)}`;
+                )}&page=${encodeURIComponent(String(result.page_number))}&q=${encodeURIComponent(q)}&matchMode=${encodeURIComponent(
+                  searchMode
+                )}`;
                 const isActivePageTarget =
                   activePageTarget?.granthKey === result.granth_key && activePageTarget.pageNumber === result.page_number;
                 const isActiveGranthTarget = activeGranthTarget?.granthKey === result.granth_key;
@@ -682,6 +775,140 @@ export default function OCRSearchPage() {
           />
         </div>
       </div>
+
+      {showCoverageDialog ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="OCR code coverage"
+          onClick={() => setShowCoverageDialog(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(17, 24, 39, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 50,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(1120px, 100%)",
+              maxHeight: "88vh",
+              overflow: "auto",
+              border: "1px solid #d7d3c8",
+              borderRadius: 20,
+              background: "#fffefb",
+              boxShadow: "0 24px 60px rgba(17, 24, 39, 0.28)",
+              padding: 20,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 26 }}>OCR Code Coverage</h2>
+                <div style={{ marginTop: 8, fontSize: 16, lineHeight: 1.6, color: "#475467" }}>
+                  Showing which OCR book codes from <strong>001</strong> to <strong>471</strong> are available and
+                  which are still missing.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCoverageDialog(false)}
+                style={{
+                  padding: "9px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #c7cfd9",
+                  background: "#fff",
+                  fontSize: 15,
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14, display: "flex", gap: 20, flexWrap: "wrap", fontSize: 16 }}>
+              <span>
+                Present codes: <strong>{codeCoverage.presentCodes.length}</strong>
+              </span>
+              <span>
+                Missing codes: <strong>{codeCoverage.missingCodes.length}</strong>
+              </span>
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                gap: 14,
+              }}
+            >
+              <section
+                style={{
+                  border: "1px solid #d5dae2",
+                  borderRadius: 14,
+                  background: "#fafbfc",
+                  padding: 14,
+                }}
+              >
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Present Codes</div>
+                <div style={{ maxHeight: 360, overflow: "auto", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {codeCoverage.presentCodes.map((item) => (
+                    <span
+                      key={item.code}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: 999,
+                        background: "#e8f3ea",
+                        border: "1px solid #b9d3be",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: "#165534",
+                      }}
+                    >
+                      {item.code}
+                      {item.count > 1 ? ` x${item.count}` : ""}
+                    </span>
+                  ))}
+                </div>
+              </section>
+
+              <section
+                style={{
+                  border: "1px solid #d5dae2",
+                  borderRadius: 14,
+                  background: "#fafbfc",
+                  padding: 14,
+                }}
+              >
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Missing Codes</div>
+                <div style={{ maxHeight: 360, overflow: "auto", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {codeCoverage.missingCodes.map((code) => (
+                    <span
+                      key={code}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: 999,
+                        background: "#fff1f1",
+                        border: "1px solid #ecc6c6",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: "#8a1c1c",
+                      }}
+                    >
+                      {code}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
