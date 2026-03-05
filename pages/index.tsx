@@ -200,7 +200,7 @@ export default function HomePage() {
                     </div>
                     {row.ufs_url ? (
                       <a
-                        href={row.ufs_url}
+                        href={`/pdf-viewer?pdf=${encodeURIComponent(row.ufs_url)}`}
                         target="_blank"
                         rel="noreferrer"
                         style={{ marginTop: 10, display: "inline-block", fontSize: 12 }}

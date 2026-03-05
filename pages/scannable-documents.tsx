@@ -149,7 +149,7 @@ export default function ScannableDocumentsPage() {
                       <td style={{ padding: "9px 12px", borderBottom: "1px solid #edf1f6", verticalAlign: "top" }}>
                         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                           {row.pdf_url ? (
-                            <a href={row.pdf_url} target="_blank" rel="noreferrer">
+                            <a href={`/pdf-viewer?pdf=${encodeURIComponent(row.pdf_url)}`} target="_blank" rel="noreferrer">
                               PDF
                             </a>
                           ) : null}

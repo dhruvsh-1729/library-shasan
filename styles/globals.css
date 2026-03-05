@@ -39,3 +39,70 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.pdfOverlayRoot .textLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  transform-origin: 0 0;
+  cursor: text;
+  pointer-events: auto;
+  caret-color: CanvasText;
+  forced-color-adjust: none;
+  -webkit-text-size-adjust: none;
+  -moz-text-size-adjust: none;
+  text-size-adjust: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.pdfOverlayRoot .textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0 0;
+  cursor: text;
+  pointer-events: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.pdfOverlayRoot .textLayer > :not(.markedContent),
+.pdfOverlayRoot .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+}
+
+.pdfOverlayRoot .textLayer span.markedContent {
+  top: 0;
+  height: 0;
+}
+
+.pdfOverlayRoot[data-show-text-layer="false"] .textLayer {
+  display: none;
+}
+
+.pdfOverlayRoot .textLayer ::selection {
+  background: rgba(0, 92, 255, 0.26);
+}
+
+.pdfOverlayRoot .textLayer ::-moz-selection {
+  background: rgba(0, 92, 255, 0.26);
+}
+
+.pdfOverlayRoot .textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pdfOverlayRoot .textLayer.selecting .endOfContent {
+  top: 0;
+}

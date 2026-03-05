@@ -52,7 +52,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const baseResults = ((data ?? []) as SearchRow[]).map((r) => ({
     ...r,
-    open_pdf_url: `${r.pdf_url}#page=${r.page_number}`,
+    open_pdf_url: `/pdf-viewer?pdf=${encodeURIComponent(r.pdf_url)}&page=${encodeURIComponent(
+      String(r.page_number)
+    )}`,
   }));
 
   const granthSet = new Set(selectedGranths);

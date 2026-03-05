@@ -481,6 +481,9 @@ export default function SearchPage() {
                       r.custom_id
                     )}&page=${encodeURIComponent(String(r.page_number))}`
                   : null;
+                const pdfViewerHref = `/pdf-viewer?pdf=${encodeURIComponent(r.pdf_url)}&page=${encodeURIComponent(
+                  String(r.page_number)
+                )}`;
 
                 return (
                   <article
@@ -519,7 +522,7 @@ export default function SearchPage() {
                     </div>
 
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
-                      <a href={r.open_pdf_url} target="_blank" rel="noreferrer">
+                      <a href={pdfViewerHref} target="_blank" rel="noreferrer">
                         Open PDF
                       </a>
                       {csvViewerHref ? (
