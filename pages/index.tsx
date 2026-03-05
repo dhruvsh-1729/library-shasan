@@ -116,6 +116,7 @@ export default function HomePage() {
           <h1 style={{ margin: 0, fontSize: 30, letterSpacing: "0.01em" }}>{heading}</h1>
           <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap" }}>
             <Link href="/search">Search inside pages</Link>
+            <Link href="/ocrsearch">Search OCR XLSX</Link>
             <Link href="/scannable-documents">Scannable document list</Link>
             {documentStats ? (
               <span style={{ fontWeight: 700 }}>

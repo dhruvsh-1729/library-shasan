@@ -262,6 +262,7 @@ export default function SearchPage() {
           <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 12 }}>
             <Link href="/">Back to library</Link>
             <Link href="/scannable-documents">Scannable document list</Link>
+            <Link href="/ocrsearch">OCR XLSX search</Link>
             {documentStats ? (
               <span style={{ fontWeight: 700 }}>
                 Scannable documents: {documentStats.total_documents} (processed: {documentStats.processed_documents})

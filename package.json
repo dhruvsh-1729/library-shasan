@@ -9,9 +9,11 @@
     "lint": "eslint",
     "covers:granth": "node scripts/generate_granth_covers.mjs",
     "index:granth:stream": "node scripts/index_granth_from_db_pdftotext_stream.mjs",
-    "index:granth:ocr500": "node scripts/index_granth_from_db_ocr500.mjs"
+    "index:granth:ocr500": "node scripts/index_granth_from_db_ocr500.mjs",
+    "index:ocr:xlsx:turso": "node scripts/index_ocr_xlsx_to_turso.mjs"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.0",
     "@supabase/supabase-js": "^2.95.3",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.2.4",
@@ -19,7 +21,8 @@
     "pdfjs-dist": "^4.10.38",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "uploadthing": "^7.7.4"
+    "uploadthing": "^7.7.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
