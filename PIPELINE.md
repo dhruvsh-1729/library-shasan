@@ -25,6 +25,15 @@ Then run OCR with the hard Google cap:
 npm run library:pipeline -- --execute --phase text --googleBudgetUsd 20
 ```
 
+The text phase is resume-aware. Before processing each granth, it reads existing
+page text from Turso `ocr_pages` and Supabase `document_pages`. Pages that meet
+the existing-text quality threshold are reused and are not sent through local OCR
+or Google. Missing or low-quality pages are processed again. The script also
+saves per-page checkpoints while it works, so rerunning after an interruption can
+skip pages that were already checkpointed. Use `--reprocess` to ignore completed
+granths, `--noResumePages` to ignore page-level resume text, or
+`--noPageCheckpoints` to disable in-progress page saves.
+
 The default Google price model is `$1.50 / 1000 pages`, so `$20` permits at most
 13,333 paid page attempts. The script records paid attempts in
 `.library_pipeline_state/state.json` before each Google call. Once the cap is

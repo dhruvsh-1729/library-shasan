@@ -62,6 +62,10 @@ OCR options:
   --googleMode X           off|low-confidence|all (default: low-confidence)
   --googleBudgetUsd N      Hard cap for Google OCR attempts (default: 20)
   --googleLowTextPages     Allow paid OCR for very low-text pages
+  --noResumePages          Ignore existing page text and process selected pages again
+  --resumeMinChars N       Reuse existing page text only above this char count (default: 80)
+  --resumeMinScore N       Reuse existing page text only above this quality score (default: 0.68)
+  --noPageCheckpoints      Do not save per-page OCR checkpoints during processing
 
 Safety/resume options:
   --stateDir PATH          Budget/resume state directory (default: ${DEFAULT_STATE_DIR})
@@ -144,6 +148,14 @@ function parseArgs(argv) {
       .split(",")
       .map((x) => x.trim())
       .filter(Boolean),
+    resumePages: process.env.LIBRARY_PIPELINE_RESUME_PAGES !== "0",
+    resumeMinChars: Number.parseInt(process.env.LIBRARY_PIPELINE_RESUME_MIN_CHARS || "80", 10) || 80,
+    resumeMinScore: parseFloatFlag(
+      "LIBRARY_PIPELINE_RESUME_MIN_SCORE",
+      process.env.LIBRARY_PIPELINE_RESUME_MIN_SCORE || "0.68",
+      0
+    ),
+    pageCheckpoints: process.env.LIBRARY_PIPELINE_PAGE_CHECKPOINTS !== "0",
     stateDir: DEFAULT_STATE_DIR,
     outputDir: DEFAULT_OUTPUT_DIR,
     tmpDir: DEFAULT_TMP_DIR,
@@ -188,6 +200,14 @@ function parseArgs(argv) {
       args.googleLowTextPages = true;
       continue;
     }
+    if (arg === "--noResumePages") {
+      args.resumePages = false;
+      continue;
+    }
+    if (arg === "--noPageCheckpoints") {
+      args.pageCheckpoints = false;
+      continue;
+    }
     if (arg === "--noRemoteReads") {
       args.remoteReads = false;
       continue;
@@ -223,6 +243,8 @@ function parseArgs(argv) {
       "--googleProcessorId",
       "--googleProcessorVersion",
       "--googleLanguageHints",
+      "--resumeMinChars",
+      "--resumeMinScore",
       "--stateDir",
       "--outputDir",
       "--tmpDir",
@@ -266,6 +288,8 @@ function parseArgs(argv) {
         .split(",")
         .map((x) => x.trim())
         .filter(Boolean);
+    else if (flagName === "--resumeMinChars") args.resumeMinChars = parseIntFlag(flagName, value, 0);
+    else if (flagName === "--resumeMinScore") args.resumeMinScore = parseFloatFlag(flagName, value, 0);
     else if (flagName === "--stateDir") args.stateDir = value;
     else if (flagName === "--outputDir") args.outputDir = value;
     else if (flagName === "--tmpDir") args.tmpDir = value;
@@ -285,6 +309,9 @@ function parseArgs(argv) {
   }
   if (args.pageConcurrency > 8) {
     throw new Error(`--pageConcurrency above 8 is intentionally blocked for memory safety`);
+  }
+  if (args.resumeMinScore > 1) {
+    throw new Error(`--resumeMinScore must be between 0 and 1`);
   }
   if (args.dryRun) {
     args.execute = false;
@@ -733,15 +760,56 @@ async function loadRemoteState({ supabase, turso, remoteReads }) {
   }
 
   if (turso) {
-    const result = await turso.execute(
-      "SELECT granth_key, page_count, text_row_count, xlsx_url, xlsx_key, updated_at FROM ocr_granths"
-    );
-    for (const row of result.rows || []) {
-      state.tursoByGranthKey.set(String(row.granth_key), row);
+    try {
+      const result = await turso.execute(
+        "SELECT granth_key, page_count, text_row_count, xlsx_url, xlsx_key, updated_at FROM ocr_granths"
+      );
+      for (const row of result.rows || []) {
+        state.tursoByGranthKey.set(String(row.granth_key), row);
+      }
+    } catch (error) {
+      if (!/ocr_granths|no such table|SQLITE_UNKNOWN/i.test(shortErr(error))) throw error;
     }
   }
 
   return state;
+}
+
+async function fetchSupabasePagesForCustomId(supabase, customId) {
+  if (!supabase || !customId) return [];
+  const rows = [];
+  const pageSize = 1000;
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(PAGES_TABLE)
+      .select("page_number,text")
+      .eq("custom_id", customId)
+      .order("page_number", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`Supabase ${PAGES_TABLE} read failed: ${error.message}`);
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows;
+}
+
+async function fetchTursoPagesForGranth(db, granthKey) {
+  if (!db || !granthKey) return [];
+  try {
+    const result = await db.execute({
+      sql: "SELECT page_number, content FROM ocr_pages WHERE granth_key = ? ORDER BY page_number",
+      args: [granthKey],
+    });
+    return result.rows || [];
+  } catch (error) {
+    if (/ocr_pages|no such table|SQLITE_UNKNOWN/i.test(shortErr(error))) return [];
+    throw error;
+  }
 }
 
 async function resolveExistingUpload(utapi, customId, appId) {
@@ -987,6 +1055,86 @@ function charMetrics(text) {
   };
 }
 
+function pageRowFromExisting(pageNumber, text, source) {
+  const clean = normalizeText(text);
+  const metrics = charMetrics(clean);
+  return {
+    pageNumber,
+    text: clean,
+    method: source,
+    status: "reused_existing",
+    qualityScore: Number(metrics.score.toFixed(4)),
+    chars: metrics.chars,
+    needsGoogle: false,
+    googleReason: "existing_page_reused",
+    imagePath: null,
+    embeddedScore: null,
+    localScore: null,
+    needsReview: false,
+    error: "",
+    reusedExisting: true,
+  };
+}
+
+function isReusableExistingPage(row, args) {
+  if (!args.resumePages || !row) return false;
+  if (normalizeText(row.text).length === 0) return false;
+  if (Number(row.chars || 0) < args.resumeMinChars) return false;
+  if (Number(row.qualityScore || 0) < args.resumeMinScore) return false;
+  return true;
+}
+
+async function loadExistingPageResume(meta, totalPages, args, clients) {
+  const stats = {
+    supabaseRows: 0,
+    tursoRows: 0,
+    uniqueRows: 0,
+    reusable: 0,
+    lowQuality: 0,
+    empty: 0,
+    outOfRange: 0,
+  };
+  const combined = new Map();
+  const reusableByPage = new Map();
+
+  if (!args.resumePages || args.reprocess) {
+    return { reusableByPage, stats };
+  }
+
+  const [supabaseRows, tursoRows] = await Promise.all([
+    fetchSupabasePagesForCustomId(clients.supabase, meta.pdfCustomId),
+    fetchTursoPagesForGranth(clients.turso, meta.granthKey),
+  ]);
+  stats.supabaseRows = supabaseRows.length;
+  stats.tursoRows = tursoRows.length;
+
+  const add = (pageNumber, text, source) => {
+    const page = Number(pageNumber);
+    if (!Number.isFinite(page) || page < 1 || page > totalPages) {
+      stats.outOfRange += 1;
+      return;
+    }
+    combined.set(page, pageRowFromExisting(page, text, source));
+  };
+
+  for (const row of supabaseRows) add(row.page_number, row.text, "existing_supabase");
+  for (const row of tursoRows) add(row.page_number, row.content, "existing_turso");
+
+  stats.uniqueRows = combined.size;
+  for (const row of combined.values()) {
+    if (isReusableExistingPage(row, args)) {
+      reusableByPage.set(row.pageNumber, row);
+      stats.reusable += 1;
+    } else if (normalizeText(row.text).length === 0) {
+      stats.empty += 1;
+    } else {
+      stats.lowQuality += 1;
+    }
+  }
+
+  return { reusableByPage, stats };
+}
+
 function compareKey(text) {
   return normalizeText(text)
     .replace(/\s+/g, "")
@@ -1213,13 +1361,14 @@ async function runGoogleDocumentAi(imagePath, args) {
   return normalizeText(result?.document?.text || "");
 }
 
-async function applyGoogleFallbacks(pageRows, meta, args, budget, statePath) {
+async function applyGoogleFallbacks(pageRows, meta, args, budget, statePath, checkpointWriter = null) {
   for (const row of pageRows) {
     if (!row.needsGoogle) continue;
 
     if (args.dryRun) {
       row.status = "would_use_google";
       row.estimatedGoogleCostUsd = Number((args.googlePricePer1000 / 1000).toFixed(4));
+      if (checkpointWriter) await checkpointWriter.write(row);
       continue;
     }
 
@@ -1227,6 +1376,7 @@ async function applyGoogleFallbacks(pageRows, meta, args, budget, statePath) {
       row.status = "budget_exhausted";
       row.needsReview = true;
       row.error = [row.error, "Google budget exhausted before this page"].filter(Boolean).join("; ");
+      if (checkpointWriter) await checkpointWriter.write(row);
       continue;
     }
 
@@ -1238,6 +1388,7 @@ async function applyGoogleFallbacks(pageRows, meta, args, budget, statePath) {
     if (!marked) {
       row.status = "budget_exhausted";
       row.needsReview = true;
+      if (checkpointWriter) await checkpointWriter.write(row);
       continue;
     }
 
@@ -1261,6 +1412,7 @@ async function applyGoogleFallbacks(pageRows, meta, args, budget, statePath) {
       row.needsReview = true;
       row.error = [row.error, `google: ${shortErr(err, 600)}`].filter(Boolean).join("; ");
     }
+    if (checkpointWriter) await checkpointWriter.write(row);
   }
 }
 
@@ -1308,10 +1460,14 @@ function toCsv(rows) {
     .join("\n")}\n`;
 }
 
+function spreadsheetBase(meta) {
+  return sanitizeForCustomId(`${meta.granthKey}_${meta.hash}_${meta.stem}`, 120);
+}
+
 async function writeSpreadsheetFiles(meta, pageRows, pdfUrl, args) {
   await fs.mkdir(args.outputDir, { recursive: true });
   const rows = rowsToWorkbookRows(meta, pageRows, pdfUrl);
-  const base = sanitizeForCustomId(`${meta.granthKey}_${meta.hash}_${meta.stem}`, 120);
+  const base = spreadsheetBase(meta);
   const xlsxPath = path.join(args.outputDir, `${base}.xlsx`);
   const csvPath = path.join(args.outputDir, `${base}.csv`);
   const sheet = XLSX.utils.json_to_sheet(rows);
@@ -1395,6 +1551,136 @@ async function ensureTursoSchema(db) {
   }
 }
 
+async function upsertTursoPageCheckpoint(db, meta, totalPages, row) {
+  const tx = await db.transaction("write");
+  try {
+    await tx.execute({
+      sql: `INSERT INTO ocr_granths (
+          granth_key,
+          book_number,
+          library_code,
+          granth_name,
+          source_rel_path,
+          xlsx_filename,
+          xlsx_custom_id,
+          xlsx_url,
+          xlsx_key,
+          sheet_name,
+          page_count,
+          text_row_count,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 0, CURRENT_TIMESTAMP)
+        ON CONFLICT(granth_key) DO UPDATE SET
+          book_number = excluded.book_number,
+          library_code = excluded.library_code,
+          granth_name = excluded.granth_name,
+          source_rel_path = excluded.source_rel_path,
+          xlsx_filename = excluded.xlsx_filename,
+          xlsx_custom_id = excluded.xlsx_custom_id,
+          sheet_name = excluded.sheet_name,
+          page_count = CASE
+            WHEN ocr_granths.page_count > excluded.page_count THEN ocr_granths.page_count
+            ELSE excluded.page_count
+          END,
+          updated_at = CURRENT_TIMESTAMP`,
+      args: [
+        meta.granthKey,
+        meta.bookNumber || "000",
+        meta.libraryCode,
+        meta.granthName,
+        meta.relPath,
+        `${spreadsheetBase(meta)}.xlsx`,
+        meta.xlsxCustomId,
+        "OCR Pages",
+        totalPages,
+      ],
+    });
+    await tx.execute({
+      sql: `INSERT INTO ocr_pages (granth_key, page_number, content, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(granth_key, page_number) DO UPDATE SET
+              content = excluded.content,
+              updated_at = CURRENT_TIMESTAMP`,
+      args: [meta.granthKey, row.pageNumber, row.text || ""],
+    });
+    await tx.execute({
+      sql: `UPDATE ocr_granths
+            SET text_row_count = (
+              SELECT COUNT(*) FROM ocr_pages
+              WHERE granth_key = ? AND length(trim(content)) > 0
+            ),
+            updated_at = CURRENT_TIMESTAMP
+            WHERE granth_key = ?`,
+      args: [meta.granthKey, meta.granthKey],
+    });
+    await tx.commit();
+  } catch (error) {
+    try {
+      if (!tx.closed) await tx.rollback();
+    } catch {
+      // ignore rollback failures
+    }
+    throw error;
+  } finally {
+    tx.close();
+  }
+}
+
+async function upsertSupabasePageCheckpoint(supabase, customId, row) {
+  const { error } = await supabase.from(PAGES_TABLE).upsert(
+    [
+      {
+        custom_id: customId,
+        page_number: row.pageNumber,
+        text: row.text || "",
+        updated_at: new Date().toISOString(),
+      },
+    ],
+    { onConflict: "custom_id,page_number" }
+  );
+  if (error) throw new Error(`Supabase ${PAGES_TABLE} checkpoint failed: ${error.message}`);
+}
+
+async function checkpointPageResult(clients, args, meta, totalPages, row) {
+  if (!args.execute || !args.pageCheckpoints || row.reusedExisting) return;
+  await Promise.all([
+    clients.turso ? upsertTursoPageCheckpoint(clients.turso, meta, totalPages, row) : null,
+    clients.supabase ? upsertSupabasePageCheckpoint(clients.supabase, meta.pdfCustomId, row) : null,
+  ]);
+}
+
+function createPageCheckpointWriter(clients, args, meta, totalPages) {
+  let chain = Promise.resolve();
+  let checkpointed = 0;
+  const warned = new Set();
+
+  return {
+    async write(row) {
+      if (!args.execute || !args.pageCheckpoints || !row || row.reusedExisting) return;
+      chain = chain.then(async () => {
+        try {
+          await checkpointPageResult(clients, args, meta, totalPages, row);
+          checkpointed += 1;
+        } catch (error) {
+          const key = String(error instanceof Error ? error.message : error).slice(0, 160);
+          if (!warned.has(key)) {
+            warned.add(key);
+            console.warn(`[checkpoint] failed ${meta.fileName} p${row.pageNumber}: ${shortErr(error, 500)}`);
+          }
+        }
+      });
+      await chain;
+    },
+    async flush() {
+      await chain;
+      return checkpointed;
+    },
+    count() {
+      return checkpointed;
+    },
+  };
+}
+
 async function upsertTursoGranthAndPages(db, payload) {
   const tx = await db.transaction("write");
   try {
@@ -1469,10 +1755,7 @@ async function upsertTursoGranthAndPages(db, payload) {
   }
 }
 
-async function replaceSupabasePages(supabase, customId, meta, pageRows) {
-  const { error: deleteError } = await supabase.from(PAGES_TABLE).delete().eq("custom_id", customId);
-  if (deleteError) throw new Error(`Supabase document_pages delete failed: ${deleteError.message}`);
-
+async function upsertSupabasePages(supabase, customId, meta, pageRows) {
   const rows = pageRows.map((page) => ({
     custom_id: customId,
     page_number: page.pageNumber,
@@ -1482,10 +1765,12 @@ async function replaceSupabasePages(supabase, customId, meta, pageRows) {
 
   for (let i = 0; i < rows.length; i += INSERT_BATCH_SIZE) {
     const chunk = rows.slice(i, i + INSERT_BATCH_SIZE);
-    const { error } = await supabase.from(PAGES_TABLE).insert(chunk);
+    const { error } = await supabase.from(PAGES_TABLE).upsert(chunk, {
+      onConflict: "custom_id,page_number",
+    });
     if (error) {
       throw new Error(
-        `Supabase document_pages insert failed for ${meta.fileName} rows ${i + 1}-${i + chunk.length}: ${error.message}`
+        `Supabase document_pages upsert failed for ${meta.fileName} rows ${i + 1}-${i + chunk.length}: ${error.message}`
       );
     }
   }
@@ -1554,23 +1839,39 @@ async function processTextOne(catalog, args, clients, remoteState, budget, state
     };
   }
 
+  const resume = await loadExistingPageResume(meta, totalPages, args, clients);
+  if (args.resumePages && !args.reprocess) {
+    console.log(
+      `[text] resume ${meta.fileName}: reusable=${resume.stats.reusable}/${totalPages} existingUnique=${resume.stats.uniqueRows} lowQuality=${resume.stats.lowQuality} empty=${resume.stats.empty}`
+    );
+  }
+
   const pageNumbers = Array.from({ length: totalPages }, (_, idx) => idx + 1);
-  console.log(`[text] ${meta.fileName}: local pass ${pageNumbers.length} pages`);
+  const pagesToProcess = pageNumbers.length - resume.stats.reusable;
+  console.log(`[text] ${meta.fileName}: local/google pass ${pagesToProcess} pages, reused ${resume.stats.reusable}`);
+  const checkpointWriter = createPageCheckpointWriter(clients, args, meta, totalPages);
 
   const pageRows = await mapLimit(pageNumbers, args.pageConcurrency, async (pageNumber) => {
+    const existing = resume.reusableByPage.get(pageNumber);
+    if (existing) return existing;
+
     const row = await processPageLocal(meta, pageNumber, args);
     if (args.verbose) {
       console.log(
         `[page] ${meta.granthKey} p${pageNumber} method=${row.method} status=${row.status} score=${row.qualityScore}`
       );
     }
+    if (!row.needsGoogle) await checkpointWriter.write(row);
     return row;
   });
 
-  await applyGoogleFallbacks(pageRows, meta, args, budget, statePath);
+  await applyGoogleFallbacks(pageRows, meta, args, budget, statePath, checkpointWriter);
+  const checkpointedPages = await checkpointWriter.flush();
   await cleanupPageImages(pageRows, args);
 
   const summary = summarizeBook(pageRows, totalPages);
+  summary.reusedExistingPages = resume.stats.reusable;
+  summary.checkpointedPages = checkpointedPages;
   const { xlsxPath, csvPath } = await writeSpreadsheetFiles(meta, pageRows, catalog.pdfUrl, args);
 
   let xlsxUpload = null;
@@ -1602,7 +1903,7 @@ async function processTextOne(catalog, args, clients, remoteState, budget, state
       pages: pageRows.map((row) => ({ pageNumber: row.pageNumber, content: row.text || "" })),
     });
 
-    await replaceSupabasePages(clients.supabase, meta.pdfCustomId, meta, pageRows);
+    await upsertSupabasePages(clients.supabase, meta.pdfCustomId, meta, pageRows);
     await upsertByMatch(clients.supabase, DOCS_TABLE, "custom_id", meta.pdfCustomId, {
       original_relative_path: meta.relPath,
       custom_id: meta.pdfCustomId,
@@ -1670,6 +1971,9 @@ async function main() {
     turso: requireClient(turso, "Turso", args.execute && needsText),
     utapi: requireClient(utapi, "UploadThing", needsUploads),
   };
+  if (args.execute && needsText && clients.turso) {
+    await ensureTursoSchema(clients.turso);
+  }
 
   if (!args.execute) {
     console.log("[mode] dry-run: no UploadThing writes, database writes, or Google OCR calls will run");
