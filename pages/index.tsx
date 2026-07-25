@@ -37,7 +37,29 @@ function toMB(sizeBytes: number | null) {
 
 function displayTitle(row: GranthItem) {
   const raw = row.file_name ?? row.original_rel_path ?? row.custom_id ?? `Granth ${row.id}`;
-  return raw.replace(/\s+OCR\.pdf$/i, "").replace(/\.pdf$/i, "");
+  const base = raw.split(/[\\/]/).pop() ?? raw;
+  let cleaned = base
+    .replace(/\.pdf$/i, "")
+    .replace(/\s+OCR$/i, "")
+    .replace(/\s+-\s+Copy$/i, "")
+    .replace(/^\d{1,4}(?:-\d{1,4})?[_\s.-]+/, "")
+    .replace(/^[A-Za-z]\d{4,}[_\s.-]+/, "");
+
+  for (let i = 0; i < 6; i += 1) {
+    cleaned = cleaned.replace(/[_\s.-]+(?:\d{4,}|hr\d*|std|ocr|ocred|needs[_\s-]*ocr)$/i, "");
+  }
+
+  return cleaned
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function searchableTitle(row: GranthItem) {
+  return [displayTitle(row), row.file_name, row.original_rel_path, row.custom_id]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 export default function HomePage() {
@@ -47,6 +69,7 @@ export default function HomePage() {
   const [coverColumnAvailable, setCoverColumnAvailable] = useState(true);
   const [brokenCoverIds, setBrokenCoverIds] = useState<Record<number, boolean>>({});
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
+  const [nameQuery, setNameQuery] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -55,7 +78,7 @@ export default function HomePage() {
       setLoading(true);
       setError(null);
       try {
-        const granthRes = await fetch("/api/granths?limit=250");
+        const granthRes = await fetch("/api/granths?limit=500");
         const granthJson = (await granthRes.json()) as ApiResponse | { error?: string };
 
         if (!granthRes.ok) {
@@ -94,11 +117,17 @@ export default function HomePage() {
     };
   }, []);
 
+  const filteredItems = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((row) => searchableTitle(row).includes(q));
+  }, [items, nameQuery]);
+
   const heading = useMemo(() => {
     if (loading) return "Loading granths...";
     if (error) return "Could not load granths";
-    return `Granth Library (${items.length})`;
-  }, [error, items.length, loading]);
+    return `Granth Library (${filteredItems.length}${filteredItems.length === items.length ? "" : ` of ${items.length}`})`;
+  }, [error, filteredItems.length, items.length, loading]);
 
   return (
     <main
@@ -117,6 +146,7 @@ export default function HomePage() {
           <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap" }}>
             <Link href="/search">Search inside pages</Link>
             <Link href="/ocrsearch">Search OCR XLSX</Link>
+            <Link href="/granth-extractor">Granth page extractor</Link>
             <Link href="/scannable-documents">Scannable document list</Link>
             {documentStats ? (
               <span style={{ fontWeight: 700 }}>
@@ -135,14 +165,34 @@ export default function HomePage() {
         {loading ? <p>Fetching records...</p> : null}
 
         {!loading && !error ? (
-          <section
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
-              gap: 16,
-            }}
-          >
-            {items.map((row) => {
+          <>
+            <div style={{ margin: "0 0 18px" }}>
+              <input
+                value={nameQuery}
+                onChange={(event) => setNameQuery(event.target.value)}
+                placeholder="Search granth name"
+                aria-label="Search granth name"
+                style={{
+                  width: "100%",
+                  maxWidth: 420,
+                  padding: "10px 12px",
+                  border: "1px solid #c9c5b8",
+                  borderRadius: 8,
+                  fontSize: 15,
+                  background: "#fffefb",
+                  color: "#1f2120",
+                }}
+              />
+            </div>
+
+            <section
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
+                gap: 16,
+              }}
+            >
+            {filteredItems.map((row) => {
               const showCover = Boolean(row.cover_image_url) && !brokenCoverIds[row.id];
               const title = displayTitle(row);
               const sizeLabel = toMB(row.file_size);
@@ -201,7 +251,7 @@ export default function HomePage() {
                     </div>
                     {row.ufs_url ? (
                       <a
-                        href={`/pdf-viewer?pdf=${encodeURIComponent(row.ufs_url)}`}
+                        href={row.ufs_url}
                         target="_blank"
                         rel="noreferrer"
                         style={{ marginTop: 10, display: "inline-block", fontSize: 12 }}
@@ -213,7 +263,8 @@ export default function HomePage() {
                 </article>
               );
             })}
-          </section>
+            </section>
+          </>
         ) : null}
       </div>
     </main>

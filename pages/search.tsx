@@ -482,9 +482,7 @@ export default function SearchPage() {
                       r.custom_id
                     )}&page=${encodeURIComponent(String(r.page_number))}`
                   : null;
-                const pdfViewerHref = `/pdf-viewer?pdf=${encodeURIComponent(r.pdf_url)}&page=${encodeURIComponent(
-                  String(r.page_number)
-                )}`;
+                const pdfViewerHref = `${r.pdf_url}#page=${encodeURIComponent(String(r.page_number))}`;
 
                 return (
                   <article
