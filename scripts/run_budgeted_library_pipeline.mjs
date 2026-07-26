@@ -24,6 +24,14 @@ const SOURCE_TABLE = "granth_ocr_files";
 const DOCS_TABLE = "documents";
 const PAGES_TABLE = "document_pages";
 const INSERT_BATCH_SIZE = 150;
+const SUPABASE_PAGE_BATCH_SIZE = Math.max(
+  1,
+  Math.min(Number.parseInt(process.env.LIBRARY_PIPELINE_SUPABASE_PAGE_BATCH_SIZE || "10", 10) || 10, 50)
+);
+const SUPABASE_WRITE_RETRIES = Math.max(
+  1,
+  Math.min(Number.parseInt(process.env.LIBRARY_PIPELINE_SUPABASE_WRITE_RETRIES || "4", 10) || 4, 8)
+);
 const UPLOADTHING_CUSTOM_ID_MAX = 128;
 const GOOGLE_PRICE_PER_1000_PAGES = 1.5;
 const DEFAULT_GOOGLE_PROJECT_ID = "461791694388";
@@ -66,6 +74,7 @@ OCR options:
   --resumeMinChars N       Reuse existing page text only above this char count (default: 80)
   --resumeMinScore N       Reuse existing page text only above this quality score (default: 0.68)
   --noPageCheckpoints      Do not save per-page OCR checkpoints during processing
+  --supabasePageCheckpoints Also save per-page OCR checkpoints to Supabase. Turso checkpoints stay enabled by default.
 
 Safety/resume options:
   --stateDir PATH          Budget/resume state directory (default: ${DEFAULT_STATE_DIR})
@@ -156,6 +165,7 @@ function parseArgs(argv) {
       0
     ),
     pageCheckpoints: process.env.LIBRARY_PIPELINE_PAGE_CHECKPOINTS !== "0",
+    supabasePageCheckpoints: process.env.LIBRARY_PIPELINE_SUPABASE_PAGE_CHECKPOINTS === "1",
     stateDir: DEFAULT_STATE_DIR,
     outputDir: DEFAULT_OUTPUT_DIR,
     tmpDir: DEFAULT_TMP_DIR,
@@ -206,6 +216,10 @@ function parseArgs(argv) {
     }
     if (arg === "--noPageCheckpoints") {
       args.pageCheckpoints = false;
+      continue;
+    }
+    if (arg === "--supabasePageCheckpoints") {
+      args.supabasePageCheckpoints = true;
       continue;
     }
     if (arg === "--noRemoteReads") {
@@ -371,6 +385,36 @@ function bytesToHuman(bytes) {
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableSupabaseWriteError(error) {
+  return /statement timeout|canceling statement due to statement timeout|deadlock detected|could not serialize access|fetch failed|ECONNRESET|ETIMEDOUT/i.test(
+    shortErr(error, 600)
+  );
+}
+
+async function supabaseWriteWithRetry(label, write) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= SUPABASE_WRITE_RETRIES; attempt += 1) {
+    const { error } = await write();
+    if (!error) return;
+
+    lastError = error;
+    if (attempt >= SUPABASE_WRITE_RETRIES || !isRetryableSupabaseWriteError(error)) {
+      break;
+    }
+
+    const delayMs = Math.min(30000, 1500 * attempt * attempt);
+    console.warn(
+      `[supabase] retry ${attempt}/${SUPABASE_WRITE_RETRIES - 1} ${label}: ${error.message}; waiting ${Math.round(
+        delayMs / 1000
+      )}s`
+    );
+    await sleep(delayMs);
+  }
+
+  throw new Error(`${label}: ${lastError?.message || "unknown Supabase write error"}`);
 }
 
 async function readMemAvailableMB() {
@@ -978,7 +1022,7 @@ async function catalogOne(meta, args, clients, remoteState) {
       ufs_url: upload?.url || null,
       ut_key: upload?.key || null,
       ut_url: upload?.url || null,
-      app_url: upload?.appUrl || null,
+      app_url: null,
       file_name: meta.fileName,
       file_size: stat.size,
       file_hash: upload?.fileHash || null,
@@ -1627,25 +1671,30 @@ async function upsertTursoPageCheckpoint(db, meta, totalPages, row) {
 }
 
 async function upsertSupabasePageCheckpoint(supabase, customId, row) {
-  const { error } = await supabase.from(PAGES_TABLE).upsert(
-    [
-      {
-        custom_id: customId,
-        page_number: row.pageNumber,
-        text: row.text || "",
-        updated_at: new Date().toISOString(),
-      },
-    ],
-    { onConflict: "custom_id,page_number" }
+  await supabaseWriteWithRetry(
+    `Supabase ${PAGES_TABLE} checkpoint failed`,
+    () =>
+      supabase.from(PAGES_TABLE).upsert(
+        [
+          {
+            custom_id: customId,
+            page_number: row.pageNumber,
+            text: row.text || "",
+            updated_at: new Date().toISOString(),
+          },
+        ],
+        { onConflict: "custom_id,page_number" }
+      )
   );
-  if (error) throw new Error(`Supabase ${PAGES_TABLE} checkpoint failed: ${error.message}`);
 }
 
 async function checkpointPageResult(clients, args, meta, totalPages, row) {
   if (!args.execute || !args.pageCheckpoints || row.reusedExisting) return;
   await Promise.all([
     clients.turso ? upsertTursoPageCheckpoint(clients.turso, meta, totalPages, row) : null,
-    clients.supabase ? upsertSupabasePageCheckpoint(clients.supabase, meta.pdfCustomId, row) : null,
+    clients.supabase && args.supabasePageCheckpoints
+      ? upsertSupabasePageCheckpoint(clients.supabase, meta.pdfCustomId, row)
+      : null,
   ]);
 }
 
@@ -1763,16 +1812,15 @@ async function upsertSupabasePages(supabase, customId, meta, pageRows) {
     updated_at: new Date().toISOString(),
   }));
 
-  for (let i = 0; i < rows.length; i += INSERT_BATCH_SIZE) {
-    const chunk = rows.slice(i, i + INSERT_BATCH_SIZE);
-    const { error } = await supabase.from(PAGES_TABLE).upsert(chunk, {
-      onConflict: "custom_id,page_number",
-    });
-    if (error) {
-      throw new Error(
-        `Supabase document_pages upsert failed for ${meta.fileName} rows ${i + 1}-${i + chunk.length}: ${error.message}`
-      );
-    }
+  for (let i = 0; i < rows.length; i += SUPABASE_PAGE_BATCH_SIZE) {
+    const chunk = rows.slice(i, i + SUPABASE_PAGE_BATCH_SIZE);
+    await supabaseWriteWithRetry(
+      `Supabase document_pages upsert failed for ${meta.fileName} rows ${i + 1}-${i + chunk.length}`,
+      () =>
+        supabase.from(PAGES_TABLE).upsert(chunk, {
+          onConflict: "custom_id,page_number",
+        })
+    );
   }
 }
 
