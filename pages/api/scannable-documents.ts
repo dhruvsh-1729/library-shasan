@@ -1,10 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 type ScannableRow = {
   custom_id: string;
@@ -38,51 +34,64 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const limit = parseIntQuery(req.query.limit, 300, 1, 1000);
-  const offset = parseIntQuery(req.query.offset, 0, 0, 1000000);
+  try {
+    const limit = parseIntQuery(req.query.limit, 300, 1, 1000);
+    const offset = parseIntQuery(req.query.offset, 0, 0, 1000000);
 
-  const countReq = supabase
-    .from("documents")
-    .select("custom_id", { count: "exact", head: true })
-    .eq("status", "processed");
+    const cacheKey = buildCacheKey(req, "scannable-documents");
+    const { value: payload, status } = await getCachedJson(cacheKey, 180, async () => {
+      const supabase = getSupabaseAdmin();
+      const countReq = supabase
+        .from("documents")
+        .select("custom_id", { count: "exact", head: true })
+        .eq("status", "processed");
 
-  const listReq = supabase
-    .from("documents")
-    .select("custom_id,pdf_name,pdf_url,csv_url,status,updated_at")
-    .eq("status", "processed")
-    .not("custom_id", "is", null)
-    .order("pdf_name", { ascending: true, nullsFirst: false })
-    .range(offset, offset + limit - 1);
+      const listReq = supabase
+        .from("documents")
+        .select("custom_id,pdf_name,pdf_url,csv_url,status,updated_at")
+        .eq("status", "processed")
+        .not("custom_id", "is", null)
+        .order("pdf_name", { ascending: true, nullsFirst: false })
+        .range(offset, offset + limit - 1);
 
-  const [{ count, error: countErr }, { data, error: listErr }] = await Promise.all([
-    countReq,
-    listReq,
-  ]);
+      const [{ count, error: countErr }, { data, error: listErr }] = await Promise.all([
+        countReq,
+        listReq,
+      ]);
 
-  if (countErr) return res.status(500).json({ error: countErr.message });
-  if (listErr) return res.status(500).json({ error: listErr.message });
+      if (countErr) throw new Error(countErr.message);
+      if (listErr) throw new Error(listErr.message);
 
-  const items = ((data ?? []) as ScannableRow[])
-    .filter((row) => String(row.custom_id ?? "").trim().length > 0)
-    .map((row) => {
-      const customId = String(row.custom_id).trim();
+      const items = ((data ?? []) as ScannableRow[])
+        .filter((row) => String(row.custom_id ?? "").trim().length > 0)
+        .map((row) => {
+          const customId = String(row.custom_id).trim();
+          return {
+            custom_id: customId,
+            pdf_name: row.pdf_name,
+            display_name: displayName(row.pdf_name, customId),
+            pdf_url: row.pdf_url,
+            csv_url: row.csv_url,
+            status: row.status ?? "processed",
+            updated_at: row.updated_at,
+          };
+        });
+
       return {
-        custom_id: customId,
-        pdf_name: row.pdf_name,
-        display_name: displayName(row.pdf_name, customId),
-        pdf_url: row.pdf_url,
-        csv_url: row.csv_url,
-        status: row.status ?? "processed",
-        updated_at: row.updated_at,
+        items,
+        meta: {
+          total_processed: count ?? 0,
+          pageCount: items.length,
+          limit,
+          offset,
+        },
       };
     });
 
-  return res.status(200).json({
-    items,
-    meta: {
-      total_processed: count ?? 0,
-      limit,
-      offset,
-    },
-  });
+    setPublicCacheHeaders(res, { maxAgeSeconds: 180, staleWhileRevalidateSeconds: 900 }, status);
+    return res.status(200).json(payload);
+  } catch (error) {
+    setNoStore(res);
+    return res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 }

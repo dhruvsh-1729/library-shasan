@@ -18,8 +18,15 @@ type ApiResponse = {
   items: GranthItem[];
   meta: {
     count: number;
+    total: number;
+    pageCount: number;
     limit: number;
     offset: number;
+    page: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+    q: string | null;
     collection: string | null;
     coverColumnAvailable: boolean;
   };
@@ -29,6 +36,8 @@ type DocumentStats = {
   total_documents: number;
   processed_documents: number;
 };
+
+const BOOKS_PER_PAGE = 10;
 
 function toMB(sizeBytes: number | null) {
   if (sizeBytes == null || !Number.isFinite(sizeBytes)) return null;
@@ -55,15 +64,18 @@ function displayTitle(row: GranthItem) {
     .trim();
 }
 
-function searchableTitle(row: GranthItem) {
-  return [displayTitle(row), row.file_name, row.original_rel_path, row.custom_id]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+function pageButtons(currentPage: number, totalPages: number) {
+  const start = Math.max(1, currentPage - 2);
+  const end = Math.min(totalPages, currentPage + 2);
+  const pages: number[] = [];
+  for (let page = start; page <= end; page += 1) pages.push(page);
+  return pages;
 }
 
 export default function HomePage() {
   const [items, setItems] = useState<GranthItem[]>([]);
+  const [meta, setMeta] = useState<ApiResponse["meta"] | null>(null);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [coverColumnAvailable, setCoverColumnAvailable] = useState(true);
@@ -73,199 +85,227 @@ export default function HomePage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const granthRes = await fetch("/api/granths?limit=500");
-        const granthJson = (await granthRes.json()) as ApiResponse | { error?: string };
-
-        if (!granthRes.ok) {
-          throw new Error(
-            ("error" in granthJson && granthJson.error) || `Request failed (${granthRes.status})`
-          );
-        }
-
-        if (!active) return;
-        const payload = granthJson as ApiResponse;
-        setItems(payload.items ?? []);
-        setCoverColumnAvailable(payload.meta?.coverColumnAvailable ?? true);
-
+    const timer = window.setTimeout(() => {
+      async function load() {
+        setLoading(true);
+        setError(null);
         try {
-          const statsRes = await fetch("/api/document-stats");
-          const statsJson = (await statsRes.json()) as DocumentStats | { error?: string };
-          if (statsRes.ok) {
-            setDocumentStats(statsJson as DocumentStats);
-          } else {
-            console.error(("error" in statsJson && statsJson.error) || "Failed to load document stats");
+          const params = new URLSearchParams();
+          params.set("limit", String(BOOKS_PER_PAGE));
+          params.set("page", String(page));
+          if (nameQuery.trim()) params.set("q", nameQuery.trim());
+
+          const granthRes = await fetch(`/api/granths?${params.toString()}`, {
+            signal: controller.signal,
+          });
+          const granthJson = (await granthRes.json()) as ApiResponse | { error?: string };
+
+          if (!granthRes.ok) {
+            throw new Error(
+              ("error" in granthJson && granthJson.error) || `Request failed (${granthRes.status})`
+            );
           }
-        } catch (statsErr) {
-          console.error(statsErr);
+
+          if (!active) return;
+          const payload = granthJson as ApiResponse;
+          setItems(payload.items ?? []);
+          setMeta(payload.meta ?? null);
+          setCoverColumnAvailable(payload.meta?.coverColumnAvailable ?? true);
+        } catch (loadError) {
+          if (!active || controller.signal.aborted) return;
+          setError(loadError instanceof Error ? loadError.message : String(loadError));
+        } finally {
+          if (active && !controller.signal.aborted) setLoading(false);
         }
-      } catch (e) {
-        if (!active) return;
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (active) setLoading(false);
+      }
+
+      void load();
+    }, 220);
+
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [nameQuery, page]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadStats() {
+      try {
+        const statsRes = await fetch("/api/document-stats");
+        const statsJson = (await statsRes.json()) as DocumentStats | { error?: string };
+        if (statsRes.ok && active) {
+          setDocumentStats(statsJson as DocumentStats);
+        }
+      } catch (statsError) {
+        console.error(statsError);
       }
     }
 
-    void load();
+    void loadStats();
     return () => {
       active = false;
     };
   }, []);
 
-  const filteredItems = useMemo(() => {
-    const q = nameQuery.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((row) => searchableTitle(row).includes(q));
-  }, [items, nameQuery]);
+  const total = meta?.total ?? 0;
+  const totalPages = meta?.totalPages ?? 1;
+  const currentPage = meta?.page ?? page;
+  const rangeStart = total === 0 ? 0 : (meta?.offset ?? 0) + 1;
+  const rangeEnd = total === 0 ? 0 : Math.min((meta?.offset ?? 0) + items.length, total);
 
-  const heading = useMemo(() => {
-    if (loading) return "Loading granths...";
-    if (error) return "Could not load granths";
-    return `Granth Library (${filteredItems.length}${filteredItems.length === items.length ? "" : ` of ${items.length}`})`;
-  }, [error, filteredItems.length, items.length, loading]);
+  const pagination = useMemo(
+    () => pageButtons(currentPage, totalPages),
+    [currentPage, totalPages]
+  );
+
+  function goToPage(targetPage: number) {
+    const nextPage = Math.max(1, Math.min(totalPages, targetPage));
+    if (nextPage !== page) setPage(nextPage);
+  }
+
+  function onQueryChange(value: string) {
+    setNameQuery(value);
+    setPage(1);
+  }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background:
-          "radial-gradient(circle at 10% 0%, #f9efdf 0%, #f8f4ea 36%, #eef1e6 100%)",
-        color: "#1f2120",
-        padding: "24px 18px 42px",
-        fontFamily: '"Noto Sans Gujarati","Noto Serif Devanagari","Segoe UI",sans-serif',
-      }}
-    >
-      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-        <header style={{ marginBottom: 22 }}>
-          <h1 style={{ margin: 0, fontSize: 30, letterSpacing: "0.01em" }}>{heading}</h1>
-          <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap" }}>
-            <Link href="/search">Search inside pages</Link>
-            <Link href="/ocrsearch">Search OCR XLSX</Link>
-            <Link href="/granth-extractor">Granth page extractor</Link>
-            <Link href="/scannable-documents">Scannable document list</Link>
-            {documentStats ? (
-              <span style={{ fontWeight: 700 }}>
-                Scannable documents: {documentStats.total_documents} (processed: {documentStats.processed_documents})
-              </span>
-            ) : null}
-            {!coverColumnAvailable ? (
-              <span style={{ color: "#a65400", fontWeight: 600 }}>
-                Cover columns missing in DB; run cover migration before storing covers.
-              </span>
-            ) : null}
+    <main className="libraryShell">
+      <div className="libraryFrame">
+        <header className="libraryHeader">
+          <div className="libraryHeaderText">
+            <h1 className="libraryTitle">Granth Library</h1>
+            <div className="libraryStatusLine">
+              {error ? "Could not load granths" : loading && items.length === 0 ? "Loading granths..." : `${rangeStart}-${rangeEnd} of ${total}`}
+              {documentStats ? (
+                <span className="libraryStats">
+                  Scannable {documentStats.processed_documents}/{documentStats.total_documents}
+                </span>
+              ) : null}
+            </div>
           </div>
+          <nav className="libraryNav" aria-label="Library tools">
+            <Link href="/search">Search pages</Link>
+            <Link href="/ocrsearch">OCR search</Link>
+            <Link href="/granth-extractor">Extractor</Link>
+            <Link href="/scannable-documents">Documents</Link>
+          </nav>
         </header>
 
-        {error ? <p style={{ color: "#9e1a1a" }}>{error}</p> : null}
-        {loading ? <p>Fetching records...</p> : null}
+        <section className="libraryToolbar" aria-label="Library search and pagination">
+          <div className="librarySearchBox">
+            <input
+              value={nameQuery}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Search granth name"
+              aria-label="Search granth name"
+              className="librarySearchInput"
+            />
+            {nameQuery ? (
+              <button
+                type="button"
+                className="libraryClearButton"
+                onClick={() => onQueryChange("")}
+                aria-label="Clear search"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
 
-        {!loading && !error ? (
-          <>
-            <div style={{ margin: "0 0 18px" }}>
-              <input
-                value={nameQuery}
-                onChange={(event) => setNameQuery(event.target.value)}
-                placeholder="Search granth name"
-                aria-label="Search granth name"
-                style={{
-                  width: "100%",
-                  maxWidth: 420,
-                  padding: "10px 12px",
-                  border: "1px solid #c9c5b8",
-                  borderRadius: 8,
-                  fontSize: 15,
-                  background: "#fffefb",
-                  color: "#1f2120",
-                }}
-              />
-            </div>
-
-            <section
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
-                gap: 16,
-              }}
+          <div className="libraryPager" aria-label="Book pages">
+            <button
+              type="button"
+              onClick={() => goToPage(currentPage - 1)}
+              disabled={loading || currentPage <= 1}
+              className="libraryPageButton"
             >
-            {filteredItems.map((row) => {
-              const showCover = Boolean(row.cover_image_url) && !brokenCoverIds[row.id];
-              const title = displayTitle(row);
-              const sizeLabel = toMB(row.file_size);
-
-              return (
-                <article
-                  key={row.id}
-                  style={{
-                    background: "#fffefb",
-                    borderRadius: 14,
-                    overflow: "hidden",
-                    border: "1px solid #dbd8ce",
-                    boxShadow: "0 6px 18px rgba(58, 56, 46, 0.08)",
-                  }}
+              Previous
+            </button>
+            <div className="libraryPageNumbers">
+              {pagination.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => goToPage(pageNumber)}
+                  disabled={loading && currentPage === pageNumber}
+                  className={`libraryPageButton libraryNumberButton${
+                    currentPage === pageNumber ? " isActive" : ""
+                  }`}
                 >
-                  <div
-                    style={{
-                      aspectRatio: "3 / 4",
-                      background: "linear-gradient(145deg, #e9e3d6, #f9f7f1)",
-                      display: "grid",
-                      placeItems: "center",
-                    }}
-                  >
-                    {showCover ? (
-                      <img
-                        src={row.cover_image_url ?? ""}
-                        alt={`${title} cover`}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        loading="lazy"
-                        onError={() => setBrokenCoverIds((prev) => ({ ...prev, [row.id]: true }))}
-                      />
-                    ) : (
-                      <div style={{ padding: 12, textAlign: "center", fontSize: 13, color: "#4c4a44" }}>
-                        No cover yet
-                      </div>
-                    )}
-                  </div>
+                  {pageNumber}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={loading || currentPage >= totalPages}
+              className="libraryPageButton"
+            >
+              Next
+            </button>
+          </div>
+        </section>
 
-                  <div style={{ padding: "12px 12px 14px" }}>
-                    <div
-                      title={title}
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 700,
-                        lineHeight: 1.35,
-                        maxHeight: 56,
-                        overflow: "hidden",
-                      }}
-                    >
-                      {title}
-                    </div>
-                    <div style={{ marginTop: 8, fontSize: 12, color: "#4d4f52" }}>
-                      <div>{row.collection ?? "-"}</div>
-                      <div>{row.subcollection ?? "-"}</div>
-                      <div>{sizeLabel ?? "-"}</div>
-                    </div>
-                    {row.ufs_url ? (
-                      <a
-                        href={row.ufs_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ marginTop: 10, display: "inline-block", fontSize: 12 }}
-                      >
-                        Open PDF
-                      </a>
-                    ) : null}
+        {error ? <div className="libraryError">{error}</div> : null}
+
+        <section className="libraryGrid" aria-busy={loading}>
+          {!error && items.length === 0 && !loading ? (
+            <div className="libraryEmpty">No granths found.</div>
+          ) : null}
+
+          {items.map((row) => {
+            const showCover = Boolean(row.cover_image_url) && !brokenCoverIds[row.id];
+            const title = displayTitle(row);
+            const sizeLabel = toMB(row.file_size);
+
+            return (
+              <article key={row.id} className="libraryCard">
+                <div className="libraryCover">
+                  {showCover ? (
+                    <img
+                      src={row.cover_image_url ?? ""}
+                      alt={`${title} cover`}
+                      className="libraryCoverImage"
+                      loading="lazy"
+                      onError={() => setBrokenCoverIds((prev) => ({ ...prev, [row.id]: true }))}
+                    />
+                  ) : (
+                    <div className="libraryCoverFallback">No cover</div>
+                  )}
+                </div>
+
+                <div className="libraryCardBody">
+                  <div title={title} className="libraryCardTitle">
+                    {title || `Granth ${row.id}`}
                   </div>
-                </article>
-              );
-            })}
-            </section>
-          </>
-        ) : null}
+                  <div className="libraryCardMeta">
+                    <span>{row.collection ?? "-"}</span>
+                    <span>{row.subcollection ?? "-"}</span>
+                    <span>{sizeLabel ?? "-"}</span>
+                  </div>
+                  {row.ufs_url ? (
+                    <a href={row.ufs_url} target="_blank" rel="noreferrer" className="libraryPdfLink">
+                      Open PDF
+                    </a>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </section>
+
+        <footer className="libraryFooter">
+          <span>Page {currentPage} of {totalPages}</span>
+          {!coverColumnAvailable ? (
+            <span className="libraryWarning">Cover columns missing in DB.</span>
+          ) : null}
+        </footer>
       </div>
     </main>
   );

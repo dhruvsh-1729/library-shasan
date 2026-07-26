@@ -34,10 +34,402 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+}
+
+html,
+body,
+#__next {
+  min-height: 100%;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.libraryShell {
+  height: 100dvh;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f7f8fb 0%, #eef5f1 55%, #f8f5ee 100%);
+  color: #17211f;
+  padding: 12px;
+  font-family: "Noto Sans Gujarati", "Noto Serif Devanagari", "Segoe UI", sans-serif;
+}
+
+.libraryFrame {
+  position: relative;
+  width: 100%;
+  max-width: 1180px;
+  height: 100%;
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 0;
+}
+
+.libraryHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.libraryHeaderText {
+  min-width: 0;
+}
+
+.libraryTitle {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.libraryStatusLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: #465451;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.libraryStats {
+  color: #2d665b;
+}
+
+.libraryNav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.libraryNav a,
+.libraryPdfLink {
+  color: #155e75;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.libraryNav a:hover,
+.libraryPdfLink:hover {
+  text-decoration: underline;
+}
+
+.libraryToolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.librarySearchBox {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+}
+
+.librarySearchInput {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid #b9c6c2;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 0 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+.librarySearchInput:focus {
+  border-color: #2d665b;
+  box-shadow: 0 0 0 3px rgba(45, 102, 91, 0.14);
+}
+
+.libraryClearButton,
+.libraryPageButton {
+  min-height: 38px;
+  border: 1px solid #b9c6c2;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 0 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.libraryClearButton:disabled,
+.libraryPageButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.libraryPager,
+.libraryPageNumbers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.libraryNumberButton {
+  min-width: 38px;
+  padding: 0 8px;
+}
+
+.libraryPageButton.isActive {
+  border-color: #17211f;
+  background: #17211f;
+  color: #fff;
+}
+
+.libraryError {
+  position: absolute;
+  z-index: 3;
+  top: 76px;
+  left: 0;
+  right: 0;
+  border: 1px solid #efb4b4;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #8a1c1c;
+  padding: 8px 10px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.libraryGrid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  overflow: hidden;
+}
+
+.libraryEmpty {
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #b9c6c2;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #465451;
+  font-weight: 700;
+}
+
+.libraryCard {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  border: 1px solid #d7dfdc;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(24, 35, 32, 0.08);
+}
+
+.libraryCover {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  background: #e8eee9;
+  overflow: hidden;
+}
+
+.libraryCoverImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.libraryCoverFallback {
+  color: #52605d;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  padding: 8px;
+}
+
+.libraryCardBody {
+  min-width: 0;
+  padding: 8px 9px 9px;
+}
+
+.libraryCardTitle {
+  color: #17211f;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.libraryCardMeta {
+  margin-top: 5px;
+  display: grid;
+  gap: 1px;
+  color: #52605d;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.libraryCardMeta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libraryPdfLink {
+  display: inline-block;
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.libraryFooter {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #465451;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.libraryWarning {
+  color: #9a5b10;
+}
+
+@media (max-width: 760px) {
+  .libraryShell {
+    padding: 8px;
+  }
+
+  .libraryFrame {
+    gap: 7px;
+  }
+
+  .libraryHeader {
+    display: grid;
+    gap: 5px;
+  }
+
+  .libraryTitle {
+    font-size: 20px;
+  }
+
+  .libraryStatusLine {
+    margin-top: 2px;
+    font-size: 11px;
+  }
+
+  .libraryNav {
+    justify-content: flex-start;
+    gap: 6px;
+    font-size: 11px;
+    max-height: 28px;
+    overflow: hidden;
+  }
+
+  .libraryToolbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .librarySearchInput,
+  .libraryClearButton,
+  .libraryPageButton {
+    min-height: 36px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .libraryPager {
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .libraryPageNumbers {
+    gap: 4px;
+  }
+
+  .libraryNumberButton {
+    min-width: 34px;
+  }
+
+  .libraryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .libraryCard {
+    grid-template-columns: 46px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .libraryCover {
+    height: 100%;
+  }
+
+  .libraryCardBody {
+    padding: 6px;
+  }
+
+  .libraryCardTitle {
+    font-size: 11px;
+    line-height: 1.22;
+  }
+
+  .libraryCardMeta {
+    margin-top: 3px;
+    font-size: 10px;
+  }
+
+  .libraryPdfLink {
+    margin-top: 3px;
+    font-size: 10px;
+  }
+
+  .libraryFooter {
+    min-height: 18px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 380px), (max-height: 660px) {
+  .libraryNav {
+    display: none;
+  }
+
+  .libraryCardMeta span:nth-child(n + 2),
+  .libraryPdfLink {
+    display: none;
+  }
 }
 
 .pdfOverlayRoot .textLayer {

@@ -32,6 +32,8 @@ type DocumentStats = {
   processed_documents: number;
 };
 
+const RESULTS_PER_PAGE = 20;
+
 function escapeRegExp(input: string) {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -40,6 +42,8 @@ export default function SearchPage() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalIsExact, setTotalIsExact] = useState(true);
   const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +149,20 @@ export default function SearchPage() {
     return `${selectedNames.length} granth name(s), ${selectedCustomIds.length} PDF(s)`;
   }, [selectedCustomIds.length, selectedNames.length, selectionMode]);
 
+  const totalPages = useMemo(() => {
+    if (total <= 0) return 1;
+    return Math.max(1, Math.ceil(total / RESULTS_PER_PAGE));
+  }, [total]);
+
+  const paginationItems = useMemo(() => {
+    if (totalPages <= 1) return [] as number[];
+    const start = Math.max(1, currentPage - 2);
+    const end = Math.min(totalPages, currentPage + 2);
+    const pages: number[] = [];
+    for (let page = start; page <= end; page += 1) pages.push(page);
+    return pages;
+  }, [currentPage, totalPages]);
+
   function setMode(mode: SelectionMode) {
     setSelectionMode(mode);
     setError(null);
@@ -182,7 +200,7 @@ export default function SearchPage() {
 
   function onSearchInputKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !loading && q.trim().length >= 2) {
-      void run();
+      void run(1);
     }
   }
 
@@ -214,7 +232,7 @@ export default function SearchPage() {
     });
   }
 
-  async function run() {
+  async function run(page: number) {
     setError(null);
     if (selectionMode !== "all" && selectedCustomIds.length === 0) {
       setError("Select at least one granth name before searching.");
@@ -225,18 +243,27 @@ export default function SearchPage() {
     try {
       const params = new URLSearchParams();
       params.set("q", q);
-      params.set("limit", "50");
+      params.set("limit", String(RESULTS_PER_PAGE));
+      params.set("page", String(page));
       if (selectionMode !== "all" && selectedCustomIds.length > 0) {
         params.set("granths", selectedCustomIds.join(","));
       }
 
       const res = await fetch(`/api/search?${params.toString()}`);
-      const json = (await res.json()) as { results?: SearchResult[]; total?: number; error?: string };
+      const json = (await res.json()) as {
+        results?: SearchResult[];
+        total?: number;
+        page?: number;
+        total_is_exact?: boolean;
+        error?: string;
+      };
       if (!res.ok) {
         throw new Error(json.error || `Search failed (${res.status})`);
       }
       setResults(json.results ?? []);
       setTotal(Number(json.total ?? (json.results?.length ?? 0)));
+      setCurrentPage(Number(json.page ?? page));
+      setTotalIsExact(json.total_is_exact !== false);
       setHasSearched(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -299,7 +326,7 @@ export default function SearchPage() {
                 }}
               />
               <button
-                onClick={run}
+                onClick={() => void run(1)}
                 disabled={loading || q.trim().length < 2}
                 style={{
                   padding: "12px 16px",
@@ -463,17 +490,72 @@ export default function SearchPage() {
         <section style={{ marginTop: 18 }}>
           {hasSearched ? (
             <div style={{ marginBottom: 12, fontWeight: 700, fontSize: 16 }}>
-              Showing {results.length} result(s)
-              {total > results.length ? ` of ${total}` : ""}.
+              Showing page {currentPage} of {totalPages} ({results.length} result(s) on this page, total{" "}
+              {totalIsExact ? total : `at least ${total}`}).
+            </div>
+          ) : null}
+
+          {hasSearched && totalPages > 1 ? (
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={() => void run(Math.max(1, currentPage - 1))}
+                disabled={loading || currentPage <= 1}
+                style={{
+                  padding: "9px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #c7cfd9",
+                  background: "#fff",
+                  fontSize: 15,
+                  cursor: "pointer",
+                }}
+              >
+                Previous
+              </button>
+              {paginationItems.map((page) => (
+                <button
+                  key={page}
+                  type="button"
+                  onClick={() => void run(page)}
+                  disabled={loading && currentPage === page}
+                  style={{
+                    minWidth: 42,
+                    padding: "9px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #c7cfd9",
+                    background: currentPage === page ? "#1f2120" : "#fff",
+                    color: currentPage === page ? "#fff" : "#222",
+                    fontSize: 15,
+                    cursor: "pointer",
+                  }}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => void run(Math.min(totalPages, currentPage + 1))}
+                disabled={loading || currentPage >= totalPages}
+                style={{
+                  padding: "9px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #c7cfd9",
+                  background: "#fff",
+                  fontSize: 15,
+                  cursor: "pointer",
+                }}
+              >
+                Next
+              </button>
             </div>
           ) : null}
 
           {results.length > 0 ? (
             <div
               style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: 10,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: 10,
               }}
             >
               {results.map((r, i) => {
