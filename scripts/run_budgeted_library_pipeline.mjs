@@ -75,6 +75,7 @@ OCR options:
   --resumeMinScore N       Reuse existing page text only above this quality score (default: 0.68)
   --noPageCheckpoints      Do not save per-page OCR checkpoints during processing
   --supabasePageCheckpoints Also save per-page OCR checkpoints to Supabase. Turso checkpoints stay enabled by default.
+  --supabasePageSync       Also write final OCR page text to Supabase document_pages. Disabled by default.
 
 Safety/resume options:
   --stateDir PATH          Budget/resume state directory (default: ${DEFAULT_STATE_DIR})
@@ -166,6 +167,7 @@ function parseArgs(argv) {
     ),
     pageCheckpoints: process.env.LIBRARY_PIPELINE_PAGE_CHECKPOINTS !== "0",
     supabasePageCheckpoints: process.env.LIBRARY_PIPELINE_SUPABASE_PAGE_CHECKPOINTS === "1",
+    supabasePageSync: process.env.LIBRARY_PIPELINE_SUPABASE_PAGE_SYNC === "1",
     stateDir: DEFAULT_STATE_DIR,
     outputDir: DEFAULT_OUTPUT_DIR,
     tmpDir: DEFAULT_TMP_DIR,
@@ -220,6 +222,10 @@ function parseArgs(argv) {
     }
     if (arg === "--supabasePageCheckpoints") {
       args.supabasePageCheckpoints = true;
+      continue;
+    }
+    if (arg === "--supabasePageSync") {
+      args.supabasePageSync = true;
       continue;
     }
     if (arg === "--noRemoteReads") {
@@ -1951,7 +1957,9 @@ async function processTextOne(catalog, args, clients, remoteState, budget, state
       pages: pageRows.map((row) => ({ pageNumber: row.pageNumber, content: row.text || "" })),
     });
 
-    await upsertSupabasePages(clients.supabase, meta.pdfCustomId, meta, pageRows);
+    if (args.supabasePageSync) {
+      await upsertSupabasePages(clients.supabase, meta.pdfCustomId, meta, pageRows);
+    }
     await upsertByMatch(clients.supabase, DOCS_TABLE, "custom_id", meta.pdfCustomId, {
       original_relative_path: meta.relPath,
       custom_id: meta.pdfCustomId,

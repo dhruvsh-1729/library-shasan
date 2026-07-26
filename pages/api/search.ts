@@ -1,16 +1,23 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getTursoClient } from "@/lib/turso";
 
-type SearchRow = {
-  custom_id: string;
+type TursoSearchRow = {
+  granth_key: string;
+  source_rel_path: string;
   pdf_name: string;
-  pdf_url: string;
   page_number: number;
-  snippet: string;
-  score?: number;
-  csv_url?: string | null;
-  total_count?: number;
+  content: string;
+  rank: number;
+};
+
+type DocumentMeta = {
+  custom_id: string;
+  original_relative_path: string | null;
+  pdf_name: string | null;
+  pdf_url: string | null;
+  csv_url: string | null;
 };
 
 function parseLimit(raw: unknown) {
@@ -33,60 +40,54 @@ function parseGranthIds(raw: string | string[] | undefined) {
     .filter(Boolean);
 }
 
-function isMissingPaginatedSearchRpc(message: string) {
-  return /search_pages_paginated|schema cache|function .* does not exist|could not find the function/i.test(message);
+function escapeLikePattern(input: string) {
+  return input.replace(/[\\%_]/g, "\\$&");
 }
 
-async function fallbackSearch(
-  q: string,
-  limit: number,
-  offset: number,
-  selectedGranths: string[]
-) {
-  const supabase = getSupabaseAdmin();
-  const maxRows = selectedGranths.length
-    ? Math.min(Math.max((offset + limit) * 20, 500), 4000)
-    : Math.min(Math.max(offset + limit, limit), 1000);
+function toInt(value: unknown, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.floor(n);
+}
 
-  const { data, error } = await supabase.rpc("search_pages", { q, max_rows: maxRows });
+function toStr(value: unknown, fallback = "") {
+  if (value == null) return fallback;
+  return String(value);
+}
+
+function buildSnippet(content: string, q: string) {
+  const text = String(content ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf(q.toLowerCase());
+  if (idx < 0) return text.slice(0, 520);
+
+  const start = Math.max(0, idx - 220);
+  const end = Math.min(text.length, idx + q.length + 300);
+  return `${start > 0 ? "... " : ""}${text.slice(start, end)}${end < text.length ? " ..." : ""}`;
+}
+
+async function fetchDocumentMetaByCustomIds(customIds: string[]) {
+  if (customIds.length === 0) return [] as DocumentMeta[];
+  const { data, error } = await getSupabaseAdmin()
+    .from("documents")
+    .select("custom_id,original_relative_path,pdf_name,pdf_url,csv_url")
+    .in("custom_id", customIds);
+
   if (error) throw new Error(error.message);
+  return (data ?? []) as DocumentMeta[];
+}
 
-  const baseResults = ((data ?? []) as SearchRow[]).map((r) => ({
-    ...r,
-    open_pdf_url: `${r.pdf_url}#page=${encodeURIComponent(String(r.page_number))}`,
-  }));
+async function fetchDocumentMetaByRelPaths(relPaths: string[]) {
+  if (relPaths.length === 0) return [] as DocumentMeta[];
+  const { data, error } = await getSupabaseAdmin()
+    .from("documents")
+    .select("custom_id,original_relative_path,pdf_name,pdf_url,csv_url")
+    .in("original_relative_path", relPaths);
 
-  const granthSet = new Set(selectedGranths);
-  const filtered = selectedGranths.length
-    ? baseResults.filter((r) => granthSet.has(String(r.custom_id ?? "")))
-    : baseResults;
-
-  const results = filtered.slice(offset, offset + limit);
-  const customIds = Array.from(
-    new Set(results.map((r) => String(r.custom_id ?? "").trim()).filter(Boolean))
-  );
-
-  let csvByCustomId = new Map<string, string | null>();
-  if (customIds.length > 0) {
-    const { data: docsData, error: docsErr } = await supabase
-      .from("documents")
-      .select("custom_id,csv_url")
-      .in("custom_id", customIds);
-
-    if (docsErr) throw new Error(docsErr.message);
-    csvByCustomId = new Map(
-      (docsData ?? []).map((row) => [String(row.custom_id ?? ""), row.csv_url ?? null])
-    );
-  }
-
-  return {
-    results: results.map((r) => ({
-      ...r,
-      csv_url: csvByCustomId.get(String(r.custom_id ?? "")) ?? null,
-    })),
-    total: filtered.length,
-    totalIsExact: false,
-  };
+  if (error) throw new Error(error.message);
+  return (data ?? []) as DocumentMeta[];
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -114,36 +115,96 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const cacheKey = buildCacheKey(req, "pdf-search");
+    const cacheKey = buildCacheKey(req, "pdf-search-turso");
     const { value: payload, status } = await getCachedJson(cacheKey, 60, async () => {
-      const supabase = getSupabaseAdmin();
-      const { data, error } = await supabase.rpc("search_pages_paginated", {
-        p_q: q,
-        p_limit: limit,
-        p_offset: offset,
-        p_granths: selectedGranths.length ? selectedGranths : null,
-      });
+      const selectedDocs = await fetchDocumentMetaByCustomIds(selectedGranths);
+      const selectedRelPaths = selectedDocs
+        .map((row) => String(row.original_relative_path ?? "").trim())
+        .filter(Boolean);
 
-      let results: Array<SearchRow & { open_pdf_url: string }> = [];
-      let total = 0;
-      let totalIsExact = true;
-
-      if (error && isMissingPaginatedSearchRpc(error.message)) {
-        const fallback = await fallbackSearch(q, limit, offset, selectedGranths);
-        results = fallback.results;
-        total = fallback.total;
-        totalIsExact = fallback.totalIsExact;
-      } else if (error) {
-        throw new Error(error.message);
-      } else {
-        results = ((data ?? []) as SearchRow[]).map((r) => ({
-          ...r,
-          csv_url: r.csv_url ?? null,
-          open_pdf_url: `${r.pdf_url}#page=${encodeURIComponent(String(r.page_number))}`,
-        }));
-        total = Number(((data ?? []) as SearchRow[])[0]?.total_count ?? 0);
+      if (selectedGranths.length > 0 && selectedRelPaths.length === 0) {
+        return {
+          results: [],
+          total: 0,
+          selected_granth_count: selectedGranths.length,
+          page,
+          per_page: limit,
+          total_pages: 1,
+          total_is_exact: true,
+          search_backend: "turso",
+        };
       }
 
+      const client = getTursoClient();
+      const relFilterSql = selectedRelPaths.length
+        ? ` AND g.source_rel_path IN (${selectedRelPaths.map(() => "?").join(",")})`
+        : "";
+      const likePattern = `%${escapeLikePattern(q)}%`;
+      const baseArgs = [likePattern, ...selectedRelPaths];
+
+      const countResult = await client.execute({
+        sql: `SELECT COUNT(*) AS total
+              FROM ocr_pages p
+              JOIN ocr_granths g ON g.granth_key = p.granth_key
+              WHERE p.content LIKE ? ESCAPE '\\'${relFilterSql}`,
+        args: baseArgs,
+      });
+
+      const listResult = await client.execute({
+        sql: `SELECT
+                p.granth_key,
+                g.source_rel_path,
+                g.granth_name AS pdf_name,
+                p.page_number,
+                p.content,
+                0 AS rank
+              FROM ocr_pages p
+              JOIN ocr_granths g ON g.granth_key = p.granth_key
+              WHERE p.content LIKE ? ESCAPE '\\'${relFilterSql}
+              ORDER BY INSTR(LOWER(p.content), LOWER(?)) ASC, g.source_rel_path ASC, p.page_number ASC
+              LIMIT ? OFFSET ?`,
+        args: [...baseArgs, q, limit, offset],
+      });
+
+      const rows = listResult.rows.map((row) => ({
+        granth_key: toStr(row.granth_key),
+        source_rel_path: toStr(row.source_rel_path),
+        pdf_name: toStr(row.pdf_name),
+        page_number: toInt(row.page_number),
+        content: toStr(row.content),
+        rank: Number(row.rank ?? 0),
+      })) as TursoSearchRow[];
+
+      const resultRelPaths = Array.from(new Set(rows.map((row) => row.source_rel_path).filter(Boolean)));
+      const resultDocs = await fetchDocumentMetaByRelPaths(resultRelPaths);
+      const selectedByRelPath = new Map(
+        selectedDocs
+          .filter((row) => row.original_relative_path)
+          .map((row) => [String(row.original_relative_path), row])
+      );
+      const resultByRelPath = new Map(
+        resultDocs
+          .filter((row) => row.original_relative_path)
+          .map((row) => [String(row.original_relative_path), row])
+      );
+
+      const results = rows.map((row) => {
+        const meta = resultByRelPath.get(row.source_rel_path) ?? selectedByRelPath.get(row.source_rel_path);
+        const customId = meta?.custom_id ?? row.granth_key;
+        const pdfUrl = meta?.pdf_url ?? "";
+        return {
+          custom_id: customId,
+          pdf_name: meta?.pdf_name ?? row.pdf_name,
+          pdf_url: pdfUrl,
+          page_number: row.page_number,
+          snippet: buildSnippet(row.content, q),
+          score: row.rank,
+          csv_url: meta?.csv_url ?? null,
+          open_pdf_url: pdfUrl ? `${pdfUrl}#page=${encodeURIComponent(String(row.page_number))}` : "",
+        };
+      });
+
+      const total = toInt(countResult.rows[0]?.total);
       return {
         results,
         total,
@@ -151,7 +212,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         page,
         per_page: limit,
         total_pages: Math.max(1, Math.ceil(total / limit)),
-        total_is_exact: totalIsExact,
+        total_is_exact: true,
+        search_backend: "turso",
       };
     });
 
