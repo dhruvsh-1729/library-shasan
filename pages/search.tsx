@@ -5,8 +5,10 @@ import {
   getOCRSearchModeLabel,
   parseOCRSearchMode,
 } from "@/lib/ocr-search";
+import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -47,7 +49,12 @@ type DocumentStats = {
 
 const RESULTS_PER_PAGE = 20;
 
+function readSingleQuery(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value ?? "";
+}
+
 export default function SearchPage() {
+  const router = useRouter();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
@@ -65,6 +72,7 @@ export default function SearchPage() {
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
+  const [routePrefillApplied, setRoutePrefillApplied] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -151,6 +159,25 @@ export default function SearchPage() {
     return `${selectedNames.length} granth name(s), ${selectedCustomIds.length} PDF(s)`;
   }, [selectedCustomIds.length, selectedNames.length, selectionMode]);
 
+  useEffect(() => {
+    if (!router.isReady || routePrefillApplied || groups.length === 0) return;
+
+    const customId = readSingleQuery(router.query.customId).trim();
+    const initialQuery = readSingleQuery(router.query.q).trim();
+    if (initialQuery) setQ(initialQuery);
+
+    if (customId) {
+      const match = groups.find((group) => group.customIds.includes(customId));
+      if (match) {
+        setSelectionMode("single");
+        setSelectedNames([match.name]);
+        setNameFilter(match.name);
+      }
+    }
+
+    setRoutePrefillApplied(true);
+  }, [groups, routePrefillApplied, router.isReady, router.query.customId, router.query.q]);
+
   const totalPages = useMemo(() => {
     if (total <= 0) return 1;
     return Math.max(1, Math.ceil(total / RESULTS_PER_PAGE));
@@ -159,15 +186,6 @@ export default function SearchPage() {
   const remainingDocuments =
     documentStats?.remaining_documents ??
     (documentStats ? Math.max(0, documentStats.total_documents - searchableDocuments) : 0);
-
-  const paginationItems = useMemo(() => {
-    if (totalPages <= 1) return [] as number[];
-    const start = Math.max(1, currentPage - 2);
-    const end = Math.min(totalPages, currentPage + 2);
-    const pages: number[] = [];
-    for (let page = start; page <= end; page += 1) pages.push(page);
-    return pages;
-  }, [currentPage, totalPages]);
 
   function setMode(mode: SelectionMode) {
     setSelectionMode(mode);
@@ -537,58 +555,15 @@ export default function SearchPage() {
             </div>
           ) : null}
 
-          {hasSearched && totalPages > 1 ? (
-            <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-              <button
-                type="button"
-                onClick={() => void run(Math.max(1, currentPage - 1))}
-                disabled={loading || currentPage <= 1}
-                style={{
-                  padding: "9px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #c7cfd9",
-                  background: "#fff",
-                  fontSize: 15,
-                  cursor: "pointer",
-                }}
-              >
-                Previous
-              </button>
-              {paginationItems.map((page) => (
-                <button
-                  key={page}
-                  type="button"
-                  onClick={() => void run(page)}
-                  disabled={loading && currentPage === page}
-                  style={{
-                    minWidth: 42,
-                    padding: "9px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #c7cfd9",
-                    background: currentPage === page ? "#1f2120" : "#fff",
-                    color: currentPage === page ? "#fff" : "#222",
-                    fontSize: 15,
-                    cursor: "pointer",
-                  }}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => void run(Math.min(totalPages, currentPage + 1))}
-                disabled={loading || currentPage >= totalPages}
-                style={{
-                  padding: "9px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #c7cfd9",
-                  background: "#fff",
-                  fontSize: 15,
-                  cursor: "pointer",
-                }}
-              >
-                Next
-              </button>
+          {hasSearched ? (
+            <div style={{ marginBottom: 14 }}>
+              <PageJumpPager
+                currentPage={currentPage}
+                totalPages={totalPages}
+                loading={loading}
+                ariaLabel="Search result pages"
+                onPageChange={(page) => void run(page)}
+              />
             </div>
           ) : null}
 

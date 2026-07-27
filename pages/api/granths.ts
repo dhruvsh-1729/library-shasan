@@ -16,6 +16,8 @@ type GranthItem = {
   cover_image_key: string | null;
   document_status: string | null;
   scan_state: DocumentScanState;
+  mapping_book_id: number | null;
+  mapping_book_code: string | null;
 };
 
 type DocumentScanRow = {
@@ -44,6 +46,10 @@ function escapeIlikeTerm(value: string) {
 
 function isMissingCoverColumns(message: string) {
   return /cover_image_url|cover_image_key/i.test(message);
+}
+
+function isMissingMappingTables(message: string) {
+  return /granth_library_files|schema cache/i.test(message);
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -136,10 +142,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
+      const mappingByFileId = new Map<number, { book_id: number | null; book_code: string | null }>();
+      const fileIds = (data ?? [])
+        .map((row) => Number(row.id ?? 0))
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+      if (fileIds.length > 0) {
+        const { data: mappingRows, error: mappingError } = await supabase
+          .from("granth_library_files")
+          .select("granth_ocr_file_id,book_id,book_code")
+          .in("granth_ocr_file_id", fileIds)
+          .order("book_code", { ascending: true });
+
+        if (mappingError && !isMissingMappingTables(mappingError.message)) {
+          throw new Error(mappingError.message);
+        }
+
+        for (const row of (mappingRows ?? []) as Array<{
+          granth_ocr_file_id: number | null;
+          book_id: number | null;
+          book_code: string | null;
+        }>) {
+          const fileId = Number(row.granth_ocr_file_id ?? 0);
+          if (fileId > 0 && !mappingByFileId.has(fileId)) {
+            mappingByFileId.set(fileId, {
+              book_id: row.book_id == null ? null : Number(row.book_id),
+              book_code: row.book_code ?? null,
+            });
+          }
+        }
+      }
+
       const items: GranthItem[] = (data ?? []).map((row) => {
         const customId = (row.custom_id as string | null) ?? null;
         const scanRow = customId ? scanByCustomId.get(customId) : undefined;
         const documentStatus = scanRow?.status ?? null;
+        const mapping = mappingByFileId.get(Number(row.id ?? 0));
 
         return {
           id: Number(row.id ?? 0),
@@ -154,6 +192,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           cover_image_key: coverColumnAvailable ? ((row.cover_image_key as string | null) ?? null) : null,
           document_status: documentStatus,
           scan_state: getDocumentScanState(documentStatus),
+          mapping_book_id: mapping?.book_id ?? null,
+          mapping_book_code: mapping?.book_code ?? null,
         };
       });
 

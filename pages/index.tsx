@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import { getDocumentScanLabel, getDocumentStatusLabel, type DocumentScanState } from "@/lib/document-scan-state";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type GranthItem = {
   id: number;
@@ -16,6 +17,8 @@ type GranthItem = {
   cover_image_key: string | null;
   document_status: string | null;
   scan_state: DocumentScanState;
+  mapping_book_id: number | null;
+  mapping_book_code: string | null;
 };
 
 type ApiResponse = {
@@ -70,14 +73,6 @@ function displayTitle(row: GranthItem) {
     .replace(/_/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function pageButtons(currentPage: number, totalPages: number) {
-  const start = Math.max(1, currentPage - 2);
-  const end = Math.min(totalPages, currentPage + 2);
-  const pages: number[] = [];
-  for (let page = start; page <= end; page += 1) pages.push(page);
-  return pages;
 }
 
 export default function HomePage() {
@@ -171,11 +166,6 @@ export default function HomePage() {
     documentStats?.remaining_documents ??
     (documentStats ? Math.max(0, documentStats.total_documents - searchableDocuments) : 0);
 
-  const pagination = useMemo(
-    () => pageButtons(currentPage, totalPages),
-    [currentPage, totalPages]
-  );
-
   function goToPage(targetPage: number) {
     const nextPage = Math.max(1, Math.min(totalPages, targetPage));
     if (nextPage !== page) setPage(nextPage);
@@ -230,39 +220,13 @@ export default function HomePage() {
             ) : null}
           </div>
 
-          <div className="libraryPager" aria-label="Book pages">
-            <button
-              type="button"
-              onClick={() => goToPage(currentPage - 1)}
-              disabled={loading || currentPage <= 1}
-              className="libraryPageButton"
-            >
-              Previous
-            </button>
-            <div className="libraryPageNumbers">
-              {pagination.map((pageNumber) => (
-                <button
-                  key={pageNumber}
-                  type="button"
-                  onClick={() => goToPage(pageNumber)}
-                  disabled={loading && currentPage === pageNumber}
-                  className={`libraryPageButton libraryNumberButton${
-                    currentPage === pageNumber ? " isActive" : ""
-                  }`}
-                >
-                  {pageNumber}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => goToPage(currentPage + 1)}
-              disabled={loading || currentPage >= totalPages}
-              className="libraryPageButton"
-            >
-              Next
-            </button>
-          </div>
+          <PageJumpPager
+            currentPage={currentPage}
+            totalPages={totalPages}
+            loading={loading}
+            ariaLabel="Book pages"
+            onPageChange={goToPage}
+          />
         </section>
 
         {error ? <div className="libraryError">{error}</div> : null}
@@ -276,6 +240,14 @@ export default function HomePage() {
             const showCover = Boolean(row.cover_image_url) && !brokenCoverIds[row.id];
             const title = displayTitle(row);
             const sizeLabel = toMB(row.file_size);
+            const searchHref = row.custom_id
+              ? `/search?customId=${encodeURIComponent(row.custom_id)}`
+              : "";
+            const extractorHref = row.mapping_book_id
+              ? `/granth-extractor?bookId=${encodeURIComponent(String(row.mapping_book_id))}${
+                  row.mapping_book_code ? `&bookCode=${encodeURIComponent(row.mapping_book_code)}` : ""
+                }`
+              : "";
 
             return (
               <article key={row.id} className="libraryCard">
@@ -310,15 +282,27 @@ export default function HomePage() {
                     <span>{row.subcollection ?? "-"}</span>
                     <span>{sizeLabel ?? "-"}</span>
                   </div>
-                  {row.ufs_url ? (
-                    <button
-                      type="button"
-                      className="libraryPdfLink inlinePdfButton"
-                      onClick={() => setPdfTarget({ pdfUrl: row.ufs_url ?? "", title, page: 1 })}
-                    >
-                      Open PDF
-                    </button>
-                  ) : null}
+                  <div className="libraryCardActions">
+                    {row.ufs_url ? (
+                      <button
+                        type="button"
+                        className="libraryPdfLink inlinePdfButton"
+                        onClick={() => setPdfTarget({ pdfUrl: row.ufs_url ?? "", title, page: 1 })}
+                      >
+                        Open PDF
+                      </button>
+                    ) : null}
+                    {searchHref ? (
+                      <Link href={searchHref}>Perform word search</Link>
+                    ) : (
+                      <span>Perform word search</span>
+                    )}
+                    {extractorHref ? (
+                      <Link href={extractorHref}>Print Gatha/Page</Link>
+                    ) : (
+                      <span title="No gatha/page mapping found for this PDF">Print Gatha/Page</span>
+                    )}
+                  </div>
                 </div>
               </article>
             );

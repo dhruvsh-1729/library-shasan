@@ -84,6 +84,53 @@ button {
   line-height: 1.2;
 }
 
+.pageJumpPager {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pageJumpPager button,
+.pageJumpInputGroup input {
+  min-height: 38px;
+  border: 1px solid #b9c6c2;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pageJumpPager button {
+  cursor: pointer;
+}
+
+.pageJumpPager button:disabled,
+.pageJumpInputGroup input:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.pageJumpInputGroup {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #465451;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.pageJumpInputGroup input {
+  width: 78px;
+  padding: 0 8px;
+}
+
 .libraryShell {
   height: 100dvh;
   overflow: hidden;
@@ -148,6 +195,7 @@ button {
 
 .libraryNav a,
 .libraryPdfLink,
+.libraryCardActions a,
 .inlinePdfButton {
   color: #155e75;
   font-weight: 700;
@@ -164,6 +212,7 @@ button {
 
 .libraryNav a:hover,
 .libraryPdfLink:hover,
+.libraryCardActions a:hover,
 .inlinePdfButton:hover {
   text-decoration: underline;
 }
@@ -227,24 +276,6 @@ button {
 .libraryPageButton:disabled {
   cursor: default;
   opacity: 0.45;
-}
-
-.libraryPager,
-.libraryPageNumbers {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.libraryNumberButton {
-  min-width: 38px;
-  padding: 0 8px;
-}
-
-.libraryPageButton.isActive {
-  border-color: #17211f;
-  background: #17211f;
-  color: #fff;
 }
 
 .libraryError {
@@ -399,6 +430,21 @@ button {
   font-size: 11px;
 }
 
+.libraryCardActions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.libraryCardActions span {
+  color: #7b8784;
+  font-weight: 700;
+}
+
 .libraryFooter {
   min-height: 22px;
   display: flex;
@@ -459,24 +505,22 @@ button {
 
   .librarySearchInput,
   .libraryClearButton,
-  .libraryPageButton {
+  .libraryPageButton,
+  .pageJumpPager button,
+  .pageJumpInputGroup input {
     min-height: 36px;
     height: 36px;
     border-radius: 8px;
     font-size: 12px;
   }
 
-  .libraryPager {
-    justify-content: space-between;
+  .pageJumpPager {
+    justify-content: flex-start;
     gap: 4px;
   }
 
-  .libraryPageNumbers {
-    gap: 4px;
-  }
-
-  .libraryNumberButton {
-    min-width: 34px;
+  .pageJumpInputGroup input {
+    width: 66px;
   }
 
   .libraryGrid {
@@ -519,6 +563,11 @@ button {
     font-size: 10px;
   }
 
+  .libraryCardActions {
+    font-size: 10px;
+    gap: 3px 7px;
+  }
+
   .libraryFooter {
     min-height: 18px;
     font-size: 11px;
@@ -532,7 +581,9 @@ button {
 
   .librarySearchInput,
   .libraryClearButton,
-  .libraryPageButton {
+  .libraryPageButton,
+  .pageJumpPager button,
+  .pageJumpInputGroup input {
     min-height: 32px;
     height: 32px;
     padding-inline: 8px;
@@ -596,7 +647,6 @@ button {
 
 .scanNav,
 .scanTabs,
-.scanPager,
 .scanLinks {
   display: flex;
   align-items: center;
@@ -666,8 +716,11 @@ button {
   padding-bottom: 2px;
 }
 
-.scanTab,
-.scanPager button {
+.scanTab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-height: 38px;
   border: 1px solid #b9c6c2;
   border-radius: 8px;
@@ -676,13 +729,6 @@ button {
   padding: 7px 10px;
   font-weight: 800;
   cursor: pointer;
-}
-
-.scanTab {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .scanTab strong {
@@ -782,11 +828,6 @@ button {
   font-weight: 800;
 }
 
-.scanPager button:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-
 @media (max-width: 900px) {
   .scanRow {
     grid-template-columns: minmax(0, 1fr) minmax(120px, 0.6fr);
@@ -836,8 +877,7 @@ button {
     font-size: 18px;
   }
 
-  .scanTab,
-  .scanPager button {
+  .scanTab {
     min-height: 34px;
     padding: 6px 8px;
     font-size: 12px;

@@ -3,6 +3,7 @@ import {
   getDocumentStatusLabel,
   type DocumentScanState,
 } from "@/lib/document-scan-state";
+import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -118,10 +119,22 @@ export default function ScannableDocumentsPage() {
   const totalForView = meta?.total_for_view ?? 0;
   const rangeStart = totalForView === 0 ? 0 : offset + 1;
   const rangeEnd = totalForView === 0 ? 0 : Math.min(offset + items.length, totalForView);
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+  const totalPages = Math.max(1, Math.ceil(totalForView / PAGE_SIZE));
+
+  useEffect(() => {
+    if (loading || totalForView === 0 || offset < totalForView) return;
+    setOffset((totalPages - 1) * PAGE_SIZE);
+  }, [loading, offset, totalForView, totalPages]);
 
   function changeView(nextView: ScanView) {
     setView(nextView);
     setOffset(0);
+  }
+
+  function goToPage(page: number) {
+    const nextPage = Math.max(1, Math.min(totalPages, page));
+    setOffset((nextPage - 1) * PAGE_SIZE);
   }
 
   return (
@@ -240,22 +253,13 @@ export default function ScannableDocumentsPage() {
           <span>
             Showing {rangeStart}-{rangeEnd} of {totalForView}
           </span>
-          <div className="scanPager">
-            <button
-              type="button"
-              onClick={() => setOffset((prev) => Math.max(0, prev - PAGE_SIZE))}
-              disabled={loading || offset === 0}
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
-              disabled={loading || offset + items.length >= totalForView}
-            >
-              Next
-            </button>
-          </div>
+          <PageJumpPager
+            currentPage={currentPage}
+            totalPages={totalPages}
+            loading={loading}
+            ariaLabel="Scan status pages"
+            onPageChange={goToPage}
+          />
         </footer>
       </div>
       <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />

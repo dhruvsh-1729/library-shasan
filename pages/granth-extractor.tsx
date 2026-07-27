@@ -1,6 +1,7 @@
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import type { MappingSegment } from "@/lib/granth-mapping";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 
 type BookItem = {
@@ -119,7 +120,12 @@ function rangeLabel(range: PageRangeSummary) {
   return `${range.code_label} | ${pages}${gathas}`;
 }
 
+function readSingleQuery(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value ?? "";
+}
+
 export default function GranthExtractorPage() {
+  const router = useRouter();
   const [books, setBooks] = useState<BookItem[]>([]);
   const [loadingBooks, setLoadingBooks] = useState(true);
   const [bookError, setBookError] = useState<string | null>(null);
@@ -141,6 +147,7 @@ export default function GranthExtractorPage() {
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
 
   useEffect(() => {
+    if (!router.isReady) return;
     let active = true;
     async function load() {
       setLoadingBooks(true);
@@ -151,10 +158,17 @@ export default function GranthExtractorPage() {
         if (!res.ok) throw new Error(("error" in json && json.error) || `Request failed (${res.status})`);
         if (!active) return;
         const items = (json as BooksResponse).items || [];
+        const routeBookId = Number(readSingleQuery(router.query.bookId));
+        const routeBookCode = readSingleQuery(router.query.bookCode).trim();
+        const routeBook = Number.isFinite(routeBookId)
+          ? items.find((item) => item.id === routeBookId)
+          : null;
+        const initialBook = routeBook || items[0] || null;
+
         setBooks(items);
-        if (items[0]) {
-          setBookId(items[0].id);
-          setBookCode(items[0].book_codes?.[0] || "");
+        if (initialBook) {
+          setBookId(initialBook.id);
+          setBookCode(routeBookCode || initialBook.book_codes?.[0] || "");
         }
       } catch (loadError) {
         if (active) setBookError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -166,7 +180,7 @@ export default function GranthExtractorPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [router.isReady, router.query.bookCode, router.query.bookId]);
 
   const filteredBooks = useMemo(() => {
     const q = query.trim().toLowerCase();
