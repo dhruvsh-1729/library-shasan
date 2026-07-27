@@ -114,9 +114,13 @@ function normalizeSearchText(value: string) {
   return String(value || "")
     .toLowerCase()
     .replace(/[_\-.]+/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizedFileStem(value: string | null | undefined) {
+  return normalizeSearchText(stripExtension(baseName(String(value || ""))));
 }
 
 function partNumberFromText(value: string) {
@@ -156,6 +160,11 @@ function legacySearchTokens(row: TursoSearchRow) {
 }
 
 function scorePdfFallback(row: TursoSearchRow, meta: PdfCatalogMeta) {
+  const rowSourceStem = normalizedFileStem(row.source_rel_path);
+  const metaFileStem = normalizedFileStem(meta.file_name);
+  const metaRelStem = normalizedFileStem(meta.original_rel_path);
+  if (rowSourceStem && (rowSourceStem === metaFileStem || rowSourceStem === metaRelStem)) return 100;
+
   const haystack = normalizeSearchText(`${meta.file_name || ""} ${meta.original_rel_path || ""} ${meta.custom_id || ""}`);
   const tokens = legacySearchTokens(row);
   if (tokens.length === 0) return 0;
