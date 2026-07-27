@@ -53,6 +53,17 @@ function readSingleQuery(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? "";
 }
 
+function isValidHttpUrl(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export default function SearchPage() {
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -581,6 +592,7 @@ export default function SearchPage() {
                       r.custom_id
                     )}&page=${encodeURIComponent(String(r.page_number))}`
                   : null;
+                const canOpenPdf = isValidHttpUrl(r.pdf_url);
                 return (
                   <article
                     key={`${r.custom_id}_${r.page_number}_${i}`}
@@ -621,19 +633,25 @@ export default function SearchPage() {
                     </div>
 
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
-                      <button
-                        type="button"
-                        className="inlinePdfButton"
-                        onClick={() =>
-                          setPdfTarget({
-                            pdfUrl: r.pdf_url,
-                            page: r.page_number,
-                            title: r.pdf_name,
-                          })
-                        }
-                      >
-                        Open PDF
-                      </button>
+                      {canOpenPdf ? (
+                        <button
+                          type="button"
+                          className="inlinePdfButton"
+                          onClick={() =>
+                            setPdfTarget({
+                              pdfUrl: r.pdf_url,
+                              page: r.page_number,
+                              title: r.pdf_name,
+                            })
+                          }
+                        >
+                          Open PDF
+                        </button>
+                      ) : (
+                        <span style={{ color: "#7b8784", fontWeight: 700 }} title="No uploaded PDF URL is linked for this result.">
+                          PDF unavailable
+                        </span>
+                      )}
                       {csvViewerHref ? (
                         <a href={csvViewerHref} target="_blank" rel="noreferrer">
                           Open CSV at row

@@ -22,6 +22,13 @@ type DocumentMeta = {
   csv_url: string | null;
 };
 
+type SourceMeta = {
+  custom_id: string | null;
+  original_rel_path: string | null;
+  file_name: string | null;
+  ufs_url: string | null;
+};
+
 function parseLimit(raw: unknown) {
   const value = Number(raw ?? 20);
   if (!Number.isFinite(value) || value <= 0) return 20;
@@ -53,6 +60,18 @@ function toStr(value: unknown, fallback = "") {
   return String(value);
 }
 
+function normalizeHttpUrl(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
 async function fetchDocumentMetaByCustomIds(customIds: string[]) {
   if (customIds.length === 0) return [] as DocumentMeta[];
   const { data, error } = await getSupabaseAdmin()
@@ -73,6 +92,17 @@ async function fetchDocumentMetaByRelPaths(relPaths: string[]) {
 
   if (error) throw new Error(error.message);
   return (data ?? []) as DocumentMeta[];
+}
+
+async function fetchSourceMetaByRelPaths(relPaths: string[]) {
+  if (relPaths.length === 0) return [] as SourceMeta[];
+  const { data, error } = await getSupabaseAdmin()
+    .from("granth_ocr_files")
+    .select("custom_id,original_rel_path,file_name,ufs_url")
+    .in("original_rel_path", relPaths);
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SourceMeta[];
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -191,7 +221,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })) as TursoSearchRow[];
 
       const resultRelPaths = Array.from(new Set(rows.map((row) => row.source_rel_path).filter(Boolean)));
-      const resultDocs = await fetchDocumentMetaByRelPaths(resultRelPaths);
+      const [resultDocs, resultSources] = await Promise.all([
+        fetchDocumentMetaByRelPaths(resultRelPaths),
+        fetchSourceMetaByRelPaths(resultRelPaths),
+      ]);
       const selectedByRelPath = new Map(
         selectedDocs
           .filter((row) => row.original_relative_path)
@@ -202,25 +235,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .filter((row) => row.original_relative_path)
           .map((row) => [String(row.original_relative_path), row])
       );
+      const sourceByRelPath = new Map(
+        resultSources
+          .filter((row) => row.original_rel_path)
+          .map((row) => [String(row.original_rel_path), row])
+      );
 
       const results = rows.map((row) => {
         const meta = resultByRelPath.get(row.source_rel_path) ?? selectedByRelPath.get(row.source_rel_path);
-        const customId = meta?.custom_id ?? row.granth_key;
-        const pdfUrl = meta?.pdf_url ?? "";
+        const sourceMeta = sourceByRelPath.get(row.source_rel_path);
+        const customId = meta?.custom_id ?? sourceMeta?.custom_id ?? row.granth_key;
+        const pdfUrl = normalizeHttpUrl(meta?.pdf_url) || normalizeHttpUrl(sourceMeta?.ufs_url);
         const viewerUrl = pdfUrl
           ? `/pdf-viewer?pdf=${encodeURIComponent(pdfUrl)}&page=${encodeURIComponent(String(row.page_number))}`
           : "";
-          return {
-            custom_id: customId,
-            pdf_name: meta?.pdf_name ?? row.pdf_name,
-            pdf_url: pdfUrl,
-            page_number: row.page_number,
-            snippet: buildOCRSearchExcerpt(row.content, q, matchMode, 520),
-            score: row.rank,
-            occurrence_count: findOCRSearchMatches(row.content, q, matchMode).length,
-            csv_url: meta?.csv_url ?? null,
-            open_pdf_url: viewerUrl,
-          };
+        return {
+          custom_id: customId,
+          pdf_name: meta?.pdf_name ?? sourceMeta?.file_name ?? row.pdf_name,
+          pdf_url: pdfUrl,
+          page_number: row.page_number,
+          snippet: buildOCRSearchExcerpt(row.content, q, matchMode, 520),
+          score: row.rank,
+          occurrence_count: findOCRSearchMatches(row.content, q, matchMode).length,
+          csv_url: meta?.csv_url ?? null,
+          open_pdf_url: viewerUrl,
+        };
       });
 
       const total = toInt(countResult.rows[0]?.total);
