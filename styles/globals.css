@@ -1155,6 +1155,16 @@ button {
   white-space: pre-wrap;
 }
 
+.extractorNotice {
+  border: 1px solid #b9d8c9;
+  border-radius: 8px;
+  background: #f1fbf6;
+  color: #245543;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .extractorRangeHint {
   display: flex;
   flex-wrap: wrap;
@@ -1998,6 +2008,136 @@ button {
   font-weight: 800;
 }
 
+.downloadDeliveryOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(16, 24, 32, 0.64);
+}
+
+.downloadDeliveryPanel {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 36px);
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  border: 1px solid #c8d0dc;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.28);
+}
+
+.downloadDeliveryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.downloadDeliveryHeader h2,
+.downloadDeliveryHeader p {
+  margin: 0;
+}
+
+.downloadDeliveryHeader h2 {
+  color: #1f2120;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.downloadDeliveryHeader p {
+  margin-top: 4px;
+  color: #52605d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.downloadDeliveryHeader button,
+.downloadDeliveryActions button,
+.downloadDeliveryEmailRow button {
+  min-height: 38px;
+  border: 1px solid #c7cfd9;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2120;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.downloadDeliveryActions button,
+.downloadDeliveryEmailRow button {
+  border-color: #1f2120;
+  background: #1f2120;
+  color: #fff;
+}
+
+.downloadDeliveryHeader button:disabled,
+.downloadDeliveryActions button:disabled,
+.downloadDeliveryEmailRow button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.downloadDeliveryNotice,
+.downloadDeliveryError {
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.downloadDeliveryNotice {
+  border: 1px solid #d8e1eb;
+  background: #f5f8fb;
+  color: #43504d;
+}
+
+.downloadDeliveryError {
+  border: 1px solid #efb4b4;
+  background: #fff5f5;
+  color: #8a1c1c;
+}
+
+.downloadDeliveryActions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.downloadDeliveryEmailBox {
+  display: grid;
+  gap: 7px;
+}
+
+.downloadDeliveryEmailBox label {
+  color: #34413e;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.downloadDeliveryEmailRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.downloadDeliveryEmailRow input {
+  min-height: 38px;
+  min-width: 0;
+  border: 1px solid #c7cfd9;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #1f2120;
+  font-size: 14px;
+  font-weight: 800;
+}
+
 @media (max-width: 760px) {
   .pdfDialog {
     width: 100vw;
@@ -2056,6 +2196,29 @@ button {
 
   .searchDownloadSnippet {
     grid-column: 1 / -1;
+  }
+
+  .downloadDeliveryOverlay {
+    padding: 10px;
+  }
+
+  .downloadDeliveryPanel {
+    max-height: calc(100dvh - 20px);
+  }
+
+  .downloadDeliveryHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .downloadDeliveryHeader button,
+  .downloadDeliveryActions button,
+  .downloadDeliveryEmailRow button {
+    width: 100%;
+  }
+
+  .downloadDeliveryEmailRow {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

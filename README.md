@@ -38,3 +38,27 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+
+## Environment Variables
+
+Copy `.env.example` into your local ignored environment file and fill in the required server-side values. Do not commit real secrets.
+
+Required for the library data APIs:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN`
+
+Required for emailing generated downloads through Maileroo:
+
+- `MAILEROO_API_KEY`
+
+Optional SMTP fallback if the Maileroo API key is not set:
+
+- `MAILEROO_SMTP_HOST`
+- `MAILEROO_SMTP_PORT`
+- `MAILEROO_SMTP_USERNAME`
+- `MAILEROO_SMTP_PASSWORD`
+
+Apply `supabase/migrations/20260728_download_email_recipients.sql` to persist recently used download recipient emails for the dropdown. The app still sends downloads if this table is missing, but saved recipient suggestions will be unavailable.

@@ -12,6 +12,7 @@ import { PDFDocument } from "pdf-lib";
 import { GranthResolveError, resolveGranthSelection } from "@/lib/granth-resolver";
 import type { MappingRange, MappingSegment } from "@/lib/granth-mapping";
 import { expandPagesWithContext, normalizeContextPageRadius } from "@/lib/page-context";
+import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
 
 export const config = {
   api: {
@@ -30,6 +31,8 @@ type BuildBody = {
   includeCover?: boolean;
   includeAllIdentifiers?: boolean;
   contextPages?: number | string | null;
+  delivery?: string | null;
+  email?: string | null;
   mode?: BuildMode;
   title?: string | null;
 };
@@ -264,6 +267,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const body = (req.body || {}) as BuildBody;
     const mode: BuildMode = body.mode === "separate" ? "separate" : "combined";
+    const delivery = body.delivery === "email" ? "email" : "download";
     const adhikar = body.adhikar == null || body.adhikar === "" ? null : toInt(body.adhikar, null);
     const includeCover = Boolean(body.includeCover);
     const contextPages = normalizeContextPageRadius(body.contextPages);
@@ -290,14 +294,58 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (mode === "separate") {
       const zipPath = await buildSeparateZip(resolved.segments, workDir, contextPages);
-      streamFile(res, zipPath, "application/zip", `${title}_separate.zip`, workDir);
+      const filename = `${title}_separate.zip`;
+      if (delivery === "email") {
+        const recipientClientKey = getDownloadRecipientClientKey(req, res);
+        const sent = await sendDownloadEmail({
+          to: String(body.email || ""),
+          filePath: zipPath,
+          filename,
+          contentType: "application/zip",
+          title: `${title} separate files`,
+          recipientClientKey,
+        });
+        await rm(workDir, { recursive: true, force: true });
+        workDir = "";
+        return res.status(200).json({
+          emailed: true,
+          email: sent.email,
+          size_bytes: sent.sizeBytes,
+          file_name: filename,
+        });
+      }
+      streamFile(res, zipPath, "application/zip", filename, workDir);
       return;
     }
 
     const pdfPath = await buildCombined(resolved.segments, workDir, contextPages, includeCover);
-    streamFile(res, pdfPath, "application/pdf", `${title}_combined.pdf`, workDir);
+    const filename = `${title}_combined.pdf`;
+    if (delivery === "email") {
+      const recipientClientKey = getDownloadRecipientClientKey(req, res);
+      const sent = await sendDownloadEmail({
+        to: String(body.email || ""),
+        filePath: pdfPath,
+        filename,
+        contentType: "application/pdf",
+        title: `${title} combined PDF`,
+        recipientClientKey,
+      });
+      await rm(workDir, { recursive: true, force: true });
+      workDir = "";
+      return res.status(200).json({
+        emailed: true,
+        email: sent.email,
+        size_bytes: sent.sizeBytes,
+        file_name: filename,
+      });
+    }
+
+    streamFile(res, pdfPath, "application/pdf", filename, workDir);
   } catch (error) {
     if (workDir) await rm(workDir, { recursive: true, force: true });
+    if (error instanceof DownloadEmailError) {
+      return res.status(error.status).json({ error: error.message });
+    }
     if (error instanceof GranthResolveError) {
       return res.status(error.status).json(error.payload);
     }

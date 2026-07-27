@@ -1,4 +1,5 @@
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
+import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
 import type { MappingSegment } from "@/lib/granth-mapping";
 import {
   DEFAULT_CONTEXT_PAGE_RADIUS,
@@ -80,6 +81,10 @@ type ResolveResponse = {
 };
 
 type BuildMode = "combined" | "separate";
+
+type DeliveryRequest = {
+  mode: BuildMode;
+};
 
 function titleForBook(book: BookItem | null) {
   if (!book) return "Selected Granth";
@@ -166,8 +171,10 @@ export default function GranthExtractorPage() {
   const [downloadContextPages, setDownloadContextPages] = useState(DEFAULT_CONTEXT_PAGE_RADIUS);
   const [resolving, setResolving] = useState(false);
   const [buildingMode, setBuildingMode] = useState<BuildMode | null>(null);
+  const [deliveryRequest, setDeliveryRequest] = useState<DeliveryRequest | null>(null);
   const [result, setResult] = useState<ResolveResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [context, setContext] = useState<BookContext | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
   const [contextError, setContextError] = useState<string | null>(null);
@@ -319,10 +326,11 @@ export default function GranthExtractorPage() {
     }
   }
 
-  async function buildDownload(mode: BuildMode) {
+  async function buildDownload(mode: BuildMode, delivery: DeliveryMode, email?: string) {
     if (!selectedBook) return;
     setBuildingMode(mode);
     setError(null);
+    setNotice(null);
     try {
       const res = await fetch("/api/granth-mapping/build-pdf", {
         method: "POST",
@@ -336,6 +344,8 @@ export default function GranthExtractorPage() {
           includeCover,
           includeAllIdentifiers: kind === "gathas" && includeAllIdentifiers && !adhikar.trim(),
           contextPages: downloadContextPages,
+          delivery,
+          email,
           mode,
           title: selectedTitle,
         }),
@@ -346,9 +356,17 @@ export default function GranthExtractorPage() {
         throw new Error(body?.error || `Build failed (${res.status})`);
       }
 
+      if (delivery === "email") {
+        const json = (await res.json()) as { email?: string };
+        setDeliveryRequest(null);
+        setNotice(`Email sent to ${json.email || email}.`);
+        return;
+      }
+
       const blob = await res.blob();
       const suffix = mode === "separate" ? "separate.zip" : "combined.pdf";
       downloadBlob(blob, `granth_${fileSafe(selectedTitle)}_${suffix}`);
+      setDeliveryRequest(null);
     } catch (downloadError) {
       setError(downloadError instanceof Error ? downloadError.message : String(downloadError));
     } finally {
@@ -552,7 +570,7 @@ export default function GranthExtractorPage() {
               </button>
               <button
                 type="button"
-                onClick={() => void buildDownload("combined")}
+                onClick={() => setDeliveryRequest({ mode: "combined" })}
                 disabled={Boolean(buildingMode) || !selectedBook || !spec.trim()}
                 aria-busy={buildingMode === "combined"}
               >
@@ -567,7 +585,7 @@ export default function GranthExtractorPage() {
               </button>
               <button
                 type="button"
-                onClick={() => void buildDownload("separate")}
+                onClick={() => setDeliveryRequest({ mode: "separate" })}
                 disabled={Boolean(buildingMode) || !selectedBook || !spec.trim()}
                 aria-busy={buildingMode === "separate"}
               >
@@ -583,6 +601,7 @@ export default function GranthExtractorPage() {
             </div>
 
             {error ? <div className="extractorError" role="alert">{error}</div> : null}
+            {notice ? <div className="extractorNotice" role="status">{notice}</div> : null}
             {kind === "gathas" && result?.conflicts?.length ? (
               <div className="extractorConflictPanel" role="status" aria-live="polite">
                 <strong>Gatha appears in multiple identifiers</strong>
@@ -810,6 +829,24 @@ export default function GranthExtractorPage() {
           </section>
         </section>
       </div>
+      <DownloadDeliveryDialog
+        open={Boolean(deliveryRequest)}
+        title="Choose download method"
+        fileLabel={
+          deliveryRequest?.mode === "separate"
+            ? `Separate ZIP, ${totalDownloadPages} download page${totalDownloadPages === 1 ? "" : "s"}`
+            : `Combined PDF, ${totalDownloadPages} download page${totalDownloadPages === 1 ? "" : "s"}`
+        }
+        busy={Boolean(buildingMode)}
+        error={error}
+        onClose={() => setDeliveryRequest(null)}
+        onDownload={() => {
+          if (deliveryRequest) void buildDownload(deliveryRequest.mode, "download");
+        }}
+        onEmail={(email) => {
+          if (deliveryRequest) void buildDownload(deliveryRequest.mode, "email", email);
+        }}
+      />
       <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
     </main>
   );

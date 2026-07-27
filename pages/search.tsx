@@ -15,6 +15,7 @@ import {
 } from "@/lib/page-context";
 import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
+import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { KeyboardEvent, ReactNode } from "react";
@@ -63,6 +64,7 @@ type DownloadPreviewState = {
   loading: boolean;
   downloading: boolean;
   error: string | null;
+  notice: string | null;
   preview: SearchMatchPreview | null;
   selectedPages: number[];
   contextPages: number;
@@ -155,6 +157,7 @@ export default function SearchPage() {
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
   const [downloadPreview, setDownloadPreview] = useState<DownloadPreviewState | null>(null);
+  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false);
   const previewCacheRef = useRef(new Map<string, SearchMatchPreview>());
   const [routePrefillApplied, setRoutePrefillApplied] = useState(false);
 
@@ -432,6 +435,7 @@ export default function SearchPage() {
       loading: true,
       downloading: false,
       error: null,
+      notice: null,
       preview: null,
       selectedPages: [],
       contextPages: DEFAULT_CONTEXT_PAGE_RADIUS,
@@ -509,10 +513,10 @@ export default function SearchPage() {
     );
   }
 
-  async function downloadMatchedPdf() {
+  async function downloadMatchedPdf(delivery: DeliveryMode, email?: string) {
     if (!downloadPreview?.preview || downloadPreview.selectedPages.length === 0) return;
 
-    setDownloadPreview((prev) => (prev ? { ...prev, downloading: true, error: null } : prev));
+    setDownloadPreview((prev) => (prev ? { ...prev, downloading: true, error: null, notice: null } : prev));
     try {
       const res = await fetch("/api/search-match-pdf", {
         method: "POST",
@@ -525,6 +529,8 @@ export default function SearchPage() {
           matchMode: downloadPreview.matchMode,
           pages: downloadPreview.selectedPages,
           contextPages: downloadPreview.contextPages,
+          delivery,
+          email,
           title: downloadPreview.preview.pdf_name,
         }),
       });
@@ -534,11 +540,24 @@ export default function SearchPage() {
         throw new Error(json.error || `PDF download failed (${res.status})`);
       }
 
+      if (delivery === "email") {
+        const json = (await res.json()) as { email?: string };
+        setDeliveryDialogOpen(false);
+        setDownloadPreview((prev) =>
+          prev
+            ? {
+                ...prev,
+                downloading: false,
+                notice: `Email sent to ${json.email || email}.`,
+              }
+            : prev
+        );
+        return;
+      }
+
       const blob = await res.blob();
-      downloadBlob(
-        blob,
-        `${fileSafe(downloadPreview.preview.pdf_name)}_${fileSafe(downloadPreview.queries.join("_"))}_matched_pages.pdf`
-      );
+      downloadBlob(blob, `${fileSafe(downloadPreview.preview.pdf_name)}_${fileSafe(downloadPreview.queries.join("_"))}_matched_pages.pdf`);
+      setDeliveryDialogOpen(false);
       setDownloadPreview(null);
     } catch (downloadError) {
       setDownloadPreview((prev) =>
@@ -977,7 +996,13 @@ export default function SearchPage() {
                       <h2>Preview pages</h2>
                       <p>{downloadPreview.preview?.pdf_name || downloadPreview.result.pdf_name}</p>
                     </div>
-                    <button type="button" onClick={() => setDownloadPreview(null)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeliveryDialogOpen(false);
+                        setDownloadPreview(null);
+                      }}
+                    >
                       Close
                     </button>
                   </header>
@@ -991,6 +1016,7 @@ export default function SearchPage() {
                     </div>
                   ) : null}
                   {downloadPreview.error ? <div className="searchDownloadError" role="alert">{downloadPreview.error}</div> : null}
+                  {downloadPreview.notice ? <div className="searchDownloadNotice" role="status">{downloadPreview.notice}</div> : null}
 
                   {downloadPreview.preview ? (
                     <>
@@ -1053,7 +1079,7 @@ export default function SearchPage() {
                         ) : null}
                         <button
                           type="button"
-                          onClick={() => void downloadMatchedPdf()}
+                          onClick={() => setDeliveryDialogOpen(true)}
                           aria-busy={downloadPreview.downloading}
                           disabled={downloadPreview.downloading || selectedCount === 0 || tooManyPages}
                         >
@@ -1067,6 +1093,16 @@ export default function SearchPage() {
                           )}
                         </button>
                       </footer>
+                      <DownloadDeliveryDialog
+                        open={deliveryDialogOpen}
+                        title="Choose download method"
+                        fileLabel={`${finalPageCount} PDF page(s), cover first`}
+                        busy={downloadPreview.downloading}
+                        error={downloadPreview.error}
+                        onClose={() => setDeliveryDialogOpen(false)}
+                        onDownload={() => void downloadMatchedPdf("download")}
+                        onEmail={(email) => void downloadMatchedPdf("email", email)}
+                      />
                     </>
                   ) : null}
                 </div>

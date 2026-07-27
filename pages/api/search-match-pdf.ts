@@ -5,6 +5,7 @@ import { parseOCRSearchMode } from "@/lib/ocr-search";
 import { buildHighlightedSearchPdf } from "@/lib/pdf-highlight-builder";
 import { expandPagesWithContext, normalizeContextPageRadius } from "@/lib/page-context";
 import { setNoStore } from "@/lib/api-cache";
+import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
 import {
   MAX_MATCH_PAGE_DOWNLOAD,
   SearchMatchError,
@@ -27,6 +28,8 @@ type DownloadBody = {
   matchMode?: string | null;
   pages?: unknown;
   contextPages?: unknown;
+  delivery?: string | null;
+  email?: string | null;
   title?: string | null;
 };
 
@@ -81,6 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const body = (req.body || {}) as DownloadBody;
+    const delivery = body.delivery === "email" ? "email" : "download";
     const customId = String(body.customId || "").trim();
     const sourceRelPath = String(body.sourceRelPath || "").trim();
     const matchMode = parseOCRSearchMode(body.matchMode);
@@ -116,10 +120,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     const title = safeFileName(String(body.title || source.pdfName || customId), "matched_pages");
     const queryLabel = safeFileName(queries.join("_"), "search");
+    const filename = `${title}_${queryLabel}_matched_pages.pdf`;
 
-    streamFile(res, built.filePath, `${title}_${queryLabel}_matched_pages.pdf`, built.cleanupDir);
+    if (delivery === "email") {
+      try {
+        const recipientClientKey = getDownloadRecipientClientKey(req, res);
+        const sent = await sendDownloadEmail({
+          to: String(body.email || ""),
+          filePath: built.filePath,
+          filename,
+          contentType: "application/pdf",
+          title: `${title} matched pages`,
+          recipientClientKey,
+        });
+        await rm(built.cleanupDir, { recursive: true, force: true });
+        return res.status(200).json({
+          emailed: true,
+          email: sent.email,
+          size_bytes: sent.sizeBytes,
+          file_name: filename,
+        });
+      } catch (emailError) {
+        await rm(built.cleanupDir, { recursive: true, force: true });
+        throw emailError;
+      }
+    }
+
+    streamFile(res, built.filePath, filename, built.cleanupDir);
   } catch (error) {
     setNoStore(res);
+    if (error instanceof DownloadEmailError) {
+      return res.status(error.status).json({ error: error.message });
+    }
     if (error instanceof SearchMatchError) {
       return res.status(error.status).json({ error: error.message });
     }
