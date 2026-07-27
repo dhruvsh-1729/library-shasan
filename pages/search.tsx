@@ -10,7 +10,7 @@ import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog"
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { KeyboardEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type SearchResult = {
   custom_id: string;
@@ -22,6 +22,38 @@ type SearchResult = {
   occurrence_count?: number;
   open_pdf_url: string;
   csv_url?: string | null;
+  source_rel_path?: string;
+  source_page_number?: number;
+};
+
+type SearchMatchPage = {
+  page_number: number;
+  occurrence_count: number;
+  snippet: string;
+};
+
+type SearchMatchPreview = {
+  custom_id: string;
+  pdf_name: string;
+  pdf_url: string;
+  cover_image_url?: string | null;
+  cover_page: number;
+  pages: SearchMatchPage[];
+  total_matched_pages: number;
+  truncated?: boolean;
+  max_download_pages: number;
+  match_mode: OCRSearchMode;
+};
+
+type DownloadPreviewState = {
+  result: SearchResult;
+  query: string;
+  matchMode: OCRSearchMode;
+  loading: boolean;
+  downloading: boolean;
+  error: string | null;
+  preview: SearchMatchPreview | null;
+  selectedPages: number[];
 };
 
 type GranthOption = {
@@ -64,6 +96,23 @@ function isValidHttpUrl(value: string | null | undefined) {
   }
 }
 
+function fileSafe(value: string) {
+  return String(value || "download")
+    .replace(/\.pdf$/i, "")
+    .replace(/[^a-z0-9._\-\u0900-\u097f\u0a80-\u0aff]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 110) || "download";
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function SearchPage() {
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -83,6 +132,8 @@ export default function SearchPage() {
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
+  const [downloadPreview, setDownloadPreview] = useState<DownloadPreviewState | null>(null);
+  const previewCacheRef = useRef(new Map<string, SearchMatchPreview>());
   const [routePrefillApplied, setRoutePrefillApplied] = useState(false);
 
   useEffect(() => {
@@ -239,8 +290,8 @@ export default function SearchPage() {
     }
   }
 
-  function renderHighlightedSnippet(text: string) {
-    const matches = findOCRSearchMatches(text, q, searchMode);
+  function renderHighlightedText(text: string, query: string, mode: OCRSearchMode) {
+    const matches = findOCRSearchMatches(text, query, mode);
     if (!text || matches.length === 0) return text;
 
     const parts: ReactNode[] = [];
@@ -272,6 +323,10 @@ export default function SearchPage() {
     }
 
     return parts.map((part, idx) => <span key={idx}>{part}</span>);
+  }
+
+  function renderHighlightedSnippet(text: string) {
+    return renderHighlightedText(text, q, searchMode);
   }
 
   async function run(page: number) {
@@ -314,6 +369,126 @@ export default function SearchPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function openDownloadPreview(result: SearchResult) {
+    const query = q.trim();
+    if (!query) {
+      setError("Enter a search word before building a matched-page PDF.");
+      return;
+    }
+
+    const cacheKey = `${result.custom_id}\n${result.source_rel_path || ""}\n${query}\n${searchMode}`;
+    setDownloadPreview({
+      result,
+      query,
+      matchMode: searchMode,
+      loading: true,
+      downloading: false,
+      error: null,
+      preview: null,
+      selectedPages: [],
+    });
+
+    try {
+      let preview = previewCacheRef.current.get(cacheKey);
+      if (!preview) {
+        const params = new URLSearchParams();
+        params.set("customId", result.custom_id);
+        params.set("q", query);
+        params.set("matchMode", searchMode);
+        if (result.source_rel_path) params.set("sourceRelPath", result.source_rel_path);
+
+        const res = await fetch(`/api/search-match-pages?${params.toString()}`);
+        const json = (await res.json()) as SearchMatchPreview & { error?: string };
+        if (!res.ok) throw new Error(json.error || `Could not load page preview (${res.status})`);
+        preview = json;
+        previewCacheRef.current.set(cacheKey, preview);
+      }
+
+      setDownloadPreview((prev) =>
+        prev && prev.result.custom_id === result.custom_id
+          ? {
+              ...prev,
+              loading: false,
+              preview: preview ?? null,
+              selectedPages: (preview?.pages ?? []).map((page) => page.page_number),
+            }
+          : prev
+      );
+    } catch (previewError) {
+      setDownloadPreview((prev) =>
+        prev && prev.result.custom_id === result.custom_id
+          ? {
+              ...prev,
+              loading: false,
+              error: previewError instanceof Error ? previewError.message : String(previewError),
+            }
+          : prev
+      );
+    }
+  }
+
+  function setPreviewPageSelected(pageNumber: number, selected: boolean) {
+    setDownloadPreview((prev) => {
+      if (!prev) return prev;
+      const pages = new Set(prev.selectedPages);
+      if (selected) pages.add(pageNumber);
+      else pages.delete(pageNumber);
+      return { ...prev, selectedPages: [...pages].sort((a, b) => a - b) };
+    });
+  }
+
+  function setAllPreviewPages(selected: boolean) {
+    setDownloadPreview((prev) => {
+      if (!prev?.preview) return prev;
+      return {
+        ...prev,
+        selectedPages: selected ? prev.preview.pages.map((page) => page.page_number) : [],
+      };
+    });
+  }
+
+  async function downloadMatchedPdf() {
+    if (!downloadPreview?.preview || downloadPreview.selectedPages.length === 0) return;
+
+    setDownloadPreview((prev) => (prev ? { ...prev, downloading: true, error: null } : prev));
+    try {
+      const res = await fetch("/api/search-match-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customId: downloadPreview.preview.custom_id,
+          sourceRelPath: downloadPreview.result.source_rel_path || "",
+          q: downloadPreview.query,
+          matchMode: downloadPreview.matchMode,
+          pages: downloadPreview.selectedPages,
+          title: downloadPreview.preview.pdf_name,
+        }),
+      });
+
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(json.error || `PDF download failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      downloadBlob(
+        blob,
+        `${fileSafe(downloadPreview.preview.pdf_name)}_${fileSafe(downloadPreview.query)}_matched_pages.pdf`
+      );
+      setDownloadPreview(null);
+    } catch (downloadError) {
+      setDownloadPreview((prev) =>
+        prev
+          ? {
+              ...prev,
+              downloading: false,
+              error: downloadError instanceof Error ? downloadError.message : String(downloadError),
+            }
+          : prev
+      );
     }
   }
 
@@ -642,6 +817,8 @@ export default function SearchPage() {
                               pdfUrl: r.pdf_url,
                               page: r.page_number,
                               title: r.pdf_name,
+                              searchTerm: q,
+                              searchMode,
                             })
                           }
                         >
@@ -652,6 +829,16 @@ export default function SearchPage() {
                           PDF unavailable
                         </span>
                       )}
+                      {canOpenPdf ? (
+                        <button
+                          type="button"
+                          className="inlinePdfButton"
+                          onClick={() => void openDownloadPreview(r)}
+                          disabled={!q.trim()}
+                        >
+                          Download matched pages
+                        </button>
+                      ) : null}
                       {csvViewerHref ? (
                         <a href={csvViewerHref} target="_blank" rel="noreferrer">
                           Open CSV at row
@@ -668,6 +855,90 @@ export default function SearchPage() {
           ) : null}
         </section>
       </div>
+      {downloadPreview
+        ? (() => {
+            const selectedSet = new Set(downloadPreview.selectedPages);
+            const selectedCount = downloadPreview.selectedPages.length;
+            const maxPages = downloadPreview.preview?.max_download_pages ?? 0;
+            const tooManyPages = Boolean(maxPages && selectedCount > maxPages);
+            return (
+              <div className="searchDownloadOverlay" role="dialog" aria-modal="true" aria-label="Matched page PDF preview">
+                <div className="searchDownloadPanel">
+                  <header className="searchDownloadHeader">
+                    <div>
+                      <h2>Preview pages</h2>
+                      <p>{downloadPreview.preview?.pdf_name || downloadPreview.result.pdf_name}</p>
+                    </div>
+                    <button type="button" onClick={() => setDownloadPreview(null)}>
+                      Close
+                    </button>
+                  </header>
+
+                  {downloadPreview.loading ? <div className="searchDownloadNotice">Loading pages...</div> : null}
+                  {downloadPreview.error ? <div className="searchDownloadError">{downloadPreview.error}</div> : null}
+
+                  {downloadPreview.preview ? (
+                    <>
+                      <div className="searchDownloadSummary">
+                        <strong>{selectedCount}</strong> of{" "}
+                        <strong>{downloadPreview.preview.total_matched_pages}</strong> matching page(s) selected.
+                        <span> Cover page 1 is included first.</span>
+                        {downloadPreview.preview.truncated ? <span> Preview is capped; narrow the search if needed.</span> : null}
+                      </div>
+
+                      <div className="searchDownloadToolbar">
+                        <button type="button" onClick={() => setAllPreviewPages(true)}>
+                          Select all
+                        </button>
+                        <button type="button" onClick={() => setAllPreviewPages(false)}>
+                          Clear
+                        </button>
+                      </div>
+
+                      <div className="searchDownloadPageList">
+                        {downloadPreview.preview.pages.map((page) => {
+                          const isCover = page.page_number === 1;
+                          return (
+                            <label key={page.page_number} className="searchDownloadPageRow">
+                              <input
+                                type="checkbox"
+                                checked={isCover || selectedSet.has(page.page_number)}
+                                disabled={isCover}
+                                onChange={(event) => setPreviewPageSelected(page.page_number, event.target.checked)}
+                              />
+                              <span className="searchDownloadPageMeta">
+                                Page {page.page_number}
+                                {isCover ? " | cover" : ""} | {page.occurrence_count} match(es)
+                              </span>
+                              <span className="searchDownloadSnippet">
+                                {renderHighlightedText(page.snippet, downloadPreview.query, downloadPreview.matchMode)}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      <footer className="searchDownloadFooter">
+                        {tooManyPages ? (
+                          <span className="searchDownloadErrorText">
+                            Select {maxPages} pages or fewer.
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void downloadMatchedPdf()}
+                          disabled={downloadPreview.downloading || selectedCount === 0 || tooManyPages}
+                        >
+                          {downloadPreview.downloading ? "Building PDF..." : "Download PDF"}
+                        </button>
+                      </footer>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })()
+        : null}
       <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
     </main>
   );

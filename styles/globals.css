@@ -1541,6 +1541,15 @@ button {
   top: 0;
 }
 
+.pdfOverlayRoot .textLayer mark.pdfSearchHit {
+  position: static;
+  border-radius: 2px;
+  background: rgba(255, 237, 0, 0.55);
+  color: transparent;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 .pdfDialog {
   width: min(1560px, calc(100vw - 24px));
   max-width: none;
@@ -1713,6 +1722,155 @@ button {
   max-width: 100%;
 }
 
+.searchDownloadOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(16, 24, 32, 0.62);
+}
+
+.searchDownloadPanel {
+  width: min(980px, 100%);
+  max-height: min(820px, calc(100dvh - 36px));
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid #c8d0dc;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.28);
+}
+
+.searchDownloadHeader,
+.searchDownloadToolbar,
+.searchDownloadFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid #e0e4eb;
+}
+
+.searchDownloadHeader h2,
+.searchDownloadHeader p {
+  margin: 0;
+}
+
+.searchDownloadHeader h2 {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.searchDownloadHeader p {
+  margin-top: 3px;
+  color: #52605d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.searchDownloadHeader button,
+.searchDownloadToolbar button,
+.searchDownloadFooter button {
+  min-height: 36px;
+  border: 1px solid #c7cfd9;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2120;
+  padding: 8px 11px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.searchDownloadFooter button {
+  border-color: #1f2120;
+  background: #1f2120;
+  color: #fff;
+}
+
+.searchDownloadFooter button:disabled,
+.searchDownloadToolbar button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.searchDownloadNotice,
+.searchDownloadError,
+.searchDownloadSummary {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e0e4eb;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.searchDownloadNotice {
+  background: #f5f8fb;
+  color: #43504d;
+}
+
+.searchDownloadError {
+  background: #fff5f5;
+  color: #9f1f1f;
+}
+
+.searchDownloadSummary {
+  color: #43504d;
+}
+
+.searchDownloadToolbar {
+  justify-content: flex-start;
+}
+
+.searchDownloadPageList {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+  background: #f7f8fa;
+}
+
+.searchDownloadPageRow {
+  display: grid;
+  grid-template-columns: auto minmax(120px, auto) minmax(0, 1fr);
+  gap: 9px;
+  align-items: flex-start;
+  margin-bottom: 7px;
+  border: 1px solid #d5dae2;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.searchDownloadPageRow input {
+  margin-top: 3px;
+}
+
+.searchDownloadPageMeta {
+  color: #26312f;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.searchDownloadSnippet {
+  color: #26312f;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.searchDownloadFooter {
+  border-top: 1px solid #e0e4eb;
+  border-bottom: 0;
+}
+
+.searchDownloadErrorText {
+  color: #9f1f1f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 @media (max-width: 760px) {
   .pdfDialog {
     width: 100vw;
@@ -1740,5 +1898,29 @@ button {
 
   .pdfDialogViewport {
     padding: 8px;
+  }
+
+  .searchDownloadOverlay {
+    padding: 0;
+  }
+
+  .searchDownloadPanel {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .searchDownloadHeader,
+  .searchDownloadFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .searchDownloadPageRow {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .searchDownloadSnippet {
+    grid-column: 1 / -1;
   }
 }
