@@ -26,6 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       spec: String(firstString(req.query.spec) || "").trim(),
       adhikar: adhikarRaw ? Number.parseInt(adhikarRaw, 10) : null,
       includeCover: parseBool(req.query.includeCover),
+      includeAllIdentifiers: parseBool(req.query.includeAllIdentifiers),
     });
 
     return res.status(200).json(payload);

@@ -9,7 +9,7 @@ import {
   SearchMatchError,
   loadSearchMatchPages,
   resolveSearchPdfSource,
-  validateSearchDownloadQuery,
+  validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
 
 export const config = {
@@ -22,6 +22,7 @@ type DownloadBody = {
   customId?: string | null;
   sourceRelPath?: string | null;
   q?: string | null;
+  queryVariants?: unknown;
   matchMode?: string | null;
   pages?: unknown;
   title?: string | null;
@@ -36,6 +37,17 @@ function safeFileName(value: string, fallback = "matched_pages") {
   return cleaned || fallback;
 }
 
+function contentDisposition(filename: string) {
+  const ascii = filename.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_") || "download.pdf";
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+function parseQueryVariants(value: unknown) {
+  if (Array.isArray(value)) return value.map((item) => String(item || ""));
+  if (value == null) return [];
+  return [String(value || "")];
+}
+
 function parseSelectedPages(value: unknown) {
   if (!Array.isArray(value)) return null;
   return [...new Set(
@@ -47,7 +59,7 @@ function parseSelectedPages(value: unknown) {
 
 function streamFile(res: NextApiResponse, filePath: string, filename: string, cleanupDir: string) {
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Disposition", contentDisposition(filename));
   res.setHeader("Cache-Control", "no-store");
 
   const cleanup = () => {
@@ -69,12 +81,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const body = (req.body || {}) as DownloadBody;
     const customId = String(body.customId || "").trim();
     const sourceRelPath = String(body.sourceRelPath || "").trim();
-    const q = validateSearchDownloadQuery(String(body.q || "").trim(), parseOCRSearchMode(body.matchMode));
     const matchMode = parseOCRSearchMode(body.matchMode);
+    const queries = validateSearchDownloadQueries(String(body.q || "").trim(), parseQueryVariants(body.queryVariants), matchMode);
     const requestedPages = parseSelectedPages(body.pages);
 
-    const source = await resolveSearchPdfSource(customId);
-    const { pages: matchingPages } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, q, matchMode);
+    const source = await resolveSearchPdfSource(customId, sourceRelPath);
+    const { pages: matchingPages } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, queries, matchMode);
     const matchingPageSet = new Set(matchingPages.map((page) => page.page_number));
     const requested = requestedPages ?? matchingPages.map((page) => page.page_number);
     const selectedPages = requested.filter((page) => matchingPageSet.has(page));
@@ -93,11 +105,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const built = await buildHighlightedSearchPdf({
       pdfUrl: source.pdfUrl,
       pages: orderedPages,
-      query: q,
+      queries,
       matchMode,
     });
     const title = safeFileName(String(body.title || source.pdfName || customId), "matched_pages");
-    const queryLabel = safeFileName(q, "search");
+    const queryLabel = safeFileName(queries.join("_"), "search");
 
     streamFile(res, built.filePath, `${title}_${queryLabel}_matched_pages.pdf`, built.cleanupDir);
   } catch (error) {

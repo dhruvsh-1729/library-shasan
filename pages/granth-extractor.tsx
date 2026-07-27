@@ -135,6 +135,7 @@ export default function GranthExtractorPage() {
   const [kind, setKind] = useState<"gathas" | "pages">("gathas");
   const [spec, setSpec] = useState("");
   const [adhikar, setAdhikar] = useState("");
+  const [includeAllIdentifiers, setIncludeAllIdentifiers] = useState(false);
   const [includeCover, setIncludeCover] = useState(kind === "gathas");
   const [resolving, setResolving] = useState(false);
   const [buildingMode, setBuildingMode] = useState<BuildMode | null>(null);
@@ -255,7 +256,7 @@ export default function GranthExtractorPage() {
 
   const primaryFile = context?.files.find((file) => file.cover_image_url && !brokenCoverIds[file.id]) || context?.files[0] || null;
 
-  async function resolveSelection() {
+  async function resolveSelection(forceIncludeAllIdentifiers = includeAllIdentifiers) {
     if (!selectedBook) return;
     setResolving(true);
     setError(null);
@@ -269,12 +270,16 @@ export default function GranthExtractorPage() {
       });
       if (bookCode) params.set("bookCode", bookCode);
       if (kind === "gathas" && adhikar.trim()) params.set("adhikar", adhikar.trim());
+      if (kind === "gathas" && forceIncludeAllIdentifiers && !adhikar.trim()) {
+        params.set("includeAllIdentifiers", "1");
+      }
       const res = await fetch(`/api/granth-mapping/resolve?${params.toString()}`);
       const json = (await res.json()) as ResolveResponse;
       if (!res.ok) {
         setResult(json);
         throw new Error(json.error || `Request failed (${res.status})`);
       }
+      setIncludeAllIdentifiers(forceIncludeAllIdentifiers && !adhikar.trim());
       setResult(json);
     } catch (resolveError) {
       setError(resolveError instanceof Error ? resolveError.message : String(resolveError));
@@ -298,6 +303,7 @@ export default function GranthExtractorPage() {
           spec,
           adhikar: kind === "gathas" && adhikar.trim() ? adhikar.trim() : null,
           includeCover,
+          includeAllIdentifiers: kind === "gathas" && includeAllIdentifiers && !adhikar.trim(),
           mode,
           title: selectedTitle,
         }),
@@ -345,7 +351,7 @@ export default function GranthExtractorPage() {
           </div>
         </header>
 
-        {bookError ? <div className="extractorError">{bookError}</div> : null}
+        {bookError ? <div className="extractorError" role="alert">{bookError}</div> : null}
 
         <section className="extractorLayout">
           <aside className="extractorControlPanel">
@@ -370,6 +376,7 @@ export default function GranthExtractorPage() {
                 setBookId(nextId);
                 setBookCode(next?.book_codes?.[0] || "");
                 setAdhikar("");
+                setIncludeAllIdentifiers(false);
                 setResult(null);
               }}
               disabled={loadingBooks}
@@ -387,6 +394,7 @@ export default function GranthExtractorPage() {
                 type="button"
                 onClick={() => {
                   setBookCode("");
+                  setIncludeAllIdentifiers(false);
                   setResult(null);
                 }}
                 className={!bookCode ? "isActive" : ""}
@@ -399,6 +407,7 @@ export default function GranthExtractorPage() {
                   type="button"
                   onClick={() => {
                     setBookCode(code);
+                    setIncludeAllIdentifiers(false);
                     setResult(null);
                   }}
                   className={bookCode === code ? "isActive" : ""}
@@ -411,14 +420,22 @@ export default function GranthExtractorPage() {
             <div className="extractorModeGrid">
               <button
                 type="button"
-                onClick={() => setKind("gathas")}
+                onClick={() => {
+                  setKind("gathas");
+                  setIncludeAllIdentifiers(false);
+                  setResult(null);
+                }}
                 className={kind === "gathas" ? "isActive" : ""}
               >
                 Gathas
               </button>
               <button
                 type="button"
-                onClick={() => setKind("pages")}
+                onClick={() => {
+                  setKind("pages");
+                  setIncludeAllIdentifiers(false);
+                  setResult(null);
+                }}
                 className={kind === "pages" ? "isActive" : ""}
               >
                 Pages
@@ -427,7 +444,11 @@ export default function GranthExtractorPage() {
 
             <input
               value={spec}
-              onChange={(event) => setSpec(event.target.value)}
+              onChange={(event) => {
+                setSpec(event.target.value);
+                setIncludeAllIdentifiers(false);
+                setResult(null);
+              }}
               placeholder={kind === "gathas" ? "5 or 3-6, 10" : "2, 5-7, 10"}
               aria-label={kind === "gathas" ? "Gatha numbers" : "Page numbers"}
               className="extractorInput"
@@ -436,7 +457,10 @@ export default function GranthExtractorPage() {
             {kind === "gathas" ? (
               <select
                 value={adhikar}
-                onChange={(event) => setAdhikar(event.target.value)}
+                onChange={(event) => {
+                  setAdhikar(event.target.value);
+                  setIncludeAllIdentifiers(false);
+                }}
                 className="extractorInput"
                 aria-label="Identifier"
               >
@@ -461,29 +485,100 @@ export default function GranthExtractorPage() {
             <div className="extractorActions">
               <button
                 type="button"
-                onClick={resolveSelection}
+                onClick={() => void resolveSelection()}
                 disabled={resolving || !selectedBook || !spec.trim()}
                 className="extractorPrimaryButton"
+                aria-busy={resolving}
               >
-                {resolving ? "Resolving..." : "Resolve"}
+                {resolving ? (
+                  <span className="buttonSpinnerLabel">
+                    <span className="loadingSpinner" aria-hidden="true" />
+                    Resolving
+                  </span>
+                ) : (
+                  "Resolve"
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => void buildDownload("combined")}
                 disabled={Boolean(buildingMode) || !selectedBook || !spec.trim()}
+                aria-busy={buildingMode === "combined"}
               >
-                {buildingMode === "combined" ? "Building..." : "Combined PDF"}
+                {buildingMode === "combined" ? (
+                  <span className="buttonSpinnerLabel">
+                    <span className="loadingSpinner" aria-hidden="true" />
+                    Building
+                  </span>
+                ) : (
+                  "Combined PDF"
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => void buildDownload("separate")}
                 disabled={Boolean(buildingMode) || !selectedBook || !spec.trim()}
+                aria-busy={buildingMode === "separate"}
               >
-                {buildingMode === "separate" ? "Building..." : "Separate ZIP"}
+                {buildingMode === "separate" ? (
+                  <span className="buttonSpinnerLabel">
+                    <span className="loadingSpinner" aria-hidden="true" />
+                    Building
+                  </span>
+                ) : (
+                  "Separate ZIP"
+                )}
               </button>
             </div>
 
-            {error ? <div className="extractorError">{error}</div> : null}
+            {error ? <div className="extractorError" role="alert">{error}</div> : null}
+            {kind === "gathas" && result?.conflicts?.length ? (
+              <div className="extractorConflictPanel" role="status" aria-live="polite">
+                <strong>Gatha appears in multiple identifiers</strong>
+                <div className="extractorConflictList">
+                  {result.conflicts.map((conflict) => (
+                    <div key={conflict.gatha}>
+                      <span>Gatha {conflict.gatha}</span>
+                      <div>
+                        {conflict.adhikars.map((id) => (
+                          <button
+                            key={`${conflict.gatha}_${id}`}
+                            type="button"
+                            onClick={() => {
+                              setAdhikar(id === "none" ? "" : id);
+                              setIncludeAllIdentifiers(false);
+                              setResult(null);
+                            }}
+                          >
+                            id {id}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="extractorPrimaryButton"
+                  onClick={() => {
+                    setAdhikar("");
+                    setIncludeAllIdentifiers(true);
+                    void resolveSelection(true);
+                  }}
+                  disabled={resolving}
+                  aria-busy={resolving}
+                >
+                  {resolving ? (
+                    <span className="buttonSpinnerLabel">
+                      <span className="loadingSpinner" aria-hidden="true" />
+                      Resolving
+                    </span>
+                  ) : (
+                    "Include all identifiers"
+                  )}
+                </button>
+              </div>
+            ) : null}
             {result?.ranges?.length ? (
               <div className="extractorRangeHint">
                 {result.ranges.map((range) => (
@@ -519,7 +614,16 @@ export default function GranthExtractorPage() {
                 <div className="extractorBookMeta">
                   <span>{context?.meta.identifier_count ?? 0} identifiers</span>
                   <span>{context?.meta.mapped_row_count ?? 0} mapped gathas</span>
-                  <span>{contextLoading ? "Loading context" : contextError || "Context ready"}</span>
+                  <span>
+                    {contextLoading ? (
+                      <span className="buttonSpinnerLabel">
+                        <span className="loadingSpinner" aria-hidden="true" />
+                        Loading context
+                      </span>
+                    ) : (
+                      contextError || "Context ready"
+                    )}
+                  </span>
                 </div>
               </div>
             </div>

@@ -10,6 +10,7 @@ export type GranthResolveInput = {
   spec: string;
   adhikar?: number | null;
   includeCover?: boolean;
+  includeAllIdentifiers?: boolean;
 };
 
 export type GranthRangeSummary = {
@@ -84,6 +85,7 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
   const kind = String(input.kind || "gathas");
   const spec = String(input.spec || "").trim();
   const includeCover = Boolean(input.includeCover);
+  const includeAllIdentifiers = Boolean(input.includeAllIdentifiers);
   const adhikar = input.adhikar == null || !Number.isFinite(Number(input.adhikar)) ? null : Number(input.adhikar);
 
   if (!hasBookId && !bookCode) {
@@ -162,7 +164,7 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
   const scopedRows = adhikar == null ? allRows : allRows.filter((row) => Number(row.adhikar) === adhikar);
   const conflicts = [];
 
-  if (adhikar == null) {
+  if (adhikar == null && !includeAllIdentifiers) {
     for (const gatha of requested) {
       const ids = new Set(
         allRows.filter((row) => Number(row.gatha) === gatha).map((row) => String(row.adhikar ?? "none"))

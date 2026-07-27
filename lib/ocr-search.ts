@@ -27,10 +27,11 @@ export const OCR_SEARCH_MODE_OPTIONS: Array<{
   },
 ];
 
-type SearchMatch = {
+export type SearchMatch = {
   start: number;
   end: number;
   text: string;
+  query?: string;
 };
 
 const WORD_CHAR_PATTERN = /[\p{L}\p{N}\p{M}_]/u;
@@ -80,7 +81,7 @@ export function findOCRSearchMatches(content: string, query: string, mode: OCRSe
       continue;
     }
 
-    matches.push({ start, end, text });
+    matches.push({ start, end, text, query: needle });
 
     if (text.length === 0) {
       pattern.lastIndex += 1;
@@ -90,15 +91,88 @@ export function findOCRSearchMatches(content: string, query: string, mode: OCRSe
   return matches;
 }
 
+function queryValues(value: string | string[] | null | undefined) {
+  if (Array.isArray(value)) return value;
+  if (value == null) return [];
+  return [value];
+}
+
+export function normalizeOCRSearchQueries(
+  primary: string | string[] | null | undefined,
+  variants?: string | string[] | null,
+  maxQueries = 8
+) {
+  const seen = new Set<string>();
+  const queries: string[] = [];
+
+  for (const value of [...queryValues(primary), ...queryValues(variants)]) {
+    const query = String(value || "").replace(/\s+/g, " ").trim();
+    if (!query) continue;
+    const key = query.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    queries.push(query);
+    if (queries.length >= maxQueries) break;
+  }
+
+  return queries;
+}
+
+function mergeSearchMatches(matches: SearchMatch[]) {
+  const sorted = [...matches].sort((a, b) => {
+    if (a.start !== b.start) return a.start - b.start;
+    return b.end - a.end;
+  });
+  const merged: SearchMatch[] = [];
+
+  for (const match of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last || match.start >= last.end) {
+      merged.push({ ...match });
+      continue;
+    }
+
+    const previousEnd = last.end;
+    if (match.end > previousEnd) {
+      last.end = match.end;
+      last.text = `${last.text}${match.text.slice(Math.max(0, previousEnd - match.start))}`;
+    }
+  }
+
+  return merged;
+}
+
+export function findOCRSearchMatchesForQueries(
+  content: string,
+  queries: string | string[],
+  mode: OCRSearchMode
+) {
+  const normalizedQueries = normalizeOCRSearchQueries(queries);
+  if (normalizedQueries.length === 0) return [];
+
+  return mergeSearchMatches(
+    normalizedQueries.flatMap((query) => findOCRSearchMatches(content, query, mode))
+  );
+}
+
 export function hasOCRSearchMatch(content: string, query: string, mode: OCRSearchMode) {
   return findOCRSearchMatches(content, query, mode).length > 0;
 }
 
 export function buildOCRSearchExcerpt(content: string, query: string, mode: OCRSearchMode, maxChars = 180) {
+  return buildOCRSearchExcerptForQueries(content, [query], mode, maxChars);
+}
+
+export function buildOCRSearchExcerptForQueries(
+  content: string,
+  queries: string | string[],
+  mode: OCRSearchMode,
+  maxChars = 180
+) {
   const cleanContent = String(content ?? "").replace(/\s+/g, " ").trim();
   if (!cleanContent) return "";
 
-  const firstMatch = findOCRSearchMatches(cleanContent, query, mode)[0];
+  const firstMatch = findOCRSearchMatchesForQueries(cleanContent, queries, mode)[0];
   if (!firstMatch) {
     if (cleanContent.length <= maxChars) return cleanContent;
     return `${cleanContent.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;

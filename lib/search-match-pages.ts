@@ -1,4 +1,9 @@
-import { buildOCRSearchExcerpt, findOCRSearchMatches, type OCRSearchMode } from "@/lib/ocr-search";
+import {
+  buildOCRSearchExcerptForQueries,
+  findOCRSearchMatchesForQueries,
+  normalizeOCRSearchQueries,
+  type OCRSearchMode,
+} from "@/lib/ocr-search";
 import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getTursoClient } from "@/lib/turso";
@@ -18,6 +23,13 @@ type SourceRow = {
   file_type: string | null;
   ufs_url: string | null;
   cover_image_url: string | null;
+};
+
+type LibraryFileRow = {
+  custom_id: string | null;
+  pdf_rel_path: string | null;
+  pdf_file_name: string | null;
+  pdf_url: string | null;
 };
 
 export type SearchPdfSource = {
@@ -111,16 +123,33 @@ async function fetchSourceByRelPath(relPath: string) {
   return firstRow((data ?? []) as SourceRow[]);
 }
 
-export async function resolveSearchPdfSource(customId: string): Promise<SearchPdfSource> {
+async function fetchLibraryFileByCustomId(customId: string) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("granth_library_files")
+    .select("custom_id,pdf_rel_path,pdf_file_name,pdf_url")
+    .eq("custom_id", customId)
+    .limit(1);
+
+  if (error) throw new SearchMatchError(500, error.message);
+  return firstRow((data ?? []) as LibraryFileRow[]);
+}
+
+export async function resolveSearchPdfSource(
+  customId: string,
+  preferredSourceRelPath = ""
+): Promise<SearchPdfSource> {
   const normalizedCustomId = String(customId || "").trim();
   if (!normalizedCustomId) throw new SearchMatchError(400, "Missing granth identifier.");
 
-  const [doc, sourceByCustomId] = await Promise.all([
+  const [doc, sourceByCustomId, libraryFile] = await Promise.all([
     fetchDocumentByCustomId(normalizedCustomId),
     fetchSourceByCustomId(normalizedCustomId),
+    fetchLibraryFileByCustomId(normalizedCustomId),
   ]);
 
-  const sourceRelPath = String(doc?.original_relative_path || sourceByCustomId?.original_rel_path || "").trim();
+  const sourceRelPath = String(
+    preferredSourceRelPath || doc?.original_relative_path || sourceByCustomId?.original_rel_path || libraryFile?.pdf_rel_path || ""
+  ).trim();
   const sourceByRelPath =
     sourceRelPath && sourceByCustomId?.original_rel_path !== sourceRelPath
       ? await fetchSourceByRelPath(sourceRelPath)
@@ -132,8 +161,8 @@ export async function resolveSearchPdfSource(customId: string): Promise<SearchPd
       : null;
   const source = pdfSource ?? sourceByCustomId ?? sourceByRelPath;
   const sourcePdfUrl = normalizeHttpUrl(pdfSource?.ufs_url);
-  const pdfUrl = normalizeHttpUrl(doc?.pdf_url) || sourcePdfUrl;
-  const pdfName = String(doc?.pdf_name || source?.file_name || normalizedCustomId || "granth.pdf").trim();
+  const pdfUrl = normalizeHttpUrl(doc?.pdf_url) || sourcePdfUrl || normalizeHttpUrl(libraryFile?.pdf_url);
+  const pdfName = String(doc?.pdf_name || source?.file_name || libraryFile?.pdf_file_name || normalizedCustomId || "granth.pdf").trim();
 
   if (!sourceRelPath) {
     throw new SearchMatchError(404, "This result is not linked to searchable granth page metadata.");
@@ -152,49 +181,75 @@ export async function resolveSearchPdfSource(customId: string): Promise<SearchPd
 }
 
 export function validateSearchDownloadQuery(query: string, matchMode: OCRSearchMode) {
-  const q = String(query || "").trim();
-  if (q.length < 2) throw new SearchMatchError(400, "Enter at least 2 characters before building a PDF.");
-  if (matchMode === "contains" && Array.from(q).length < 3) {
-    throw new SearchMatchError(400, "Contains search requires at least 3 characters.");
-  }
-  return q;
+  return validateSearchDownloadQueries(query, [], matchMode)[0];
 }
 
-function ftsConfig(query: string, matchMode: OCRSearchMode) {
+export function validateSearchDownloadQueries(
+  query: string | string[],
+  variants: string | string[] | null | undefined,
+  matchMode: OCRSearchMode
+) {
+  const queries = normalizeOCRSearchQueries(query, variants).filter((value) => Array.from(value).length >= 2);
+  if (queries.length === 0) throw new SearchMatchError(400, "Enter at least 2 characters before building a PDF.");
+  if (matchMode === "contains" && queries.some((value) => Array.from(value).length < 3)) {
+    throw new SearchMatchError(400, "Contains search requires at least 3 characters.");
+  }
+  return queries;
+}
+
+function ftsConfig(matchMode: OCRSearchMode) {
   if (matchMode === "contains") {
-    return { table: "ocr_pages_trigram_fts", matchQuery: escapeFtsPhrase(query) };
+    return { table: "ocr_pages_trigram_fts" };
   }
   if (matchMode === "ends_with") {
-    return { table: "ocr_pages_suffix_fts", matchQuery: buildOCRSuffixQuery(query) };
+    return { table: "ocr_pages_suffix_fts" };
   }
-  return {
-    table: "ocr_pages_search_fts",
-    matchQuery: matchMode === "begins_with" ? `${escapeFtsToken(query)}*` : escapeFtsPhrase(query),
-  };
+  return { table: "ocr_pages_search_fts" };
+}
+
+function ftsMatchQuery(query: string, matchMode: OCRSearchMode) {
+  if (matchMode === "begins_with") return `${escapeFtsToken(query)}*`;
+  if (matchMode === "ends_with") return buildOCRSuffixQuery(query);
+  return escapeFtsPhrase(query);
 }
 
 export async function loadSearchMatchPages(
   sourceRelPath: string,
-  query: string,
+  query: string | string[],
   matchMode: OCRSearchMode,
-  limit = MAX_MATCH_PAGE_PREVIEW
+  limit = MAX_MATCH_PAGE_PREVIEW,
+  queryVariants?: string | string[] | null
 ) {
-  const q = validateSearchDownloadQuery(query, matchMode);
+  const queries = validateSearchDownloadQueries(query, queryVariants, matchMode);
   const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_MATCH_PAGE_PREVIEW));
-  const { table, matchQuery } = ftsConfig(q, matchMode);
+  const { table } = ftsConfig(matchMode);
   const client = getTursoClient();
+  const hitSql = queries
+    .map(
+      () => `SELECT p.id AS page_id
+             FROM ${table}
+             JOIN ocr_pages p ON p.id = ${table}.rowid
+             JOIN ocr_granths g ON g.granth_key = p.granth_key
+             WHERE ${table} MATCH ? AND g.source_rel_path = ?`
+    )
+    .join(" UNION ALL ");
+  const hitArgs = queries.flatMap((searchQuery) => [ftsMatchQuery(searchQuery, matchMode), sourceRelPath]);
 
   const result = await client.execute({
-    sql: `SELECT
+    sql: `WITH hits AS (${hitSql}),
+            unique_hits AS (
+              SELECT page_id
+              FROM hits
+              GROUP BY page_id
+            )
+          SELECT
             p.page_number,
             p.content
-          FROM ${table}
-          JOIN ocr_pages p ON p.id = ${table}.rowid
-          JOIN ocr_granths g ON g.granth_key = p.granth_key
-          WHERE ${table} MATCH ? AND g.source_rel_path = ?
+          FROM unique_hits
+          JOIN ocr_pages p ON p.id = unique_hits.page_id
           ORDER BY p.page_number ASC
           LIMIT ?`,
-    args: [matchQuery, sourceRelPath, boundedLimit + 1],
+    args: [...hitArgs, boundedLimit + 1],
   });
 
   const byPage = new Map<number, SearchMatchPage>();
@@ -206,7 +261,7 @@ export async function loadSearchMatchPages(
 
     const pageNumber = toInt(row.page_number);
     const content = String(row.content ?? "");
-    const matches = findOCRSearchMatches(content, q, matchMode);
+    const matches = findOCRSearchMatchesForQueries(content, queries, matchMode);
     if (pageNumber <= 0 || matches.length === 0) continue;
 
     const existing = byPage.get(pageNumber);
@@ -218,12 +273,13 @@ export async function loadSearchMatchPages(
     byPage.set(pageNumber, {
       page_number: pageNumber,
       occurrence_count: matches.length,
-      snippet: buildOCRSearchExcerpt(content, q, matchMode, 260),
+      snippet: buildOCRSearchExcerptForQueries(content, queries, matchMode, 260),
     });
   }
 
   return {
     pages: [...byPage.values()].sort((a, b) => a.page_number - b.page_number),
     truncated: result.rows.length > boundedLimit,
+    queries,
   };
 }

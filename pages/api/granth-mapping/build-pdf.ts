@@ -1,13 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
+import { PDFDocument } from "pdf-lib";
 import { GranthResolveError, resolveGranthSelection } from "@/lib/granth-resolver";
 import type { MappingRange, MappingSegment } from "@/lib/granth-mapping";
 
@@ -26,6 +27,7 @@ type BuildBody = {
   spec?: string;
   adhikar?: number | string | null;
   includeCover?: boolean;
+  includeAllIdentifiers?: boolean;
   mode?: BuildMode;
   title?: string | null;
 };
@@ -46,6 +48,11 @@ function safeFileName(value: string, fallback = "granth") {
     .replace(/^_+|_+$/g, "")
     .slice(0, 120);
   return cleaned || fallback;
+}
+
+function contentDisposition(filename: string) {
+  const ascii = filename.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_") || "download";
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 function hashText(value: string) {
@@ -129,45 +136,31 @@ function uniqueSortedPages(pages: number[]) {
   return [...new Set(pages.map((page) => Math.floor(Number(page))).filter((page) => page > 0))].sort((a, b) => a - b);
 }
 
-function contiguousGroups(pages: number[]) {
-  const sorted = uniqueSortedPages(pages);
-  const groups: Array<{ start: number; end: number }> = [];
-
-  for (const page of sorted) {
-    const last = groups[groups.length - 1];
-    if (last && page === last.end + 1) {
-      last.end = page;
-    } else {
-      groups.push({ start: page, end: page });
-    }
-  }
-
-  return groups;
+async function loadSourcePdf(sourcePath: string) {
+  await ensureFreeMemory("load source PDF");
+  return PDFDocument.load(await readFile(sourcePath), { ignoreEncryption: true });
 }
 
-async function extractPages(sourcePath: string, pages: number[], workDir: string, prefix: string) {
-  const pagePaths: string[] = [];
-  const groups = contiguousGroups(pages);
+async function copyPagesInto(outputDoc: PDFDocument, sourcePath: string, pages: number[]) {
+  const sourceDoc = await loadSourcePdf(sourcePath);
+  const pageCount = sourceDoc.getPageCount();
+  const validPages = uniqueSortedPages(pages).filter((page) => page <= pageCount);
+  if (validPages.length === 0) return 0;
 
-  for (const group of groups) {
-    const pattern = path.join(workDir, `${prefix}-%d.pdf`);
-    await runCommand("pdfseparate", ["-f", String(group.start), "-l", String(group.end), sourcePath, pattern], workDir);
-    for (let page = group.start; page <= group.end; page += 1) {
-      pagePaths.push(path.join(workDir, `${prefix}-${page}.pdf`));
-    }
-  }
-
-  return pagePaths;
+  const copiedPages = await outputDoc.copyPages(
+    sourceDoc,
+    validPages.map((page) => page - 1)
+  );
+  for (const page of copiedPages) outputDoc.addPage(page);
+  return copiedPages.length;
 }
 
-async function makePdfFromPages(sourcePath: string, pages: number[], workDir: string, prefix: string, outPath: string) {
-  const pagePaths = await extractPages(sourcePath, pages, workDir, prefix);
-  if (pagePaths.length === 0) throw new Error("No valid pages selected");
-  if (pagePaths.length === 1) {
-    await copyFile(pagePaths[0], outPath);
-    return;
-  }
-  await runCommand("pdfunite", [...pagePaths, outPath], workDir);
+async function makePdfFromPages(sourcePath: string, pages: number[], outPath: string) {
+  const outputDoc = await PDFDocument.create();
+  const copied = await copyPagesInto(outputDoc, sourcePath, pages);
+  if (copied === 0) throw new Error("No valid pages selected");
+  await ensureFreeMemory("save PDF");
+  await writeFile(outPath, await outputDoc.save());
 }
 
 function pagesForRange(range: MappingRange) {
@@ -179,24 +172,21 @@ function pagesForRange(range: MappingRange) {
 }
 
 async function buildCombined(segments: MappingSegment[], workDir: string) {
-  const allPageFiles: string[] = [];
+  const outputDoc = await PDFDocument.create();
+  let copied = 0;
 
   for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
     const segment = segments[segmentIndex];
     const sourcePath = await downloadSourcePdf(segment.pdfUrl);
     const pages = uniqueSortedPages(segment.pages);
-    const extracted = await extractPages(sourcePath, pages, workDir, `combined-${segmentIndex}`);
-    allPageFiles.push(...extracted);
+    copied += await copyPagesInto(outputDoc, sourcePath, pages);
   }
 
-  if (allPageFiles.length === 0) throw new Error("No pages selected");
+  if (copied === 0) throw new Error("No pages selected");
 
   const outPath = path.join(workDir, "combined.pdf");
-  if (allPageFiles.length === 1) {
-    await copyFile(allPageFiles[0], outPath);
-  } else {
-    await runCommand("pdfunite", [...allPageFiles, outPath], workDir);
-  }
+  await ensureFreeMemory("save combined PDF");
+  await writeFile(outPath, await outputDoc.save());
 
   return outPath;
 }
@@ -218,13 +208,7 @@ async function buildSeparateZip(segments: MappingSegment[], workDir: string) {
         outDir,
         `${safeFileName(segment.pdfFileName, `segment-${segmentIndex + 1}`)}_${safeFileName(label, `range-${rangeIndex + 1}`)}.pdf`
       );
-      await makePdfFromPages(
-        sourcePath,
-        pagesForRange(range),
-        workDir,
-        `separate-${segmentIndex}-${rangeIndex}`,
-        outPath
-      );
+      await makePdfFromPages(sourcePath, pagesForRange(range), outPath);
       builtFiles.push(outPath);
     }
   }
@@ -242,7 +226,7 @@ function countPages(segments: MappingSegment[]) {
 
 function streamFile(res: NextApiResponse, filePath: string, contentType: string, filename: string, cleanupDir: string) {
   res.setHeader("Content-Type", contentType);
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Disposition", contentDisposition(filename));
   res.setHeader("Cache-Control", "no-store");
   res.on("finish", () => {
     void rm(cleanupDir, { recursive: true, force: true });
@@ -272,6 +256,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       spec: String(body.spec || ""),
       adhikar,
       includeCover: Boolean(body.includeCover),
+      includeAllIdentifiers: Boolean(body.includeAllIdentifiers),
     });
 
     const pageTotal = countPages(resolved.segments);

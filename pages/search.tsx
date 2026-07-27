@@ -1,10 +1,12 @@
 import {
   OCR_SEARCH_MODE_OPTIONS,
   type OCRSearchMode,
-  findOCRSearchMatches,
+  findOCRSearchMatchesForQueries,
   getOCRSearchModeLabel,
+  normalizeOCRSearchQueries,
   parseOCRSearchMode,
 } from "@/lib/ocr-search";
+import { buildIndicQueryOptions } from "@/lib/phonetic-transliteration";
 import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import Link from "next/link";
@@ -24,6 +26,7 @@ type SearchResult = {
   csv_url?: string | null;
   source_rel_path?: string;
   source_page_number?: number;
+  matched_queries?: string[];
 };
 
 type SearchMatchPage = {
@@ -43,11 +46,13 @@ type SearchMatchPreview = {
   truncated?: boolean;
   max_download_pages: number;
   match_mode: OCRSearchMode;
+  queries?: string[];
 };
 
 type DownloadPreviewState = {
   result: SearchResult;
   query: string;
+  queries: string[];
   matchMode: OCRSearchMode;
   loading: boolean;
   downloading: boolean;
@@ -124,6 +129,8 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchMode, setSearchMode] = useState<OCRSearchMode>("exact_word");
+  const [selectedQueryOptionIds, setSelectedQueryOptionIds] = useState<string[]>([]);
+  const [lastSearchQueries, setLastSearchQueries] = useState<string[]>([]);
 
   const [granthOptions, setGranthOptions] = useState<GranthOption[]>([]);
   const [loadingGranths, setLoadingGranths] = useState(true);
@@ -135,6 +142,19 @@ export default function SearchPage() {
   const [downloadPreview, setDownloadPreview] = useState<DownloadPreviewState | null>(null);
   const previewCacheRef = useRef(new Map<string, SearchMatchPreview>());
   const [routePrefillApplied, setRoutePrefillApplied] = useState(false);
+
+  const queryOptions = useMemo(() => buildIndicQueryOptions(q), [q]);
+  const activeQueries = useMemo(() => {
+    const selected = new Set(selectedQueryOptionIds);
+    const values = queryOptions
+      .filter((option) => selected.has(option.id))
+      .map((option) => option.value);
+    return normalizeOCRSearchQueries(queryOptions.length ? values : q);
+  }, [q, queryOptions, selectedQueryOptionIds]);
+
+  useEffect(() => {
+    setSelectedQueryOptionIds(buildIndicQueryOptions(q).map((option) => option.id));
+  }, [q]);
 
   useEffect(() => {
     let active = true;
@@ -244,6 +264,7 @@ export default function SearchPage() {
     if (total <= 0) return 1;
     return Math.max(1, Math.ceil(total / RESULTS_PER_PAGE));
   }, [total]);
+  const searchReady = activeQueries.some((query) => Array.from(query).length >= (searchMode === "contains" ? 3 : 2));
   const searchableDocuments = documentStats?.searchable_documents ?? documentStats?.processed_documents ?? 0;
   const remainingDocuments =
     documentStats?.remaining_documents ??
@@ -285,13 +306,13 @@ export default function SearchPage() {
   }
 
   function onSearchInputKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && !loading && q.trim().length >= 2) {
+    if (e.key === "Enter" && !loading && searchReady) {
       void run(1);
     }
   }
 
-  function renderHighlightedText(text: string, query: string, mode: OCRSearchMode) {
-    const matches = findOCRSearchMatches(text, query, mode);
+  function renderHighlightedText(text: string, queries: string[], mode: OCRSearchMode) {
+    const matches = findOCRSearchMatchesForQueries(text, queries, mode);
     if (!text || matches.length === 0) return text;
 
     const parts: ReactNode[] = [];
@@ -325,12 +346,17 @@ export default function SearchPage() {
     return parts.map((part, idx) => <span key={idx}>{part}</span>);
   }
 
-  function renderHighlightedSnippet(text: string) {
-    return renderHighlightedText(text, q, searchMode);
+  function renderHighlightedSnippet(text: string, queries?: string[]) {
+    return renderHighlightedText(text, queries?.length ? queries : lastSearchQueries, searchMode);
   }
 
   async function run(page: number) {
     setError(null);
+    const queriesForSearch = activeQueries;
+    if (queriesForSearch.length === 0) {
+      setError("Enter a search word or select at least one generated language option.");
+      return;
+    }
     if (selectionMode !== "all" && selectedCustomIds.length === 0) {
       setError("Select at least one granth name before searching.");
       return;
@@ -339,7 +365,8 @@ export default function SearchPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("q", q);
+      params.set("q", queriesForSearch[0]);
+      for (const queryVariant of queriesForSearch.slice(1)) params.append("queryVariant", queryVariant);
       params.set("limit", String(RESULTS_PER_PAGE));
       params.set("page", String(page));
       params.set("matchMode", searchMode);
@@ -354,6 +381,7 @@ export default function SearchPage() {
         page?: number;
         total_is_exact?: boolean;
         match_mode?: string;
+        queries?: string[];
         error?: string;
       };
       if (!res.ok) {
@@ -364,6 +392,7 @@ export default function SearchPage() {
       setCurrentPage(Number(json.page ?? page));
       setTotalIsExact(json.total_is_exact !== false);
       setSearchMode(parseOCRSearchMode(json.match_mode));
+      setLastSearchQueries(json.queries?.length ? json.queries : queriesForSearch);
       setHasSearched(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -373,16 +402,17 @@ export default function SearchPage() {
   }
 
   async function openDownloadPreview(result: SearchResult) {
-    const query = q.trim();
-    if (!query) {
+    const queries = result.matched_queries?.length ? result.matched_queries : lastSearchQueries;
+    if (queries.length === 0) {
       setError("Enter a search word before building a matched-page PDF.");
       return;
     }
 
-    const cacheKey = `${result.custom_id}\n${result.source_rel_path || ""}\n${query}\n${searchMode}`;
+    const cacheKey = `${result.custom_id}\n${result.source_rel_path || ""}\n${queries.join("\n")}\n${searchMode}`;
     setDownloadPreview({
       result,
-      query,
+      query: queries[0],
+      queries,
       matchMode: searchMode,
       loading: true,
       downloading: false,
@@ -396,7 +426,8 @@ export default function SearchPage() {
       if (!preview) {
         const params = new URLSearchParams();
         params.set("customId", result.custom_id);
-        params.set("q", query);
+        params.set("q", queries[0]);
+        for (const queryVariant of queries.slice(1)) params.append("queryVariant", queryVariant);
         params.set("matchMode", searchMode);
         if (result.source_rel_path) params.set("sourceRelPath", result.source_rel_path);
 
@@ -413,6 +444,7 @@ export default function SearchPage() {
               ...prev,
               loading: false,
               preview: preview ?? null,
+              queries: preview?.queries?.length ? preview.queries : prev.queries,
               selectedPages: (preview?.pages ?? []).map((page) => page.page_number),
             }
           : prev
@@ -462,6 +494,7 @@ export default function SearchPage() {
           customId: downloadPreview.preview.custom_id,
           sourceRelPath: downloadPreview.result.source_rel_path || "",
           q: downloadPreview.query,
+          queryVariants: downloadPreview.queries.slice(1),
           matchMode: downloadPreview.matchMode,
           pages: downloadPreview.selectedPages,
           title: downloadPreview.preview.pdf_name,
@@ -476,7 +509,7 @@ export default function SearchPage() {
       const blob = await res.blob();
       downloadBlob(
         blob,
-        `${fileSafe(downloadPreview.preview.pdf_name)}_${fileSafe(downloadPreview.query)}_matched_pages.pdf`
+        `${fileSafe(downloadPreview.preview.pdf_name)}_${fileSafe(downloadPreview.queries.join("_"))}_matched_pages.pdf`
       );
       setDownloadPreview(null);
     } catch (downloadError) {
@@ -531,10 +564,12 @@ export default function SearchPage() {
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <input
+                id="search-query"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={onSearchInputKeyDown}
-                placeholder="Search text..."
+                placeholder="Search text or English phonetic..."
+                aria-label="Search word"
                 style={{
                   flex: 1,
                   minWidth: 260,
@@ -547,7 +582,8 @@ export default function SearchPage() {
               />
               <button
                 onClick={() => void run(1)}
-                disabled={loading || q.trim().length < 2}
+                disabled={loading || !searchReady}
+                aria-busy={loading}
                 style={{
                   padding: "12px 16px",
                   borderRadius: 10,
@@ -558,9 +594,45 @@ export default function SearchPage() {
                   cursor: loading ? "default" : "pointer",
                 }}
               >
-                {loading ? "Searching..." : "Search"}
+                {loading ? (
+                  <span className="buttonSpinnerLabel">
+                    <span className="loadingSpinner" aria-hidden="true" />
+                    Searching
+                  </span>
+                ) : (
+                  "Search"
+                )}
               </button>
             </div>
+
+            {queryOptions.length > 1 ? (
+              <fieldset className="queryVariantFieldset">
+                <legend>Language queries</legend>
+                <div className="queryVariantGrid">
+                  {queryOptions.map((option) => {
+                    const checked = selectedQueryOptionIds.includes(option.id);
+                    return (
+                      <label key={option.id} className="queryVariantOption">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            setSelectedQueryOptionIds((prev) => {
+                              if (event.target.checked) return Array.from(new Set([...prev, option.id]));
+                              return prev.filter((id) => id !== option.id);
+                            });
+                          }}
+                        />
+                        <span>
+                          <strong>{option.label}</strong>
+                          <span>{option.value}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ) : null}
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <strong style={{ fontSize: 15 }}>Match:</strong>
@@ -693,7 +765,10 @@ export default function SearchPage() {
                   }}
                 >
                   {loadingGranths ? (
-                    <div style={{ opacity: 0.75 }}>Loading granth names...</div>
+                    <div className="buttonSpinnerLabel" style={{ opacity: 0.75 }} role="status">
+                      <span className="loadingSpinner" aria-hidden="true" />
+                      Loading granth names
+                    </div>
                   ) : filteredGroups.length === 0 ? (
                     <div style={{ opacity: 0.75 }}>No matching names.</div>
                   ) : (
@@ -726,14 +801,14 @@ export default function SearchPage() {
             ) : null}
 
             {error ? (
-              <div style={{ color: "#9f1f1f", fontWeight: 600, marginTop: 2 }}>
+              <div role="alert" style={{ color: "#9f1f1f", fontWeight: 600, marginTop: 2 }}>
                 {error}
               </div>
             ) : null}
           </div>
         </section>
 
-        <section style={{ marginTop: 18 }}>
+        <section style={{ marginTop: 18 }} aria-busy={loading}>
           {hasSearched ? (
             <div style={{ marginBottom: 12, fontWeight: 700, fontSize: 16 }}>
               Showing page {currentPage} of {totalPages} ({results.length} result(s) on this page, total{" "}
@@ -762,6 +837,7 @@ export default function SearchPage() {
               }}
             >
               {results.map((r, i) => {
+                const rowQueries = r.matched_queries?.length ? r.matched_queries : lastSearchQueries;
                 const csvViewerHref = r.csv_url
                   ? `/csv-viewer?csvUrl=${encodeURIComponent(r.csv_url)}&customId=${encodeURIComponent(
                       r.custom_id
@@ -804,7 +880,7 @@ export default function SearchPage() {
                         paddingRight: 2,
                       }}
                     >
-                      {renderHighlightedSnippet(r.snippet)}
+                      {renderHighlightedSnippet(r.snippet, rowQueries)}
                     </div>
 
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
@@ -817,7 +893,8 @@ export default function SearchPage() {
                               pdfUrl: r.pdf_url,
                               page: r.page_number,
                               title: r.pdf_name,
-                              searchTerm: q,
+                              searchTerm: rowQueries[0] || q,
+                              searchTerms: rowQueries,
                               searchMode,
                             })
                           }
@@ -834,7 +911,7 @@ export default function SearchPage() {
                           type="button"
                           className="inlinePdfButton"
                           onClick={() => void openDownloadPreview(r)}
-                          disabled={!q.trim()}
+                          disabled={rowQueries.length === 0}
                         >
                           Download matched pages
                         </button>
@@ -874,8 +951,15 @@ export default function SearchPage() {
                     </button>
                   </header>
 
-                  {downloadPreview.loading ? <div className="searchDownloadNotice">Loading pages...</div> : null}
-                  {downloadPreview.error ? <div className="searchDownloadError">{downloadPreview.error}</div> : null}
+                  {downloadPreview.loading ? (
+                    <div className="searchDownloadNotice" role="status">
+                      <span className="buttonSpinnerLabel">
+                        <span className="loadingSpinner" aria-hidden="true" />
+                        Loading pages
+                      </span>
+                    </div>
+                  ) : null}
+                  {downloadPreview.error ? <div className="searchDownloadError" role="alert">{downloadPreview.error}</div> : null}
 
                   {downloadPreview.preview ? (
                     <>
@@ -911,7 +995,7 @@ export default function SearchPage() {
                                 {isCover ? " | cover" : ""} | {page.occurrence_count} match(es)
                               </span>
                               <span className="searchDownloadSnippet">
-                                {renderHighlightedText(page.snippet, downloadPreview.query, downloadPreview.matchMode)}
+                                {renderHighlightedText(page.snippet, downloadPreview.queries, downloadPreview.matchMode)}
                               </span>
                             </label>
                           );
@@ -927,9 +1011,17 @@ export default function SearchPage() {
                         <button
                           type="button"
                           onClick={() => void downloadMatchedPdf()}
+                          aria-busy={downloadPreview.downloading}
                           disabled={downloadPreview.downloading || selectedCount === 0 || tooManyPages}
                         >
-                          {downloadPreview.downloading ? "Building PDF..." : "Download PDF"}
+                          {downloadPreview.downloading ? (
+                            <span className="buttonSpinnerLabel">
+                              <span className="loadingSpinner" aria-hidden="true" />
+                              Building PDF
+                            </span>
+                          ) : (
+                            "Download PDF"
+                          )}
                         </button>
                       </footer>
                     </>

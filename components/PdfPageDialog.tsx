@@ -1,6 +1,11 @@
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { findOCRSearchMatches, parseOCRSearchMode, type OCRSearchMode } from "@/lib/ocr-search";
+import {
+  findOCRSearchMatchesForQueries,
+  normalizeOCRSearchQueries,
+  parseOCRSearchMode,
+  type OCRSearchMode,
+} from "@/lib/ocr-search";
 
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 type PDFDocumentLoadingTask = import("pdfjs-dist").PDFDocumentLoadingTask;
@@ -14,6 +19,7 @@ export type PdfDialogTarget = {
   title?: string | null;
   pageCount?: number | null;
   searchTerm?: string | null;
+  searchTerms?: string[] | null;
   searchMode?: OCRSearchMode | null;
 };
 
@@ -59,15 +65,14 @@ function titleFromUrl(pdfUrl: string | null) {
   }
 }
 
-function applySearchHighlights(textDivs: HTMLElement[], query: string, mode: OCRSearchMode) {
-  const needle = query.trim();
-  if (!needle) return 0;
+function applySearchHighlights(textDivs: HTMLElement[], queries: string[], mode: OCRSearchMode) {
+  if (queries.length === 0) return 0;
 
   let count = 0;
 
   for (const textDiv of textDivs) {
     const text = textDiv.textContent ?? "";
-    const matches = findOCRSearchMatches(text, needle, mode);
+    const matches = findOCRSearchMatchesForQueries(text, queries, mode);
     if (matches.length === 0) continue;
 
     textDiv.textContent = "";
@@ -108,7 +113,10 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   const requestedPage = useMemo(() => parsePage(target?.page), [target?.page]);
   const pageCountHint = Number.isFinite(Number(target?.pageCount)) ? Math.max(0, Number(target?.pageCount)) : 0;
   const dialogTitle = target?.title?.trim() || titleFromUrl(pdfUrl);
-  const highlightTerm = target?.searchTerm?.trim() ?? "";
+  const highlightTerms = useMemo(
+    () => normalizeOCRSearchQueries(target?.searchTerm || "", target?.searchTerms || []),
+    [target?.searchTerm, target?.searchTerms]
+  );
   const highlightMode = useMemo(() => parseOCRSearchMode(target?.searchMode), [target?.searchMode]);
 
   const [pdfModule, setPdfModule] = useState<PdfJsModule | null>(null);
@@ -323,7 +331,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
             `"Nirmala UI", "Mangal", "Kohinoor Devanagari", sans-serif`;
           textDiv.style.unicodeBidi = "plaintext";
         }
-        setHighlightCount(applySearchHighlights(textLayer.textDivs, highlightTerm, highlightMode));
+        setHighlightCount(applySearchHighlights(textLayer.textDivs, highlightTerms, highlightMode));
         setTextDivCount(textLayer.textDivs.length);
 
         const endOfContent = document.createElement("div");
@@ -357,7 +365,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
         detachSelectionHandlers = null;
       }
     };
-  }, [currentPage, highlightMode, highlightTerm, pageCount, pdfDoc, pdfModule, target, zoom]);
+  }, [currentPage, highlightMode, highlightTerms, pageCount, pdfDoc, pdfModule, target, zoom]);
 
   function goToPage(page: number) {
     const maxPage = pageCount || Math.max(1, page);
@@ -398,7 +406,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
             <div className="pdfDialogSubline">
               {pageCount > 0 ? `Page ${currentPage} of ${pageCount}` : `Page ${currentPage}`}
               {docLoading || pageLoading ? " | Loading current page" : ""}
-              {highlightTerm && !docLoading && !pageLoading ? ` | ${highlightCount} highlight(s)` : ""}
+              {highlightTerms.length > 0 && !docLoading && !pageLoading ? ` | ${highlightCount} highlight(s)` : ""}
             </div>
           </div>
 

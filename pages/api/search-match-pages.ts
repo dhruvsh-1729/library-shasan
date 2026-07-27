@@ -6,7 +6,7 @@ import {
   SearchMatchError,
   loadSearchMatchPages,
   resolveSearchPdfSource,
-  validateSearchDownloadQuery,
+  validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
 
 function firstQueryValue(raw: string | string[] | undefined) {
@@ -23,13 +23,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const customId = String(firstQueryValue(req.query.customId) || "").trim();
     const sourceRelPath = String(firstQueryValue(req.query.sourceRelPath) || "").trim();
     const q = String(firstQueryValue(req.query.q) || "").trim();
+    const queryVariants = req.query.queryVariant ?? req.query.queryVariants;
     const matchMode = parseOCRSearchMode(firstQueryValue(req.query.matchMode));
-    validateSearchDownloadQuery(q, matchMode);
+    const queries = validateSearchDownloadQueries(q, queryVariants, matchMode);
 
     const cacheKey = buildCacheKey(req, "search-match-pages");
     const { value: payload, status } = await getCachedJson(cacheKey, 60, async () => {
-      const source = await resolveSearchPdfSource(customId);
-      const { pages, truncated } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, q, matchMode);
+      const source = await resolveSearchPdfSource(customId, sourceRelPath);
+      const { pages, truncated } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, queries, matchMode);
 
       return {
         custom_id: source.customId,
@@ -42,6 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         truncated,
         max_download_pages: MAX_MATCH_PAGE_DOWNLOAD,
         match_mode: matchMode,
+        queries,
       };
     });
 
