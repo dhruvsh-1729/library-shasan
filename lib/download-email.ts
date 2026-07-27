@@ -7,7 +7,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 export const MAX_EMAIL_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 const RECIPIENT_COOKIE = "download_email_client";
 const RECIPIENT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
-const MAILEROO_FROM_EMAIL = "14ef21.4106.fcc9a23f31b2c197b2f1377c82d0a1fe@a.maileroo.net";
+const MAILEROO_FROM_EMAIL = "library@e011a807fb36ba9a.maileroo.org";
 const MAILEROO_FROM_NAME = "Granth Library";
 
 export class DownloadEmailError extends Error {
@@ -126,6 +126,53 @@ function fromName() {
   return MAILEROO_FROM_NAME;
 }
 
+function cleanEmailTitle(value: string) {
+  return String(value || "requested file")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140) || "requested file";
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case "\"":
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return char;
+    }
+  });
+}
+
+function downloadEmailTemplate(title: string) {
+  const cleanTitle = cleanEmailTitle(title);
+  const subject = `Your Granth Library file: ${cleanTitle}`;
+  const plain = [
+    "Your requested Granth Library file is attached.",
+    "",
+    `File: ${cleanTitle}`,
+    "",
+    "This message was sent because you requested this file from the Granth Library application.",
+    "If the attachment is large or slow to open, download it directly on your device instead.",
+  ].join("\n");
+  const htmlTitle = escapeHtml(cleanTitle);
+  const html =
+    "<p>Your requested Granth Library file is attached.</p>" +
+    `<p><strong>File:</strong> ${htmlTitle}</p>` +
+    "<p>This message was sent because you requested this file from the Granth Library application.</p>" +
+    "<p>If the attachment is large or slow to open, download it directly on your device instead.</p>";
+
+  return { subject, plain, html };
+}
+
 function createMailerooTransport() {
   const user = process.env.MAILEROO_SMTP_USERNAME || process.env.MAILEROO_SMTP_USER;
   const pass = process.env.MAILEROO_SMTP_PASSWORD;
@@ -156,12 +203,13 @@ async function sendViaMailerooApi(options: {
   const apiKey = process.env.MAILEROO_API_KEY || process.env.MAILEROO_SENDING_KEY;
   if (!apiKey) return null;
 
+  const template = downloadEmailTemplate(options.title);
   const file = await readFile(options.filePath);
   const response = await fetch("https://smtp.maileroo.com/api/v2/emails", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      "X-API-Key": apiKey,
     },
     body: JSON.stringify({
       from: {
@@ -171,14 +219,17 @@ async function sendViaMailerooApi(options: {
       to: {
         address: options.to,
       },
-      subject: `Granth Library download: ${options.title}`,
-      plain:
-        `Attached is your Granth Library download: ${options.title}.\n\n` +
-        "For larger files, downloading directly on the device is recommended.",
-      html:
-        `<p>Attached is your Granth Library download: <strong>${options.title}</strong>.</p>` +
-        "<p>For larger files, downloading directly on the device is recommended.</p>",
+      reply_to: {
+        address: fromAddress(),
+        display_name: fromName(),
+      },
+      subject: template.subject,
+      plain: template.plain,
+      html: template.html,
       tracking: false,
+      headers: {
+        "X-Entity-Ref-ID": createHash("sha256").update(`${options.to}:${options.filename}`).digest("hex").slice(0, 24),
+      },
       tags: {
         app: "granth-library",
         type: "download",
@@ -213,17 +264,18 @@ async function sendViaSmtp(options: {
   title: string;
 }) {
   const transport = createMailerooTransport();
+  const template = downloadEmailTemplate(options.title);
 
   await transport.sendMail({
     from: mailFrom(),
     to: options.to,
-    subject: `Granth Library download: ${options.title}`,
-    text:
-      `Attached is your Granth Library download: ${options.title}.\n\n` +
-      "For larger files, downloading directly on the device is recommended.",
-    html:
-      `<p>Attached is your Granth Library download: <strong>${options.title}</strong>.</p>` +
-      "<p>For larger files, downloading directly on the device is recommended.</p>",
+    replyTo: mailFrom(),
+    subject: template.subject,
+    text: template.plain,
+    html: template.html,
+    headers: {
+      "X-Entity-Ref-ID": createHash("sha256").update(`${options.to}:${options.filename}`).digest("hex").slice(0, 24),
+    },
     attachments: [
       {
         filename: options.filename,
