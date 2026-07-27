@@ -1,5 +1,5 @@
 import OcrReplacePanel from "@/components/OcrReplacePanel";
-import { type OCRSearchMode, findOCRSearchMatches, parseOCRSearchMode } from "@/lib/ocr-search";
+import { type OCRSearchMode, findOCRSearchMatches, getOCRSearchModeLabel, parseOCRSearchMode } from "@/lib/ocr-search";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { ReactNode } from "react";
@@ -238,7 +238,7 @@ export default function OCRTextViewerPage() {
                 {" "}| Matching pages in this granth: <strong>{occurrenceItems.length}</strong>
                 {" "}| Total visible matches: <strong>{totalOccurrenceCount}</strong>
                 {" "}| Match mode:{" "}
-                <strong>{matchMode === "exact_word" ? "Exact word only" : "Contains inside word"}</strong>
+                <strong>{getOCRSearchModeLabel(matchMode)}</strong>
               </>
             ) : null}
           </div>

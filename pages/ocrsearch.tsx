@@ -1,5 +1,11 @@
 import OcrReplacePanel from "@/components/OcrReplacePanel";
-import { type OCRSearchMode, findOCRSearchMatches, parseOCRSearchMode } from "@/lib/ocr-search";
+import {
+  OCR_SEARCH_MODE_OPTIONS,
+  type OCRSearchMode,
+  findOCRSearchMatches,
+  getOCRSearchModeLabel,
+  parseOCRSearchMode,
+} from "@/lib/ocr-search";
 import Link from "next/link";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +18,7 @@ type OCRSearchResult = {
   page_number: number;
   snippet: string;
   score?: number;
+  occurrence_count?: number;
   xlsx_url?: string | null;
 };
 
@@ -425,40 +432,27 @@ export default function OCRSearchPage() {
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <strong style={{ fontSize: 16 }}>Word match:</strong>
-              <button
-                type="button"
-                onClick={() => setSearchMode("exact_word")}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  border: "1px solid #bcc4ce",
-                  background: searchMode === "exact_word" ? "#1f2120" : "#fff",
-                  color: searchMode === "exact_word" ? "#fff" : "#222",
-                  cursor: "pointer",
-                  fontSize: 15,
-                }}
-              >
-                Exact word only
-              </button>
-              <button
-                type="button"
-                onClick={() => setSearchMode("contains")}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  border: "1px solid #bcc4ce",
-                  background: searchMode === "contains" ? "#1f2120" : "#fff",
-                  color: searchMode === "contains" ? "#fff" : "#222",
-                  cursor: "pointer",
-                  fontSize: 15,
-                }}
-              >
-                Contains inside word
-              </button>
+              {OCR_SEARCH_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.mode}
+                  type="button"
+                  onClick={() => setSearchMode(option.mode)}
+                  title={option.description}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    border: "1px solid #bcc4ce",
+                    background: searchMode === option.mode ? "#1f2120" : "#fff",
+                    color: searchMode === option.mode ? "#fff" : "#222",
+                    cursor: "pointer",
+                    fontSize: 15,
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
               <span style={{ fontSize: 14, opacity: 0.8 }}>
-                {searchMode === "exact_word"
-                  ? "Matches only full-word occurrences."
-                  : "Matches anywhere inside a word or phrase."}
+                {OCR_SEARCH_MODE_OPTIONS.find((option) => option.mode === searchMode)?.description}
               </span>
             </div>
 
@@ -598,7 +592,7 @@ export default function OCRSearchPage() {
 
           {hasSearched ? (
             <div style={{ marginBottom: 10, fontSize: 15, opacity: 0.8 }}>
-              Match mode: <strong>{searchMode === "exact_word" ? "Exact word only" : "Contains inside word"}</strong>
+              Match mode: <strong>{getOCRSearchModeLabel(searchMode)}</strong>
             </div>
           ) : null}
 
@@ -691,7 +685,10 @@ export default function OCRSearchPage() {
                   >
                     <div>
                       <div style={{ fontWeight: 700, lineHeight: 1.35, fontSize: 18 }}>{title}</div>
-                      <div style={{ fontSize: 15, opacity: 0.78 }}>Page {result.page_number}</div>
+                      <div style={{ fontSize: 15, opacity: 0.78 }}>
+                        Page {result.page_number}
+                        {typeof result.occurrence_count === "number" ? ` | ${result.occurrence_count} match(es)` : ""}
+                      </div>
                       {isActiveGranthTarget ? (
                         <div style={{ marginTop: 6, fontSize: 13, color: "#8b5e1a", fontWeight: 700 }}>
                           Active replace target

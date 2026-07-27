@@ -11,6 +11,7 @@
     "index:granth:stream": "node scripts/index_granth_from_db_pdftotext_stream.mjs",
     "index:granth:ocr500": "node scripts/index_granth_from_db_ocr500.mjs",
     "index:ocr:xlsx:turso": "node scripts/index_ocr_xlsx_to_turso.mjs",
+    "search:index:turso": "node scripts/ensure_turso_search_indexes.mjs",
     "library:pipeline": "node scripts/run_budgeted_library_pipeline.mjs",
     "library:mapping:import": "node scripts/import_granth_library_mapping.mjs"
   },

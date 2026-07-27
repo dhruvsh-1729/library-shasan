@@ -1,4 +1,31 @@
-export type OCRSearchMode = "exact_word" | "contains";
+export type OCRSearchMode = "exact_word" | "contains" | "begins_with" | "ends_with";
+
+export const OCR_SEARCH_MODE_OPTIONS: Array<{
+  mode: OCRSearchMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    mode: "exact_word",
+    label: "Exact word",
+    description: "Matches complete words only.",
+  },
+  {
+    mode: "begins_with",
+    label: "Begins with",
+    description: "Matches words that start with the query.",
+  },
+  {
+    mode: "ends_with",
+    label: "Ends with",
+    description: "Matches words that end with the query.",
+  },
+  {
+    mode: "contains",
+    label: "Contains",
+    description: "Matches the query anywhere in page text.",
+  },
+];
 
 type SearchMatch = {
   start: number;
@@ -9,7 +36,12 @@ type SearchMatch = {
 const WORD_CHAR_PATTERN = /[\p{L}\p{N}\p{M}_]/u;
 
 export function parseOCRSearchMode(raw: unknown): OCRSearchMode {
-  return raw === "contains" ? "contains" : "exact_word";
+  if (raw === "contains" || raw === "begins_with" || raw === "ends_with") return raw;
+  return "exact_word";
+}
+
+export function getOCRSearchModeLabel(mode: OCRSearchMode) {
+  return OCR_SEARCH_MODE_OPTIONS.find((option) => option.mode === mode)?.label ?? "Exact word";
 }
 
 export function escapeRegExp(input: string) {
@@ -35,12 +67,17 @@ export function findOCRSearchMatches(content: string, query: string, mode: OCRSe
     const text = match[0] ?? "";
     const end = start + text.length;
 
-    if (mode === "exact_word") {
-      const left = source[start - 1];
-      const right = source[end];
-      if (!isBoundaryChar(left) || !isBoundaryChar(right)) {
-        continue;
-      }
+    const left = source[start - 1];
+    const right = source[end];
+
+    if (mode === "exact_word" && (!isBoundaryChar(left) || !isBoundaryChar(right))) {
+      continue;
+    }
+    if (mode === "begins_with" && !isBoundaryChar(left)) {
+      continue;
+    }
+    if (mode === "ends_with" && !isBoundaryChar(right)) {
+      continue;
     }
 
     matches.push({ start, end, text });
@@ -77,4 +114,3 @@ export function buildOCRSearchExcerpt(content: string, query: string, mode: OCRS
   if (end < cleanContent.length) excerpt = `${excerpt}…`;
   return excerpt;
 }
-

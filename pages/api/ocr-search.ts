@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getTursoClient } from "@/lib/turso";
 import { buildOCRSearchExcerpt, findOCRSearchMatches, parseOCRSearchMode } from "@/lib/ocr-search";
+import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
 
 function parseLimit(raw: unknown) {
   const value = Number(raw ?? 48);
@@ -39,14 +40,6 @@ function toStr(value: unknown, fallback = "") {
   return String(value);
 }
 
-function escapeLikePattern(input: string) {
-  return input.replace(/[\\%_]/g, "\\$&");
-}
-
-function buildFtsPhrase(query: string) {
-  return `"${String(query ?? "").replace(/"/g, "\"\"")}"`;
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -62,6 +55,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (!q || q.length < 2) {
     return res.status(200).json({ results: [], total: 0, match_mode: matchMode });
+  }
+
+  if (matchMode === "contains" && Array.from(q).length < 3) {
+    return res.status(400).json({
+      error: "Contains search requires at least 3 characters so it can use the trigram index.",
+      results: [],
+      total: 0,
+      match_mode: matchMode,
+    });
   }
 
   const granthFilterSql = selectedGranths.length
@@ -82,82 +84,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       xlsx_url: string | null;
     }> = [];
 
-    if (matchMode === "exact_word") {
-      const candidateResult = await client.execute({
-        sql: `SELECT
-                p.granth_key,
-                g.book_number,
-                g.library_code,
-                g.granth_name,
-                g.xlsx_url,
-                p.page_number,
-                p.content,
-                bm25(ocr_pages_fts) AS rank
-              FROM ocr_pages_fts
-              JOIN ocr_pages p ON p.id = ocr_pages_fts.rowid
-              JOIN ocr_granths g ON g.granth_key = p.granth_key
-              WHERE ocr_pages_fts MATCH ?${granthFilterSql}
-              ORDER BY rank ASC, CAST(g.book_number AS INTEGER) ASC, p.page_number ASC`,
-        args: [buildFtsPhrase(q), ...selectedGranths],
-      });
+    const ftsTable =
+      matchMode === "contains"
+        ? "ocr_pages_trigram_fts"
+        : matchMode === "ends_with"
+          ? "ocr_pages_suffix_fts"
+          : "ocr_pages_search_fts";
+    const ftsColumn = matchMode === "ends_with" ? "reversed_content" : "content";
+    const matchQuery =
+      matchMode === "begins_with"
+        ? `${escapeFtsToken(q)}*`
+        : matchMode === "ends_with"
+          ? buildOCRSuffixQuery(q)
+          : escapeFtsPhrase(q);
 
-      const filtered = candidateResult.rows.filter((row) =>
-        findOCRSearchMatches(toStr(row.content), q, matchMode).length > 0
-      );
-      total = filtered.length;
-      const pageRows = filtered.slice(offset, offset + limit);
+    const countResult = await client.execute({
+      sql: `SELECT COUNT(*) AS total
+            FROM ${ftsTable}
+            JOIN ocr_pages p ON p.id = ${ftsTable}.rowid
+            WHERE ${ftsTable} MATCH ?${granthFilterSql}`,
+      args: [matchQuery, ...selectedGranths],
+    });
 
-      results = pageRows.map((row) => ({
+    const listResult = await client.execute({
+      sql: `SELECT
+              p.granth_key,
+              g.book_number,
+              g.library_code,
+              g.granth_name,
+              g.xlsx_url,
+              p.page_number,
+              p.content,
+              0 AS rank
+            FROM ${ftsTable}
+            JOIN ocr_pages p ON p.id = ${ftsTable}.rowid
+            JOIN ocr_granths g ON g.granth_key = p.granth_key
+            WHERE ${ftsTable} MATCH ?${granthFilterSql}
+            ORDER BY ${ftsTable}.rowid ASC
+            LIMIT ? OFFSET ?`,
+      args: [matchQuery, ...selectedGranths, limit, offset],
+    });
+
+    total = toInt(countResult.rows[0]?.total);
+    results = listResult.rows.map((row) => {
+      const content = toStr(row.content);
+      return {
         granth_key: toStr(row.granth_key),
         book_number: toStr(row.book_number),
         library_code: row.library_code == null ? null : toStr(row.library_code),
         granth_name: toStr(row.granth_name),
         page_number: toInt(row.page_number),
-        snippet: buildOCRSearchExcerpt(toStr(row.content), q, matchMode),
+        snippet: buildOCRSearchExcerpt(content, q, matchMode),
         score: toFloat(row.rank),
+        occurrence_count: findOCRSearchMatches(content, q, matchMode).length,
         xlsx_url: row.xlsx_url == null ? null : toStr(row.xlsx_url),
-      }));
-    } else {
-      const likePattern = `%${escapeLikePattern(q)}%`;
-      const baseArgs = [likePattern, ...selectedGranths];
-
-      const countResult = await client.execute({
-        sql: `SELECT COUNT(*) AS total
-              FROM ocr_pages p
-              WHERE p.content LIKE ? ESCAPE '\\'${granthFilterSql}`,
-        args: baseArgs,
-      });
-
-      const listResult = await client.execute({
-        sql: `SELECT
-                p.granth_key,
-                g.book_number,
-                g.library_code,
-                g.granth_name,
-                g.xlsx_url,
-                p.page_number,
-                p.content,
-                0 AS rank
-              FROM ocr_pages p
-              JOIN ocr_granths g ON g.granth_key = p.granth_key
-              WHERE p.content LIKE ? ESCAPE '\\'${granthFilterSql}
-              ORDER BY INSTR(LOWER(p.content), LOWER(?)) ASC, CAST(g.book_number AS INTEGER) ASC, p.page_number ASC
-              LIMIT ? OFFSET ?`,
-        args: [...baseArgs, q, limit, offset],
-      });
-
-      total = toInt(countResult.rows[0]?.total);
-      results = listResult.rows.map((row) => ({
-        granth_key: toStr(row.granth_key),
-        book_number: toStr(row.book_number),
-        library_code: row.library_code == null ? null : toStr(row.library_code),
-        granth_name: toStr(row.granth_name),
-        page_number: toInt(row.page_number),
-        snippet: buildOCRSearchExcerpt(toStr(row.content), q, matchMode),
-        score: toFloat(row.rank),
-        xlsx_url: row.xlsx_url == null ? null : toStr(row.xlsx_url),
-      }));
-    }
+      };
+    });
 
     return res.status(200).json({
       results,
@@ -166,6 +148,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       page,
       per_page: limit,
       match_mode: matchMode,
+      search_table: ftsTable,
+      search_column: ftsColumn,
     });
   } catch (error) {
     return res.status(500).json({

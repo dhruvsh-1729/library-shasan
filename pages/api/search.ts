@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
+import { buildOCRSearchExcerpt, findOCRSearchMatches, parseOCRSearchMode } from "@/lib/ocr-search";
+import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getTursoClient } from "@/lib/turso";
 
@@ -40,10 +42,6 @@ function parseGranthIds(raw: string | string[] | undefined) {
     .filter(Boolean);
 }
 
-function escapeLikePattern(input: string) {
-  return input.replace(/[\\%_]/g, "\\$&");
-}
-
 function toInt(value: unknown, fallback = 0) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -53,19 +51,6 @@ function toInt(value: unknown, fallback = 0) {
 function toStr(value: unknown, fallback = "") {
   if (value == null) return fallback;
   return String(value);
-}
-
-function buildSnippet(content: string, q: string) {
-  const text = String(content ?? "").replace(/\s+/g, " ").trim();
-  if (!text) return "";
-
-  const lower = text.toLowerCase();
-  const idx = lower.indexOf(q.toLowerCase());
-  if (idx < 0) return text.slice(0, 520);
-
-  const start = Math.max(0, idx - 220);
-  const end = Math.min(text.length, idx + q.length + 300);
-  return `${start > 0 ? "... " : ""}${text.slice(start, end)}${end < text.length ? " ..." : ""}`;
 }
 
 async function fetchDocumentMetaByCustomIds(customIds: string[]) {
@@ -102,6 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const page = parsePage(req.query.page);
     const offset = Math.max(0, (page - 1) * limit);
     const selectedGranths = parseGranthIds(req.query.granths).slice(0, 250);
+    const matchMode = parseOCRSearchMode(req.query.matchMode);
 
     if (!q || q.length < 2) {
       setPublicCacheHeaders(res, { maxAgeSeconds: 60, staleWhileRevalidateSeconds: 300 });
@@ -112,6 +98,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         per_page: limit,
         total_pages: 1,
         total_is_exact: true,
+        match_mode: matchMode,
+      });
+    }
+
+    if (matchMode === "contains" && Array.from(q).length < 3) {
+      setNoStore(res);
+      return res.status(400).json({
+        error: "Contains search requires at least 3 characters so it can use the trigram index.",
+        results: [],
+        total: 0,
+        page,
+        per_page: limit,
+        total_pages: 1,
+        total_is_exact: true,
+        match_mode: matchMode,
       });
     }
 
@@ -132,6 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           total_pages: 1,
           total_is_exact: true,
           search_backend: "turso",
+          match_mode: matchMode,
         };
       }
 
@@ -139,14 +141,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const relFilterSql = selectedRelPaths.length
         ? ` AND g.source_rel_path IN (${selectedRelPaths.map(() => "?").join(",")})`
         : "";
-      const likePattern = `%${escapeLikePattern(q)}%`;
-      const baseArgs = [likePattern, ...selectedRelPaths];
+      const ftsTable =
+        matchMode === "contains"
+          ? "ocr_pages_trigram_fts"
+          : matchMode === "ends_with"
+            ? "ocr_pages_suffix_fts"
+            : "ocr_pages_search_fts";
+      const matchQuery =
+        matchMode === "begins_with"
+          ? `${escapeFtsToken(q)}*`
+          : matchMode === "ends_with"
+            ? buildOCRSuffixQuery(q)
+            : escapeFtsPhrase(q);
+      const baseArgs = [matchQuery, ...selectedRelPaths];
 
       const countResult = await client.execute({
         sql: `SELECT COUNT(*) AS total
-              FROM ocr_pages p
+              FROM ${ftsTable}
+              JOIN ocr_pages p ON p.id = ${ftsTable}.rowid
               JOIN ocr_granths g ON g.granth_key = p.granth_key
-              WHERE p.content LIKE ? ESCAPE '\\'${relFilterSql}`,
+              WHERE ${ftsTable} MATCH ?${relFilterSql}`,
         args: baseArgs,
       });
 
@@ -158,12 +172,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 p.page_number,
                 p.content,
                 0 AS rank
-              FROM ocr_pages p
+              FROM ${ftsTable}
+              JOIN ocr_pages p ON p.id = ${ftsTable}.rowid
               JOIN ocr_granths g ON g.granth_key = p.granth_key
-              WHERE p.content LIKE ? ESCAPE '\\'${relFilterSql}
-              ORDER BY INSTR(LOWER(p.content), LOWER(?)) ASC, g.source_rel_path ASC, p.page_number ASC
+              WHERE ${ftsTable} MATCH ?${relFilterSql}
+              ORDER BY ${ftsTable}.rowid ASC
               LIMIT ? OFFSET ?`,
-        args: [...baseArgs, q, limit, offset],
+        args: [...baseArgs, limit, offset],
       });
 
       const rows = listResult.rows.map((row) => ({
@@ -192,16 +207,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const meta = resultByRelPath.get(row.source_rel_path) ?? selectedByRelPath.get(row.source_rel_path);
         const customId = meta?.custom_id ?? row.granth_key;
         const pdfUrl = meta?.pdf_url ?? "";
-        return {
-          custom_id: customId,
-          pdf_name: meta?.pdf_name ?? row.pdf_name,
-          pdf_url: pdfUrl,
-          page_number: row.page_number,
-          snippet: buildSnippet(row.content, q),
-          score: row.rank,
-          csv_url: meta?.csv_url ?? null,
-          open_pdf_url: pdfUrl ? `${pdfUrl}#page=${encodeURIComponent(String(row.page_number))}` : "",
-        };
+          return {
+            custom_id: customId,
+            pdf_name: meta?.pdf_name ?? row.pdf_name,
+            pdf_url: pdfUrl,
+            page_number: row.page_number,
+            snippet: buildOCRSearchExcerpt(row.content, q, matchMode, 520),
+            score: row.rank,
+            occurrence_count: findOCRSearchMatches(row.content, q, matchMode).length,
+            csv_url: meta?.csv_url ?? null,
+            open_pdf_url: pdfUrl ? `${pdfUrl}#page=${encodeURIComponent(String(row.page_number))}` : "",
+          };
       });
 
       const total = toInt(countResult.rows[0]?.total);
@@ -214,6 +230,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         total_pages: Math.max(1, Math.ceil(total / limit)),
         total_is_exact: true,
         search_backend: "turso",
+        search_table: ftsTable,
+        match_mode: matchMode,
       };
     });
 

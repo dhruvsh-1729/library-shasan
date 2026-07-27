@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getTursoClient } from "@/lib/turso";
 import { ensureReplacementSchema, hasWhitespaceWordBoundary } from "@/lib/ocr-replacements";
+import { ensureOCRSearchSchema, upsertOCRPageSuffixIndex } from "@/lib/ocr-search-index";
 
 type RevertBody = {
   change_id?: number;
@@ -32,6 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const client = getTursoClient();
     await ensureReplacementSchema(client);
+    await ensureOCRSearchSchema(client);
 
     const tx = await client.transaction("write");
     try {
@@ -100,6 +102,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               WHERE granth_key = ? AND page_number = ?`,
         args: [revertedContent, granthKey, pageNumber],
       });
+      await upsertOCRPageSuffixIndex(tx, granthKey, pageNumber, revertedContent);
 
       const inserted = await tx.execute({
         sql: `INSERT INTO ocr_word_changes (

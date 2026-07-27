@@ -1,5 +1,12 @@
+import {
+  OCR_SEARCH_MODE_OPTIONS,
+  type OCRSearchMode,
+  findOCRSearchMatches,
+  getOCRSearchModeLabel,
+  parseOCRSearchMode,
+} from "@/lib/ocr-search";
 import Link from "next/link";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 type SearchResult = {
@@ -9,6 +16,7 @@ type SearchResult = {
   page_number: number;
   snippet: string;
   score?: number;
+  occurrence_count?: number;
   open_pdf_url: string;
   csv_url?: string | null;
 };
@@ -34,10 +42,6 @@ type DocumentStats = {
 
 const RESULTS_PER_PAGE = 20;
 
-function escapeRegExp(input: string) {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export default function SearchPage() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -47,6 +51,7 @@ export default function SearchPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchMode, setSearchMode] = useState<OCRSearchMode>("exact_word");
 
   const [granthOptions, setGranthOptions] = useState<GranthOption[]>([]);
   const [loadingGranths, setLoadingGranths] = useState(true);
@@ -122,15 +127,6 @@ export default function SearchPage() {
     return groups.filter((g) => g.name.toLowerCase().includes(keyword));
   }, [groups, nameFilter]);
 
-  const queryTerms = useMemo(() => {
-    const terms = q
-      .trim()
-      .split(/\s+/)
-      .map((x) => x.trim().toLocaleLowerCase())
-      .filter(Boolean);
-    return Array.from(new Set(terms)).sort((a, b) => b.length - a.length);
-  }, [q]);
-
   const selectedCustomIds = useMemo(() => {
     if (selectionMode === "all") return [];
     const selectedSet = new Set(selectedNames);
@@ -205,19 +201,19 @@ export default function SearchPage() {
   }
 
   function renderHighlightedSnippet(text: string) {
-    if (!text || queryTerms.length === 0) return text;
+    const matches = findOCRSearchMatches(text, q, searchMode);
+    if (!text || matches.length === 0) return text;
 
-    const pattern = new RegExp(`(${queryTerms.map(escapeRegExp).join("|")})`, "gi");
-    const lowerTermSet = new Set(queryTerms);
-    const parts = text.split(pattern);
+    const parts: ReactNode[] = [];
+    let cursor = 0;
 
-    return parts.map((part, idx) => {
-      if (!part) return null;
-      const isMatch = lowerTermSet.has(part.toLocaleLowerCase());
-      if (!isMatch) return <span key={idx}>{part}</span>;
-      return (
+    matches.forEach((match, idx) => {
+      if (match.start > cursor) {
+        parts.push(text.slice(cursor, match.start));
+      }
+      parts.push(
         <mark
-          key={idx}
+          key={`${match.start}_${idx}`}
           style={{
             background: "#fff100",
             color: "#111",
@@ -226,10 +222,17 @@ export default function SearchPage() {
             fontWeight: 700,
           }}
         >
-          {part}
+          {text.slice(match.start, match.end)}
         </mark>
       );
+      cursor = match.end;
     });
+
+    if (cursor < text.length) {
+      parts.push(text.slice(cursor));
+    }
+
+    return parts.map((part, idx) => <span key={idx}>{part}</span>);
   }
 
   async function run(page: number) {
@@ -245,6 +248,7 @@ export default function SearchPage() {
       params.set("q", q);
       params.set("limit", String(RESULTS_PER_PAGE));
       params.set("page", String(page));
+      params.set("matchMode", searchMode);
       if (selectionMode !== "all" && selectedCustomIds.length > 0) {
         params.set("granths", selectedCustomIds.join(","));
       }
@@ -255,6 +259,7 @@ export default function SearchPage() {
         total?: number;
         page?: number;
         total_is_exact?: boolean;
+        match_mode?: string;
         error?: string;
       };
       if (!res.ok) {
@@ -264,6 +269,7 @@ export default function SearchPage() {
       setTotal(Number(json.total ?? (json.results?.length ?? 0)));
       setCurrentPage(Number(json.page ?? page));
       setTotalIsExact(json.total_is_exact !== false);
+      setSearchMode(parseOCRSearchMode(json.match_mode));
       setHasSearched(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -340,6 +346,32 @@ export default function SearchPage() {
               >
                 {loading ? "Searching..." : "Search"}
               </button>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: 15 }}>Match:</strong>
+              {OCR_SEARCH_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.mode}
+                  type="button"
+                  onClick={() => setSearchMode(option.mode)}
+                  title={option.description}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    border: "1px solid #bcc4ce",
+                    background: searchMode === option.mode ? "#1f2120" : "#fff",
+                    color: searchMode === option.mode ? "#fff" : "#222",
+                    cursor: "pointer",
+                    fontSize: 14,
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+              <span style={{ fontSize: 14, opacity: 0.78 }}>
+                {OCR_SEARCH_MODE_OPTIONS.find((option) => option.mode === searchMode)?.description}
+              </span>
             </div>
 
             <div>
@@ -491,7 +523,7 @@ export default function SearchPage() {
           {hasSearched ? (
             <div style={{ marginBottom: 12, fontWeight: 700, fontSize: 16 }}>
               Showing page {currentPage} of {totalPages} ({results.length} result(s) on this page, total{" "}
-              {totalIsExact ? total : `at least ${total}`}).
+              {totalIsExact ? total : `at least ${total}`}). Match: <strong>{getOCRSearchModeLabel(searchMode)}</strong>.
             </div>
           ) : null}
 
@@ -585,7 +617,10 @@ export default function SearchPage() {
                       <div style={{ fontWeight: 700, lineHeight: 1.35 }}>
                         {r.pdf_name}
                       </div>
-                      <div style={{ fontSize: 13, opacity: 0.76 }}>Page {r.page_number}</div>
+                      <div style={{ fontSize: 13, opacity: 0.76 }}>
+                        Page {r.page_number}
+                        {typeof r.occurrence_count === "number" ? ` | ${r.occurrence_count} match(es)` : ""}
+                      </div>
                     </div>
 
                     <div
