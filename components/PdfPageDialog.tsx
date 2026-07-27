@@ -121,6 +121,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
 
   const [pdfModule, setPdfModule] = useState<PdfJsModule | null>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [engineLoading, setEngineLoading] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +149,8 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
     if (!target || pdfModule) return;
     let active = true;
 
+    setEngineLoading(true);
+
     void (async () => {
       try {
         const mod = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -157,6 +160,8 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
       } catch (err) {
         if (!active) return;
         setError(`Failed to load PDF engine: ${renderErrorMessage(err)}`);
+      } finally {
+        if (active) setEngineLoading(false);
       }
     })();
 
@@ -180,6 +185,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
         if (prev) void prev.destroy();
         return null;
       });
+      setEngineLoading(false);
       setDocLoading(false);
       setPageLoading(false);
     }
@@ -386,6 +392,12 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   const canGoNext = pageCount > 0 && currentPage < pageCount;
   const canZoomOut = zoom > 0.7;
   const canZoomIn = zoom < 2.8;
+  const isPdfLoading = Boolean(target && !error && (engineLoading || docLoading || pageLoading));
+  const loadingLabel = engineLoading
+    ? "Loading PDF viewer..."
+    : docLoading
+      ? "Opening PDF..."
+      : `Rendering page ${currentPage}...`;
 
   return (
     <dialog
@@ -405,8 +417,8 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
             </div>
             <div className="pdfDialogSubline">
               {pageCount > 0 ? `Page ${currentPage} of ${pageCount}` : `Page ${currentPage}`}
-              {docLoading || pageLoading ? " | Loading current page" : ""}
-              {highlightTerms.length > 0 && !docLoading && !pageLoading ? ` | ${highlightCount} highlight(s)` : ""}
+              {isPdfLoading ? " | Loading current page" : ""}
+              {highlightTerms.length > 0 && !isPdfLoading ? ` | ${highlightCount} highlight(s)` : ""}
             </div>
           </div>
 
@@ -468,13 +480,16 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
         </header>
 
         {error ? <div className="pdfDialogError">{error}</div> : null}
-        {!error && showTextLayer && !docLoading && !pageLoading && textDivCount === 0 ? (
+        {!error && showTextLayer && !isPdfLoading && textDivCount === 0 ? (
           <div className="pdfDialogNotice">This page has no embedded text layer.</div>
         ) : null}
 
-        <section className="pdfDialogViewport" aria-busy={docLoading || pageLoading}>
-          {!error && (docLoading || pageLoading) ? (
-            <div className="pdfDialogLoading">{docLoading ? "Opening PDF..." : `Rendering page ${currentPage}...`}</div>
+        <section className="pdfDialogViewport" aria-busy={isPdfLoading}>
+          {!error && isPdfLoading ? (
+            <div className="pdfDialogLoading" role="status" aria-live="polite">
+              <span className="loadingSpinner" aria-hidden="true" />
+              <span>{loadingLabel}</span>
+            </div>
           ) : null}
           <div
             className="pdfOverlayRoot pdfDialogPage"
@@ -482,6 +497,12 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
           >
             <canvas ref={canvasRef} />
             <div ref={textLayerContainerRef} className="textLayer" aria-label="Extracted text layer" />
+            {!error && isPdfLoading ? (
+              <div className="pdfDialogPageLoading" aria-hidden="true">
+                <span className="loadingSpinner" />
+                <span>{loadingLabel}</span>
+              </div>
+            ) : null}
           </div>
         </section>
       </div>

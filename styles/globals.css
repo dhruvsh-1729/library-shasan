@@ -1743,8 +1743,15 @@ button {
   position: sticky;
   top: 0;
   z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: rgba(255, 255, 255, 0.92);
   color: #43504d;
+}
+
+.pdfDialogLoading .loadingSpinner {
+  flex: 0 0 auto;
 }
 
 .pdfDialogViewport {
@@ -1770,6 +1777,29 @@ button {
 .pdfDialogPage canvas {
   display: block;
   max-width: 100%;
+}
+
+.pdfDialogPageLoading {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.82);
+  color: #26312f;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+  pointer-events: none;
+}
+
+.pdfDialogPageLoading .loadingSpinner {
+  width: 34px;
+  height: 34px;
+  border-width: 3px;
 }
 
 .searchDownloadOverlay {
