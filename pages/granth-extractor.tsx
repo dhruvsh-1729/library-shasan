@@ -233,7 +233,7 @@ export default function GranthExtractorPage() {
             <div style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Link href="/">Library</Link>
               <Link href="/search">Search inside pages</Link>
-              <Link href="/ocrsearch">OCR search</Link>
+              <Link href="/scannable-documents">Scan status</Link>
             </div>
           </div>
           {segments.length ? (

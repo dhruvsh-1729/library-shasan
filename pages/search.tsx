@@ -38,6 +38,10 @@ type SelectionMode = "all" | "single" | "multi";
 type DocumentStats = {
   total_documents: number;
   processed_documents: number;
+  ready_documents?: number;
+  review_documents?: number;
+  searchable_documents?: number;
+  remaining_documents?: number;
 };
 
 const RESULTS_PER_PAGE = 20;
@@ -149,6 +153,10 @@ export default function SearchPage() {
     if (total <= 0) return 1;
     return Math.max(1, Math.ceil(total / RESULTS_PER_PAGE));
   }, [total]);
+  const searchableDocuments = documentStats?.searchable_documents ?? documentStats?.processed_documents ?? 0;
+  const remainingDocuments =
+    documentStats?.remaining_documents ??
+    (documentStats ? Math.max(0, documentStats.total_documents - searchableDocuments) : 0);
 
   const paginationItems = useMemo(() => {
     if (totalPages <= 1) return [] as number[];
@@ -294,11 +302,11 @@ export default function SearchPage() {
           <h1 style={{ margin: 0, fontSize: 30, letterSpacing: "0.01em" }}>Granth Search</h1>
           <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 12 }}>
             <Link href="/">Back to library</Link>
-            <Link href="/scannable-documents">Scannable document list</Link>
-            <Link href="/ocrsearch">OCR XLSX search</Link>
+            <Link href="/scannable-documents">Scan status</Link>
             {documentStats ? (
               <span style={{ fontWeight: 700 }}>
-                Scannable documents: {documentStats.total_documents} (processed: {documentStats.processed_documents})
+                Searchable documents: {searchableDocuments}/{documentStats.total_documents}
+                {remainingDocuments > 0 ? `, needs scan ${remainingDocuments}` : ""}
               </span>
             ) : null}
             <span style={{ opacity: 0.78 }}>Filter by granth names and search inside selected PDFs.</span>

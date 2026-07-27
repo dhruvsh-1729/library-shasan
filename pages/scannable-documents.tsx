@@ -1,5 +1,12 @@
+import {
+  getDocumentScanLabel,
+  getDocumentStatusLabel,
+  type DocumentScanState,
+} from "@/lib/document-scan-state";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+
+type ScanView = "remaining" | "ready" | "review" | "searchable" | "all";
 
 type ScannableDoc = {
   custom_id: string;
@@ -7,18 +14,27 @@ type ScannableDoc = {
   display_name: string;
   pdf_url: string | null;
   csv_url: string | null;
-  status: string;
+  status: string | null;
+  scan_state: DocumentScanState;
   updated_at: string | null;
 };
 
 type ApiResponse = {
   items: ScannableDoc[];
   meta: {
+    total_documents: number;
     total_processed: number;
+    ready_documents: number;
+    review_documents: number;
+    remaining_documents: number;
+    total_for_view: number;
     limit: number;
     offset: number;
+    view: ScanView;
   };
 };
+
+const PAGE_SIZE = 100;
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -27,23 +43,40 @@ function formatDate(value: string | null) {
   return date.toLocaleString();
 }
 
+function viewCount(meta: ApiResponse["meta"] | null, view: ScanView) {
+  if (!meta) return 0;
+  if (view === "remaining") return meta.remaining_documents;
+  if (view === "ready") return meta.ready_documents;
+  if (view === "review") return meta.review_documents;
+  if (view === "searchable") return meta.total_processed;
+  return meta.total_documents;
+}
+
 export default function ScannableDocumentsPage() {
   const [items, setItems] = useState<ScannableDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [totalProcessed, setTotalProcessed] = useState(0);
+  const [meta, setMeta] = useState<ApiResponse["meta"] | null>(null);
   const [offset, setOffset] = useState(0);
-  const limit = 250;
+  const [view, setView] = useState<ScanView>("remaining");
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     async function load() {
       setLoading(true);
       setError(null);
 
       try {
-        const res = await fetch(`/api/scannable-documents?limit=${limit}&offset=${offset}`);
+        const params = new URLSearchParams();
+        params.set("limit", String(PAGE_SIZE));
+        params.set("offset", String(offset));
+        params.set("view", view);
+
+        const res = await fetch(`/api/scannable-documents?${params.toString()}`, {
+          signal: controller.signal,
+        });
         const json = (await res.json()) as ApiResponse | { error?: string };
         if (!res.ok) {
           throw new Error(("error" in json && json.error) || `Request failed (${res.status})`);
@@ -52,166 +85,172 @@ export default function ScannableDocumentsPage() {
         if (!active) return;
         const payload = json as ApiResponse;
         setItems(payload.items ?? []);
-        setTotalProcessed(payload.meta?.total_processed ?? payload.items?.length ?? 0);
+        setMeta(payload.meta ?? null);
       } catch (e) {
-        if (!active) return;
+        if (!active || controller.signal.aborted) return;
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        if (active) setLoading(false);
+        if (active && !controller.signal.aborted) setLoading(false);
       }
     }
 
     void load();
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [limit, offset]);
+  }, [offset, view]);
 
-  const heading = useMemo(() => {
-    if (loading) return "Loading scannable documents...";
-    if (error) return "Could not load scannable documents";
-    return `Scannable Documents (${totalProcessed})`;
-  }, [error, loading, totalProcessed]);
+  const tabs = useMemo(
+    () =>
+      [
+        { view: "remaining" as const, label: "Needs scan", count: viewCount(meta, "remaining") },
+        { view: "ready" as const, label: "Ready", count: viewCount(meta, "ready") },
+        { view: "review" as const, label: "Review", count: viewCount(meta, "review") },
+        { view: "searchable" as const, label: "Searchable", count: viewCount(meta, "searchable") },
+        { view: "all" as const, label: "All", count: viewCount(meta, "all") },
+      ],
+    [meta]
+  );
+
+  const totalForView = meta?.total_for_view ?? 0;
+  const rangeStart = totalForView === 0 ? 0 : offset + 1;
+  const rangeEnd = totalForView === 0 ? 0 : Math.min(offset + items.length, totalForView);
+
+  function changeView(nextView: ScanView) {
+    setView(nextView);
+    setOffset(0);
+  }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "radial-gradient(circle at 10% 0%, #f7ecdf 0%, #f3f4ea 36%, #e9edf2 100%)",
-        color: "#1f2120",
-        padding: "24px 16px 38px",
-        fontFamily: '"Noto Sans Gujarati","Noto Serif Devanagari","Segoe UI",sans-serif',
-      }}
-    >
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <header style={{ marginBottom: 16 }}>
-          <h1 style={{ margin: 0, fontSize: 30, letterSpacing: "0.01em" }}>{heading}</h1>
-          <div style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <Link href="/">Back to library</Link>
-            <Link href="/search">Open search</Link>
-            <span style={{ opacity: 0.8 }}>Status filter: processed</span>
-            <span style={{ opacity: 0.8 }}>
-              Showing {items.length} docs (offset {offset}, page size {limit})
-            </span>
+    <main className="scanShell">
+      <div className="scanFrame">
+        <header className="scanHeader">
+          <div className="scanHeaderText">
+            <h1 className="scanTitle">Scan Status</h1>
+            <div className="scanStatusLine">
+              {loading && items.length === 0
+                ? "Loading documents..."
+                : `${rangeStart}-${rangeEnd} of ${totalForView}`}
+            </div>
           </div>
+          <nav className="scanNav" aria-label="Library tools">
+            <Link href="/">Library</Link>
+            <Link href="/search">Search pages</Link>
+            <Link href="/granth-extractor">Extractor</Link>
+          </nav>
         </header>
 
-        {error ? <p style={{ color: "#9f1f1f", fontWeight: 700 }}>{error}</p> : null}
-        {loading ? <p>Fetching documents...</p> : null}
+        <section className="scanStats" aria-label="Document scan counts">
+          <div className="scanStat">
+            <span>Needs scan</span>
+            <strong>{meta?.remaining_documents ?? 0}</strong>
+          </div>
+          <div className="scanStat">
+            <span>Ready</span>
+            <strong>{meta?.ready_documents ?? 0}</strong>
+          </div>
+          <div className="scanStat">
+            <span>Review</span>
+            <strong>{meta?.review_documents ?? 0}</strong>
+          </div>
+          <div className="scanStat">
+            <span>Total</span>
+            <strong>{meta?.total_documents ?? 0}</strong>
+          </div>
+        </section>
 
-        {!loading && !error ? (
-          <section
-            style={{
-              border: "1px solid #d4d9e2",
-              borderRadius: 14,
-              background: "#fff",
-              overflow: "hidden",
-              boxShadow: "0 10px 24px rgba(35, 42, 51, 0.08)",
-            }}
-          >
-            <div style={{ maxHeight: "78vh", overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: "#f7f9fc" }}>
-                    <th style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #dde3ef" }}>Name</th>
-                    <th style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #dde3ef" }}>Custom ID</th>
-                    <th style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #dde3ef" }}>Updated</th>
-                    <th style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #dde3ef" }}>Links</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((row) => (
-                    <tr key={row.custom_id}>
-                      <td
-                        style={{
-                          padding: "9px 12px",
-                          borderBottom: "1px solid #edf1f6",
-                          verticalAlign: "top",
-                          fontWeight: 700,
-                        }}
-                      >
-                        {row.display_name}
-                      </td>
-                      <td
-                        style={{
-                          padding: "9px 12px",
-                          borderBottom: "1px solid #edf1f6",
-                          verticalAlign: "top",
-                          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                          fontSize: 12,
-                        }}
-                      >
-                        {row.custom_id}
-                      </td>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #edf1f6", verticalAlign: "top" }}>
-                        {formatDate(row.updated_at)}
-                      </td>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #edf1f6", verticalAlign: "top" }}>
-                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                          {row.pdf_url ? (
-                            <a href={row.pdf_url} target="_blank" rel="noreferrer">
-                              PDF
-                            </a>
-                          ) : null}
-                          {row.csv_url ? (
-                            <a href={row.csv_url} target="_blank" rel="noreferrer">
-                              CSV
-                            </a>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <section className="scanToolbar" aria-label="Scan status filters">
+          <div className="scanTabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.view}
+                type="button"
+                className={`scanTab${view === tab.view ? " isActive" : ""}`}
+                onClick={() => changeView(tab.view)}
+              >
+                <span>{tab.label}</span>
+                <strong>{tab.count}</strong>
+              </button>
+            ))}
+          </div>
+        </section>
 
-            <div
-              style={{
-                padding: "12px",
-                borderTop: "1px solid #edf1f6",
-                display: "flex",
-                gap: 10,
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
+        {error ? <div className="scanError">{error}</div> : null}
+
+        <section className="scanList" aria-busy={loading}>
+          {!loading && !error && items.length === 0 ? (
+            <div className="scanEmpty">No documents in this view.</div>
+          ) : null}
+
+          {items.map((row) => (
+            <article key={row.custom_id} className="scanRow">
+              <div className="scanPrimary">
+                <span
+                  className={`scanBadge is-${row.scan_state}`}
+                  title={getDocumentStatusLabel(row.status, row.scan_state)}
+                >
+                  {getDocumentScanLabel(row.scan_state)}
+                </span>
+                <strong title={row.display_name}>{row.display_name}</strong>
+              </div>
+
+              <div className="scanMetaBlock">
+                <span className="scanMetaLabel">Custom ID</span>
+                <span className="scanMono">{row.custom_id}</span>
+              </div>
+
+              <div className="scanMetaBlock">
+                <span className="scanMetaLabel">Updated</span>
+                <span>{formatDate(row.updated_at)}</span>
+              </div>
+
+              <div className="scanMetaBlock">
+                <span className="scanMetaLabel">Status</span>
+                <span>{getDocumentStatusLabel(row.status, row.scan_state)}</span>
+              </div>
+
+              <div className="scanLinks">
+                {row.pdf_url ? (
+                  <a href={row.pdf_url} target="_blank" rel="noreferrer">
+                    PDF
+                  </a>
+                ) : (
+                  <span>No PDF</span>
+                )}
+                {row.csv_url ? (
+                  <a href={row.csv_url} target="_blank" rel="noreferrer">
+                    CSV
+                  </a>
+                ) : (
+                  <span>No CSV</span>
+                )}
+              </div>
+            </article>
+          ))}
+        </section>
+
+        <footer className="scanFooter">
+          <span>
+            Showing {rangeStart}-{rangeEnd} of {totalForView}
+          </span>
+          <div className="scanPager">
+            <button
+              type="button"
+              onClick={() => setOffset((prev) => Math.max(0, prev - PAGE_SIZE))}
+              disabled={loading || offset === 0}
             >
-              <div style={{ fontSize: 13, opacity: 0.8 }}>
-                Processed total: {totalProcessed}
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setOffset((prev) => Math.max(0, prev - limit))}
-                  disabled={loading || offset === 0}
-                  style={{
-                    padding: "8px 11px",
-                    borderRadius: 8,
-                    border: "1px solid #c7cfd9",
-                    background: "#fff",
-                    cursor: loading || offset === 0 ? "default" : "pointer",
-                  }}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOffset((prev) => prev + limit)}
-                  disabled={loading || offset + items.length >= totalProcessed}
-                  style={{
-                    padding: "8px 11px",
-                    borderRadius: 8,
-                    border: "1px solid #c7cfd9",
-                    background: "#fff",
-                    cursor: loading || offset + items.length >= totalProcessed ? "default" : "pointer",
-                  }}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </section>
-        ) : null}
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
+              disabled={loading || offset + items.length >= totalForView}
+            >
+              Next
+            </button>
+          </div>
+        </footer>
       </div>
     </main>
   );

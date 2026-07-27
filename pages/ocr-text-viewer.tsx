@@ -219,7 +219,7 @@ export default function OCRTextViewerPage() {
         <header style={{ marginBottom: 16 }}>
           <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.15 }}>OCR Granth Text Viewer</h1>
           <div style={{ marginTop: 10, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 16 }}>
-            <Link href="/ocrsearch">Back to OCR search</Link>
+            <Link href="/search">Back to search</Link>
             {granth?.xlsx_url ? (
               <a href={granth.xlsx_url} target="_blank" rel="noreferrer">
                 Open XLSX
@@ -291,7 +291,7 @@ export default function OCRTextViewerPage() {
                   <div style={{ marginTop: 6, fontSize: 14, opacity: 0.78, lineHeight: 1.55 }}>
                     {q.trim()
                       ? `Click a page to jump directly to that occurrence inside ${title}.`
-                      : "Open this viewer from OCR search with a word query to see matching pages here."}
+                      : "Open this viewer from search with a word query to see matching pages here."}
                   </div>
                 </div>
 

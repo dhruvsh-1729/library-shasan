@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
+import { SEARCHABLE_DOCUMENT_STATUSES } from "@/lib/document-scan-state";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 type GranthOption = {
@@ -46,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .from("documents")
         .select("custom_id,pdf_name,status", { count: "exact" })
         .not("custom_id", "is", null)
-        .eq("status", "processed")
+        .in("status", [...SEARCHABLE_DOCUMENT_STATUSES])
         .order("pdf_name", { ascending: true, nullsFirst: false })
         .range(offset, offset + limit - 1);
 

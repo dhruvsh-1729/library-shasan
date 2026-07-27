@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getDocumentScanLabel, getDocumentStatusLabel, type DocumentScanState } from "@/lib/document-scan-state";
 import { useEffect, useMemo, useState } from "react";
 
 type GranthItem = {
@@ -12,6 +13,8 @@ type GranthItem = {
   original_rel_path: string | null;
   cover_image_url: string | null;
   cover_image_key: string | null;
+  document_status: string | null;
+  scan_state: DocumentScanState;
 };
 
 type ApiResponse = {
@@ -35,6 +38,10 @@ type ApiResponse = {
 type DocumentStats = {
   total_documents: number;
   processed_documents: number;
+  ready_documents?: number;
+  review_documents?: number;
+  searchable_documents?: number;
+  remaining_documents?: number;
 };
 
 const BOOKS_PER_PAGE = 10;
@@ -157,6 +164,10 @@ export default function HomePage() {
   const currentPage = meta?.page ?? page;
   const rangeStart = total === 0 ? 0 : (meta?.offset ?? 0) + 1;
   const rangeEnd = total === 0 ? 0 : Math.min((meta?.offset ?? 0) + items.length, total);
+  const searchableDocuments = documentStats?.searchable_documents ?? documentStats?.processed_documents ?? 0;
+  const remainingDocuments =
+    documentStats?.remaining_documents ??
+    (documentStats ? Math.max(0, documentStats.total_documents - searchableDocuments) : 0);
 
   const pagination = useMemo(
     () => pageButtons(currentPage, totalPages),
@@ -183,16 +194,16 @@ export default function HomePage() {
               {error ? "Could not load granths" : loading && items.length === 0 ? "Loading granths..." : `${rangeStart}-${rangeEnd} of ${total}`}
               {documentStats ? (
                 <span className="libraryStats">
-                  Scannable {documentStats.processed_documents}/{documentStats.total_documents}
+                  Searchable {searchableDocuments}/{documentStats.total_documents}
+                  {remainingDocuments > 0 ? `, needs scan ${remainingDocuments}` : ""}
                 </span>
               ) : null}
             </div>
           </div>
           <nav className="libraryNav" aria-label="Library tools">
             <Link href="/search">Search pages</Link>
-            <Link href="/ocrsearch">OCR search</Link>
             <Link href="/granth-extractor">Extractor</Link>
-            <Link href="/scannable-documents">Documents</Link>
+            <Link href="/scannable-documents">Scan status</Link>
           </nav>
         </header>
 
@@ -281,8 +292,16 @@ export default function HomePage() {
                 </div>
 
                 <div className="libraryCardBody">
-                  <div title={title} className="libraryCardTitle">
-                    {title || `Granth ${row.id}`}
+                  <div className="libraryCardTop">
+                    <div title={title} className="libraryCardTitle">
+                      {title || `Granth ${row.id}`}
+                    </div>
+                    <span
+                      className={`libraryScanBadge is-${row.scan_state}`}
+                      title={getDocumentStatusLabel(row.document_status, row.scan_state)}
+                    >
+                      {getDocumentScanLabel(row.scan_state)}
+                    </span>
                   </div>
                   <div className="libraryCardMeta">
                     <span>{row.collection ?? "-"}</span>

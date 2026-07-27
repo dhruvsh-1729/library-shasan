@@ -58,6 +58,32 @@ input {
   font: inherit;
 }
 
+a,
+button,
+input,
+textarea,
+select {
+  min-width: 0;
+}
+
+a,
+button,
+th,
+td,
+p,
+span,
+strong,
+div,
+h1,
+h2,
+h3 {
+  overflow-wrap: anywhere;
+}
+
+button {
+  line-height: 1.2;
+}
+
 .libraryShell {
   height: 100dvh;
   overflow: hidden;
@@ -126,6 +152,14 @@ input {
   color: #155e75;
   font-weight: 700;
   text-decoration: none;
+}
+
+.libraryNav a {
+  border: 1px solid rgba(21, 94, 117, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  padding: 7px 9px;
+  line-height: 1.15;
 }
 
 .libraryNav a:hover,
@@ -273,7 +307,17 @@ input {
 
 .libraryCardBody {
   min-width: 0;
+  overflow: hidden;
+  display: grid;
+  align-content: start;
+  gap: 5px;
   padding: 8px 9px 9px;
+}
+
+.libraryCardTop {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
 }
 
 .libraryCardTitle {
@@ -287,8 +331,42 @@ input {
   -webkit-box-orient: vertical;
 }
 
+.libraryScanBadge,
+.scanBadge {
+  justify-self: start;
+  border: 1px solid #cbd5d0;
+  border-radius: 999px;
+  background: #f6f8f7;
+  color: #33413e;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.libraryScanBadge.is-ready,
+.scanBadge.is-ready {
+  border-color: #8fb9aa;
+  background: #e9f6f1;
+  color: #18584a;
+}
+
+.libraryScanBadge.is-review,
+.scanBadge.is-review {
+  border-color: #dbc06d;
+  background: #fff7d8;
+  color: #775600;
+}
+
+.libraryScanBadge.is-remaining,
+.scanBadge.is-remaining {
+  border-color: #dda39f;
+  background: #fff0ee;
+  color: #8b2b22;
+}
+
 .libraryCardMeta {
-  margin-top: 5px;
   display: grid;
   gap: 1px;
   color: #52605d;
@@ -303,8 +381,9 @@ input {
 }
 
 .libraryPdfLink {
-  display: inline-block;
-  margin-top: 5px;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
   font-size: 11px;
 }
 
@@ -350,8 +429,15 @@ input {
     justify-content: flex-start;
     gap: 6px;
     font-size: 11px;
-    max-height: 28px;
-    overflow: hidden;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    max-width: 100%;
+    padding-bottom: 2px;
+  }
+
+  .libraryNav a {
+    flex: 0 0 auto;
+    padding: 6px 8px;
   }
 
   .libraryToolbar {
@@ -382,13 +468,16 @@ input {
   }
 
   .libraryGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(5, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: minmax(104px, auto);
     gap: 6px;
+    overflow: auto;
+    padding-right: 2px;
   }
 
   .libraryCard {
-    grid-template-columns: 46px minmax(0, 1fr);
+    grid-template-columns: 58px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
 
@@ -405,13 +494,16 @@ input {
     line-height: 1.22;
   }
 
+  .libraryScanBadge {
+    font-size: 9px;
+  }
+
   .libraryCardMeta {
     margin-top: 3px;
     font-size: 10px;
   }
 
   .libraryPdfLink {
-    margin-top: 3px;
     font-size: 10px;
   }
 
@@ -423,12 +515,344 @@ input {
 
 @media (max-width: 380px), (max-height: 660px) {
   .libraryNav {
-    display: none;
+    font-size: 10px;
   }
 
-  .libraryCardMeta span:nth-child(n + 2),
-  .libraryPdfLink {
-    display: none;
+  .librarySearchInput,
+  .libraryClearButton,
+  .libraryPageButton {
+    min-height: 32px;
+    height: 32px;
+    padding-inline: 8px;
+  }
+
+  .libraryCardMeta {
+    font-size: 9px;
+  }
+}
+
+@media (min-width: 560px) and (max-width: 760px) {
+  .libraryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.scanShell {
+  height: 100dvh;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f7f8fb 0%, #eef5f1 55%, #f8f5ee 100%);
+  color: #17211f;
+  padding: 14px;
+  font-family: "Noto Sans Gujarati", "Noto Serif Devanagari", "Segoe UI", sans-serif;
+}
+
+.scanFrame {
+  width: 100%;
+  max-width: 1280px;
+  height: calc(100dvh - 28px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  min-width: 0;
+}
+
+.scanHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+.scanHeaderText {
+  min-width: 0;
+}
+
+.scanTitle {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.scanStatusLine {
+  margin-top: 5px;
+  color: #465451;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.scanNav,
+.scanTabs,
+.scanPager,
+.scanLinks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.scanNav {
+  justify-content: flex-end;
+  font-size: 13px;
+}
+
+.scanNav a,
+.scanLinks a {
+  color: #155e75;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.scanNav a {
+  border: 1px solid rgba(21, 94, 117, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  padding: 7px 9px;
+  line-height: 1.15;
+}
+
+.scanStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.scanStat {
+  min-width: 0;
+  border: 1px solid #d7dfdc;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.scanStat span,
+.scanMetaLabel {
+  color: #52605d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.scanStat strong {
+  color: #17211f;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.scanToolbar {
+  min-width: 0;
+}
+
+.scanTabs {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  padding-bottom: 2px;
+}
+
+.scanTab,
+.scanPager button {
+  min-height: 38px;
+  border: 1px solid #b9c6c2;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 7px 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scanTab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scanTab strong {
+  border-radius: 999px;
+  background: #e8eee9;
+  padding: 2px 7px;
+  font-size: 12px;
+}
+
+.scanTab.isActive {
+  border-color: #17211f;
+  background: #17211f;
+  color: #fff;
+}
+
+.scanTab.isActive strong {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.scanError,
+.scanEmpty {
+  border: 1px solid #efb4b4;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #8a1c1c;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.scanEmpty {
+  border-color: #b9c6c2;
+  background: rgba(255, 255, 255, 0.74);
+  color: #465451;
+}
+
+.scanList {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.scanRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.8fr) minmax(120px, 0.8fr) minmax(145px, 0.8fr) minmax(140px, 0.9fr) minmax(110px, 0.6fr);
+  align-items: start;
+  gap: 12px;
+  border: 1px solid #d7dfdc;
+  border-radius: 8px;
+  background: #fff;
+  padding: 11px 12px;
+  box-shadow: 0 6px 16px rgba(24, 35, 32, 0.06);
+}
+
+.scanPrimary,
+.scanMetaBlock {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.scanPrimary strong {
+  color: #17211f;
+  font-size: 14px;
+  line-height: 1.28;
+}
+
+.scanMono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.scanMetaBlock span:last-child,
+.scanLinks span {
+  color: #33413e;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.scanLinks {
+  align-items: flex-start;
+}
+
+.scanFooter {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #465451;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.scanPager button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+@media (max-width: 900px) {
+  .scanRow {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 0.6fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .scanShell {
+    padding: 8px;
+  }
+
+  .scanFrame {
+    height: calc(100dvh - 16px);
+    gap: 8px;
+  }
+
+  .scanHeader {
+    display: grid;
+    gap: 7px;
+  }
+
+  .scanTitle {
+    font-size: 22px;
+  }
+
+  .scanNav {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    font-size: 11px;
+    padding-bottom: 2px;
+  }
+
+  .scanNav a {
+    flex: 0 0 auto;
+  }
+
+  .scanStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scanStat {
+    padding: 8px 9px;
+  }
+
+  .scanStat strong {
+    font-size: 18px;
+  }
+
+  .scanTab,
+  .scanPager button {
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .scanTabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    align-items: stretch;
+  }
+
+  .scanTab {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .scanRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .scanFooter {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

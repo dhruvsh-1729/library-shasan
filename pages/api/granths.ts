@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
+import { type DocumentScanState, getDocumentScanState } from "@/lib/document-scan-state";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 type GranthItem = {
@@ -13,6 +14,13 @@ type GranthItem = {
   original_rel_path: string | null;
   cover_image_url: string | null;
   cover_image_key: string | null;
+  document_status: string | null;
+  scan_state: DocumentScanState;
+};
+
+type DocumentScanRow = {
+  custom_id: string | null;
+  status: string | null;
 };
 
 function parseIntQuery(raw: string | string[] | undefined, fallback: number, min: number, max: number) {
@@ -105,18 +113,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         total = response.count ?? data.length;
       }
 
-      const items: GranthItem[] = (data ?? []).map((row) => ({
-        id: Number(row.id ?? 0),
-        file_name: (row.file_name as string | null) ?? null,
-        ufs_url: (row.ufs_url as string | null) ?? null,
-        file_size: row.file_size == null ? null : Number(row.file_size),
-        custom_id: (row.custom_id as string | null) ?? null,
-        collection: (row.collection as string | null) ?? null,
-        subcollection: (row.subcollection as string | null) ?? null,
-        original_rel_path: (row.original_rel_path as string | null) ?? null,
-        cover_image_url: coverColumnAvailable ? ((row.cover_image_url as string | null) ?? null) : null,
-        cover_image_key: coverColumnAvailable ? ((row.cover_image_key as string | null) ?? null) : null,
-      }));
+      const scanByCustomId = new Map<string, DocumentScanRow>();
+      const customIds = Array.from(
+        new Set(
+          (data ?? [])
+            .map((row) => String(row.custom_id ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+
+      if (customIds.length > 0) {
+        const { data: scanRows, error: scanErr } = await supabase
+          .from("documents")
+          .select("custom_id,status")
+          .in("custom_id", customIds);
+
+        if (scanErr) throw new Error(scanErr.message);
+
+        for (const row of (scanRows ?? []) as DocumentScanRow[]) {
+          const customId = String(row.custom_id ?? "").trim();
+          if (customId) scanByCustomId.set(customId, row);
+        }
+      }
+
+      const items: GranthItem[] = (data ?? []).map((row) => {
+        const customId = (row.custom_id as string | null) ?? null;
+        const scanRow = customId ? scanByCustomId.get(customId) : undefined;
+        const documentStatus = scanRow?.status ?? null;
+
+        return {
+          id: Number(row.id ?? 0),
+          file_name: (row.file_name as string | null) ?? null,
+          ufs_url: (row.ufs_url as string | null) ?? null,
+          file_size: row.file_size == null ? null : Number(row.file_size),
+          custom_id: customId,
+          collection: (row.collection as string | null) ?? null,
+          subcollection: (row.subcollection as string | null) ?? null,
+          original_rel_path: (row.original_rel_path as string | null) ?? null,
+          cover_image_url: coverColumnAvailable ? ((row.cover_image_url as string | null) ?? null) : null,
+          cover_image_key: coverColumnAvailable ? ((row.cover_image_key as string | null) ?? null) : null,
+          document_status: documentStatus,
+          scan_state: getDocumentScanState(documentStatus),
+        };
+      });
 
       const normalizedPage = Math.floor(offset / limit) + 1;
       const totalPages = Math.max(1, Math.ceil(total / limit));
