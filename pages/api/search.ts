@@ -207,6 +207,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const meta = resultByRelPath.get(row.source_rel_path) ?? selectedByRelPath.get(row.source_rel_path);
         const customId = meta?.custom_id ?? row.granth_key;
         const pdfUrl = meta?.pdf_url ?? "";
+        const viewerUrl = pdfUrl
+          ? `/pdf-viewer?pdf=${encodeURIComponent(pdfUrl)}&page=${encodeURIComponent(String(row.page_number))}`
+          : "";
           return {
             custom_id: customId,
             pdf_name: meta?.pdf_name ?? row.pdf_name,
@@ -216,7 +219,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             score: row.rank,
             occurrence_count: findOCRSearchMatches(row.content, q, matchMode).length,
             csv_url: meta?.csv_url ?? null,
-            open_pdf_url: pdfUrl ? `${pdfUrl}#page=${encodeURIComponent(String(row.page_number))}` : "",
+            open_pdf_url: viewerUrl,
           };
       });
 

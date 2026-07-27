@@ -1,0 +1,302 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+import { pipeline } from "node:stream/promises";
+import { GranthResolveError, resolveGranthSelection } from "@/lib/granth-resolver";
+import type { MappingRange, MappingSegment } from "@/lib/granth-mapping";
+
+export const config = {
+  api: {
+    responseLimit: false,
+  },
+};
+
+type BuildMode = "combined" | "separate";
+
+type BuildBody = {
+  bookId?: number | string | null;
+  bookCode?: string | null;
+  kind?: string;
+  spec?: string;
+  adhikar?: number | string | null;
+  includeCover?: boolean;
+  mode?: BuildMode;
+  title?: string | null;
+};
+
+const SOURCE_CACHE_DIR = path.join(tmpdir(), "ndms-library-pdf-source-cache");
+const MAX_PAGES_PER_BUILD = 900;
+const MIN_AVAILABLE_MEMORY_MB = 768;
+
+function toInt(value: unknown, fallback: number | null = null) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function safeFileName(value: string, fallback = "granth") {
+  const cleaned = String(value || "")
+    .replace(/\.pdf$/i, "")
+    .replace(/[^a-z0-9._\-\u0900-\u097f\u0a80-\u0aff]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 120);
+  return cleaned || fallback;
+}
+
+function hashText(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function availableMemoryMB() {
+  try {
+    const meminfo = await readFile("/proc/meminfo", "utf8");
+    const match = meminfo.match(/^MemAvailable:\s+(\d+)\s+kB/m);
+    if (!match) return null;
+    return Number(match[1]) / 1024;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureFreeMemory(label: string) {
+  const available = await availableMemoryMB();
+  if (available != null && available < MIN_AVAILABLE_MEMORY_MB) {
+    throw new Error(
+      `Not enough free memory to ${label}. Available ${Math.round(available)} MB, need ${MIN_AVAILABLE_MEMORY_MB} MB.`
+    );
+  }
+}
+
+async function fileExists(filePath: string) {
+  try {
+    const info = await stat(filePath);
+    return info.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function runCommand(command: string, args: string[], cwd?: string) {
+  await ensureFreeMemory(command);
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`${command} failed (${code}): ${stderr.trim()}`));
+    });
+  });
+}
+
+async function downloadSourcePdf(pdfUrl: string) {
+  await mkdir(SOURCE_CACHE_DIR, { recursive: true });
+  const cachePath = path.join(SOURCE_CACHE_DIR, `${hashText(pdfUrl)}.pdf`);
+  if (await fileExists(cachePath)) return cachePath;
+
+  await ensureFreeMemory("download PDF");
+  const tempPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`;
+  const response = await fetch(pdfUrl);
+  if (!response.ok || !response.body) {
+    throw new Error(`Could not fetch source PDF (${response.status} ${response.statusText})`);
+  }
+
+  await pipeline(
+    Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+    createWriteStream(tempPath)
+  );
+  await rename(tempPath, cachePath);
+  return cachePath;
+}
+
+function uniqueSortedPages(pages: number[]) {
+  return [...new Set(pages.map((page) => Math.floor(Number(page))).filter((page) => page > 0))].sort((a, b) => a - b);
+}
+
+function contiguousGroups(pages: number[]) {
+  const sorted = uniqueSortedPages(pages);
+  const groups: Array<{ start: number; end: number }> = [];
+
+  for (const page of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && page === last.end + 1) {
+      last.end = page;
+    } else {
+      groups.push({ start: page, end: page });
+    }
+  }
+
+  return groups;
+}
+
+async function extractPages(sourcePath: string, pages: number[], workDir: string, prefix: string) {
+  const pagePaths: string[] = [];
+  const groups = contiguousGroups(pages);
+
+  for (const group of groups) {
+    const pattern = path.join(workDir, `${prefix}-%d.pdf`);
+    await runCommand("pdfseparate", ["-f", String(group.start), "-l", String(group.end), sourcePath, pattern], workDir);
+    for (let page = group.start; page <= group.end; page += 1) {
+      pagePaths.push(path.join(workDir, `${prefix}-${page}.pdf`));
+    }
+  }
+
+  return pagePaths;
+}
+
+async function makePdfFromPages(sourcePath: string, pages: number[], workDir: string, prefix: string, outPath: string) {
+  const pagePaths = await extractPages(sourcePath, pages, workDir, prefix);
+  if (pagePaths.length === 0) throw new Error("No valid pages selected");
+  if (pagePaths.length === 1) {
+    await copyFile(pagePaths[0], outPath);
+    return;
+  }
+  await runCommand("pdfunite", [...pagePaths, outPath], workDir);
+}
+
+function pagesForRange(range: MappingRange) {
+  const start = Math.max(1, Math.floor(Number(range.pageStart)));
+  const end = Math.max(start, Math.floor(Number(range.pageEnd || range.pageStart)));
+  const pages: number[] = [];
+  for (let page = start; page <= end; page += 1) pages.push(page);
+  return pages;
+}
+
+async function buildCombined(segments: MappingSegment[], workDir: string) {
+  const allPageFiles: string[] = [];
+
+  for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+    const segment = segments[segmentIndex];
+    const sourcePath = await downloadSourcePdf(segment.pdfUrl);
+    const pages = uniqueSortedPages(segment.pages);
+    const extracted = await extractPages(sourcePath, pages, workDir, `combined-${segmentIndex}`);
+    allPageFiles.push(...extracted);
+  }
+
+  if (allPageFiles.length === 0) throw new Error("No pages selected");
+
+  const outPath = path.join(workDir, "combined.pdf");
+  if (allPageFiles.length === 1) {
+    await copyFile(allPageFiles[0], outPath);
+  } else {
+    await runCommand("pdfunite", [...allPageFiles, outPath], workDir);
+  }
+
+  return outPath;
+}
+
+async function buildSeparateZip(segments: MappingSegment[], workDir: string) {
+  const outDir = path.join(workDir, "separate");
+  await mkdir(outDir, { recursive: true });
+  const builtFiles: string[] = [];
+
+  for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+    const segment = segments[segmentIndex];
+    const sourcePath = await downloadSourcePdf(segment.pdfUrl);
+    for (let rangeIndex = 0; rangeIndex < segment.ranges.length; rangeIndex += 1) {
+      const range = segment.ranges[rangeIndex];
+      const label = range.gatha
+        ? `id-${range.adhikar ?? "NA"}_gatha-${range.gatha}`
+        : `pages-${range.pageStart}-${range.pageEnd}`;
+      const outPath = path.join(
+        outDir,
+        `${safeFileName(segment.pdfFileName, `segment-${segmentIndex + 1}`)}_${safeFileName(label, `range-${rangeIndex + 1}`)}.pdf`
+      );
+      await makePdfFromPages(
+        sourcePath,
+        pagesForRange(range),
+        workDir,
+        `separate-${segmentIndex}-${rangeIndex}`,
+        outPath
+      );
+      builtFiles.push(outPath);
+    }
+  }
+
+  if (builtFiles.length === 0) throw new Error("No ranges selected");
+
+  const zipPath = path.join(workDir, "separate.zip");
+  await runCommand("zip", ["-q", "-j", zipPath, ...builtFiles], workDir);
+  return zipPath;
+}
+
+function countPages(segments: MappingSegment[]) {
+  return segments.reduce((sum, segment) => sum + uniqueSortedPages(segment.pages).length, 0);
+}
+
+function streamFile(res: NextApiResponse, filePath: string, contentType: string, filename: string, cleanupDir: string) {
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.on("finish", () => {
+    void rm(cleanupDir, { recursive: true, force: true });
+  });
+  createReadStream(filePath).pipe(res);
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  let workDir = "";
+
+  try {
+    await ensureFreeMemory("start PDF build");
+
+    const body = (req.body || {}) as BuildBody;
+    const mode: BuildMode = body.mode === "separate" ? "separate" : "combined";
+    const adhikar = body.adhikar == null || body.adhikar === "" ? null : toInt(body.adhikar, null);
+
+    const resolved = await resolveGranthSelection({
+      bookId: toInt(body.bookId, null),
+      bookCode: body.bookCode || "",
+      kind: body.kind || "gathas",
+      spec: String(body.spec || ""),
+      adhikar,
+      includeCover: Boolean(body.includeCover),
+    });
+
+    const pageTotal = countPages(resolved.segments);
+    if (pageTotal > MAX_PAGES_PER_BUILD) {
+      return res.status(413).json({
+        error: `Selection contains ${pageTotal} pages. Narrow it below ${MAX_PAGES_PER_BUILD} pages for a browser download.`,
+      });
+    }
+
+    workDir = await mkdtemp(path.join(tmpdir(), "ndms-granth-build-"));
+    const title = safeFileName(String(body.title || "granth_selection"), "granth_selection");
+
+    if (mode === "separate") {
+      const zipPath = await buildSeparateZip(resolved.segments, workDir);
+      streamFile(res, zipPath, "application/zip", `${title}_separate.zip`, workDir);
+      return;
+    }
+
+    const pdfPath = await buildCombined(resolved.segments, workDir);
+    streamFile(res, pdfPath, "application/pdf", `${title}_combined.pdf`, workDir);
+  } catch (error) {
+    if (workDir) await rm(workDir, { recursive: true, force: true });
+    if (error instanceof GranthResolveError) {
+      return res.status(error.status).json(error.payload);
+    }
+    return res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+}

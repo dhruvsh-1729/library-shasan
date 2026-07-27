@@ -5,6 +5,7 @@ import {
   getOCRSearchModeLabel,
   parseOCRSearchMode,
 } from "@/lib/ocr-search";
+import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import Link from "next/link";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -63,6 +64,7 @@ export default function SearchPage() {
   const [nameFilter, setNameFilter] = useState("");
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
+  const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -604,8 +606,6 @@ export default function SearchPage() {
                       r.custom_id
                     )}&page=${encodeURIComponent(String(r.page_number))}`
                   : null;
-                const pdfViewerHref = `${r.pdf_url}#page=${encodeURIComponent(String(r.page_number))}`;
-
                 return (
                   <article
                     key={`${r.custom_id}_${r.page_number}_${i}`}
@@ -646,9 +646,19 @@ export default function SearchPage() {
                     </div>
 
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
-                      <a href={pdfViewerHref} target="_blank" rel="noreferrer">
+                      <button
+                        type="button"
+                        className="inlinePdfButton"
+                        onClick={() =>
+                          setPdfTarget({
+                            pdfUrl: r.pdf_url,
+                            page: r.page_number,
+                            title: r.pdf_name,
+                          })
+                        }
+                      >
                         Open PDF
-                      </a>
+                      </button>
                       {csvViewerHref ? (
                         <a href={csvViewerHref} target="_blank" rel="noreferrer">
                           Open CSV at row
@@ -665,6 +675,7 @@ export default function SearchPage() {
           ) : null}
         </section>
       </div>
+      <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
     </main>
   );
 }

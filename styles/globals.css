@@ -96,7 +96,6 @@ button {
 .libraryFrame {
   position: relative;
   width: 100%;
-  max-width: 1180px;
   height: 100%;
   margin: 0 auto;
   display: grid;
@@ -148,7 +147,8 @@ button {
 }
 
 .libraryNav a,
-.libraryPdfLink {
+.libraryPdfLink,
+.inlinePdfButton {
   color: #155e75;
   font-weight: 700;
   text-decoration: none;
@@ -163,8 +163,20 @@ button {
 }
 
 .libraryNav a:hover,
-.libraryPdfLink:hover {
+.libraryPdfLink:hover,
+.inlinePdfButton:hover {
   text-decoration: underline;
+}
+
+.inlinePdfButton {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .libraryToolbar {
@@ -548,7 +560,6 @@ button {
 
 .scanFrame {
   width: 100%;
-  max-width: 1280px;
   height: calc(100dvh - 28px);
   margin: 0 auto;
   display: grid;
@@ -856,6 +867,573 @@ button {
   }
 }
 
+.extractorShell {
+  min-height: 100vh;
+  background:
+    linear-gradient(135deg, rgba(246, 248, 251, 0.94), rgba(239, 246, 242, 0.94)),
+    #f6f8fb;
+  color: #1f2428;
+  padding: 16px;
+  font-family: "Noto Sans Gujarati", "Noto Serif Devanagari", "Segoe UI", sans-serif;
+}
+
+.extractorFrame {
+  width: 100%;
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+
+.extractorHeader {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.extractorHeaderText {
+  min-width: 0;
+}
+
+.extractorHeader h1 {
+  margin: 0;
+  color: #14201d;
+  font-size: 30px;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.extractorNav,
+.extractorHeaderStats,
+.extractorBookMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.extractorNav {
+  margin-top: 9px;
+}
+
+.extractorNav a,
+.extractorHeaderStats span,
+.extractorBookMeta span {
+  border: 1px solid rgba(21, 94, 117, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #155e75;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-decoration: none;
+}
+
+.extractorHeaderStats {
+  justify-content: flex-end;
+}
+
+.extractorHeaderStats span:nth-child(2),
+.extractorBookMeta span:nth-child(2) {
+  border-color: rgba(47, 95, 80, 0.24);
+  color: #2f5f50;
+}
+
+.extractorHeaderStats span:nth-child(3),
+.extractorBookMeta span:nth-child(3) {
+  border-color: rgba(134, 91, 23, 0.22);
+  color: #79551d;
+}
+
+.extractorLayout {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.extractorControlPanel,
+.extractorContextPanel,
+.extractorInfoPanel,
+.extractorResultPanel {
+  min-width: 0;
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 24px rgba(28, 39, 45, 0.07);
+}
+
+.extractorControlPanel {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.extractorContextPanel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.extractorPanelHeader {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #43504d;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.extractorPanelHeader strong {
+  border-radius: 999px;
+  background: #e8f0ed;
+  color: #2f5f50;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.extractorInput {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid #bdc9c6;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 9px 11px;
+  font-size: 14px;
+  outline: none;
+}
+
+.extractorInput:focus {
+  border-color: #2f5f50;
+  box-shadow: 0 0 0 3px rgba(47, 95, 80, 0.14);
+}
+
+.extractorCodeGrid,
+.extractorModeGrid,
+.extractorActions {
+  display: grid;
+  gap: 7px;
+}
+
+.extractorCodeGrid {
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+}
+
+.extractorModeGrid,
+.extractorActions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.extractorActions {
+  grid-template-columns: 1fr;
+}
+
+.extractorCodeGrid button,
+.extractorModeGrid button,
+.extractorActions button,
+.extractorRangeHint button,
+.extractorIdentifierGrid button,
+.extractorCoverStrip button,
+.extractorSegmentRanges button {
+  min-width: 0;
+  border: 1px solid #bdc9c6;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 8px 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.extractorCodeGrid button.isActive,
+.extractorModeGrid button.isActive,
+.extractorIdentifierGrid button.isActive,
+.extractorCoverStrip button.isActive,
+.extractorPrimaryButton {
+  border-color: #17211f !important;
+  background: #17211f !important;
+  color: #fff !important;
+}
+
+.extractorActions button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.extractorCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #34413e;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.extractorCheckbox input {
+  width: 17px;
+  height: 17px;
+}
+
+.extractorError {
+  border: 1px solid #efb4b4;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #8a1c1c;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: pre-wrap;
+}
+
+.extractorRangeHint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.extractorRangeHint button {
+  flex: 1 1 120px;
+  color: #79551d;
+  font-size: 12px;
+}
+
+.extractorBookHero {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 12px;
+}
+
+.extractorCoverPreview {
+  min-height: 150px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d9e1df;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #e7eeec;
+  color: #52605d;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.extractorCoverPreview img,
+.extractorTinyCover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.extractorBookCopy {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+}
+
+.extractorEyebrow {
+  color: #2f5f50;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.extractorBookCopy h2 {
+  margin: 0;
+  color: #14201d;
+  font-size: 28px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.extractorBookCopy p {
+  margin: 0;
+  color: #4a5552;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.extractorCoverStrip {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.extractorCoverStrip button {
+  flex: 0 0 172px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.extractorTinyCover {
+  width: 42px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #e7eeec;
+  color: #2f5f50;
+  font-size: 12px;
+}
+
+.extractorCoverStrip span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.extractorCoverStrip strong,
+.extractorCoverStrip em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extractorCoverStrip em {
+  color: #52605d;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.extractorInfoGrid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 12px;
+}
+
+.extractorInfoPanel,
+.extractorResultPanel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.extractorIdentifierGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.extractorIdentifierGrid button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  text-align: left;
+}
+
+.extractorIdentifierGrid span,
+.extractorIdentifierGrid em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extractorIdentifierGrid strong {
+  font-size: 18px;
+}
+
+.extractorIdentifierGrid em {
+  grid-column: 1 / -1;
+  color: #52605d;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.extractorRangeList {
+  max-height: 330px;
+  overflow: auto;
+  display: grid;
+  gap: 7px;
+  padding-right: 2px;
+}
+
+.extractorRangeList div {
+  min-width: 0;
+  border: 1px solid #e2e7eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 9px;
+  display: grid;
+  gap: 3px;
+}
+
+.extractorRangeList strong,
+.extractorRangeList span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extractorRangeList strong {
+  color: #17211f;
+  font-size: 13px;
+}
+
+.extractorRangeList span,
+.extractorMuted {
+  color: #52605d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.extractorSegmentGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.extractorSegmentGrid article {
+  min-width: 0;
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  background: #fff;
+  padding: 11px;
+  display: grid;
+  gap: 8px;
+}
+
+.extractorSegmentHead {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.extractorSegmentHead strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extractorSegmentMeta {
+  color: #52605d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.extractorSegmentRanges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.extractorSegmentRanges button,
+.extractorSegmentRanges span {
+  border-color: #d7dee6;
+  color: #155e75;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.extractorSegmentRanges span {
+  border: 1px solid #d7dee6;
+  border-radius: 8px;
+  background: #f7fafb;
+  font-weight: 800;
+}
+
+@media (max-width: 980px) {
+  .extractorLayout,
+  .extractorInfoGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .extractorControlPanel {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .extractorShell {
+    padding: 8px;
+  }
+
+  .extractorHeader {
+    display: grid;
+  }
+
+  .extractorHeader h1 {
+    font-size: 22px;
+  }
+
+  .extractorHeaderStats,
+  .extractorNav {
+    justify-content: flex-start;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+  }
+
+  .extractorHeaderStats span,
+  .extractorNav a {
+    flex: 0 0 auto;
+    font-size: 11px;
+  }
+
+  .extractorBookHero {
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px;
+  }
+
+  .extractorCoverPreview {
+    min-height: 102px;
+  }
+
+  .extractorBookCopy h2 {
+    font-size: 18px;
+  }
+
+  .extractorBookCopy p {
+    font-size: 12px;
+  }
+
+  .extractorBookMeta {
+    gap: 5px;
+  }
+
+  .extractorBookMeta span {
+    font-size: 10px;
+    padding: 5px 6px;
+  }
+
+  .extractorCodeGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .extractorIdentifierGrid,
+  .extractorSegmentGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .pdfOverlayRoot .textLayer {
   position: absolute;
   inset: 0;
@@ -921,4 +1499,206 @@ button {
 
 .pdfOverlayRoot .textLayer.selecting .endOfContent {
   top: 0;
+}
+
+.pdfDialog {
+  width: min(1560px, calc(100vw - 24px));
+  max-width: none;
+  height: min(940px, calc(100dvh - 24px));
+  max-height: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  background: transparent;
+  color: #1f2120;
+}
+
+.pdfDialog::backdrop {
+  background: rgba(16, 24, 32, 0.64);
+}
+
+.pdfDialogPanel {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border: 1px solid #c8d0dc;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f7f8fa;
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.28);
+}
+
+.pdfDialogHeader {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #d9dee7;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.pdfDialogTitleBlock {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pdfDialogTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.pdfDialogSubline {
+  color: #53605d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pdfDialogControls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pdfDialogControls button,
+.pdfDialogControls a {
+  min-height: 34px;
+  border: 1px solid #c7cfd9;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2120;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-decoration: none;
+}
+
+.pdfDialogControls button {
+  cursor: pointer;
+}
+
+.pdfDialogControls button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.pdfDialogCloseButton {
+  border-color: #1f2120 !important;
+  background: #1f2120 !important;
+  color: #fff !important;
+}
+
+.pdfDialogPageForm {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pdfDialogPageForm label,
+.pdfDialogZoom {
+  color: #43504d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pdfDialogPageForm input {
+  width: 76px;
+  min-height: 34px;
+  border: 1px solid #c7cfd9;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pdfDialogError,
+.pdfDialogNotice,
+.pdfDialogLoading {
+  border-bottom: 1px solid #e1e5ec;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pdfDialogError {
+  background: #fff5f5;
+  color: #9f1f1f;
+}
+
+.pdfDialogNotice {
+  background: #fff8e8;
+  color: #855200;
+}
+
+.pdfDialogLoading {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.92);
+  color: #43504d;
+}
+
+.pdfDialogViewport {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: auto;
+  padding: 14px;
+}
+
+.pdfDialogPage {
+  position: relative;
+  width: fit-content;
+  min-width: 240px;
+  min-height: 320px;
+  margin: 0 auto;
+  border: 1px solid #d4dae4;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(25, 33, 44, 0.1);
+}
+
+.pdfDialogPage canvas {
+  display: block;
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .pdfDialog {
+    width: 100vw;
+    height: 100dvh;
+  }
+
+  .pdfDialogPanel {
+    border-radius: 0;
+  }
+
+  .pdfDialogHeader {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pdfDialogControls {
+    justify-content: flex-start;
+  }
+
+  .pdfDialogControls button,
+  .pdfDialogControls a {
+    min-height: 32px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .pdfDialogViewport {
+    padding: 8px;
+  }
 }

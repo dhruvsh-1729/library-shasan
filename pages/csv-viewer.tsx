@@ -169,7 +169,7 @@ export default function CsvViewerPage() {
         fontFamily: '"Noto Sans Gujarati","Noto Serif Devanagari","Segoe UI",sans-serif',
       }}
     >
-      <div style={{ maxWidth: 1400, margin: "0 auto" }}>
+      <div style={{ width: "100%", margin: "0 auto" }}>
         <header style={{ marginBottom: 12 }}>
           <h1 style={{ margin: 0, fontSize: 24 }}>CSV Row Viewer</h1>
           <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", fontSize: 14 }}>

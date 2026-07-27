@@ -3,6 +3,7 @@ import {
   getDocumentStatusLabel,
   type DocumentScanState,
 } from "@/lib/document-scan-state";
+import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -59,6 +60,7 @@ export default function ScannableDocumentsPage() {
   const [meta, setMeta] = useState<ApiResponse["meta"] | null>(null);
   const [offset, setOffset] = useState(0);
   const [view, setView] = useState<ScanView>("remaining");
+  const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -212,9 +214,13 @@ export default function ScannableDocumentsPage() {
 
               <div className="scanLinks">
                 {row.pdf_url ? (
-                  <a href={row.pdf_url} target="_blank" rel="noreferrer">
+                  <button
+                    type="button"
+                    className="inlinePdfButton"
+                    onClick={() => setPdfTarget({ pdfUrl: row.pdf_url ?? "", title: row.display_name, page: 1 })}
+                  >
                     PDF
-                  </a>
+                  </button>
                 ) : (
                   <span>No PDF</span>
                 )}
@@ -252,6 +258,7 @@ export default function ScannableDocumentsPage() {
           </div>
         </footer>
       </div>
+      <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
     </main>
   );
 }

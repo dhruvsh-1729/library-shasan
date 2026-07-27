@@ -1,6 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -58,6 +59,7 @@ export default function PdfViewerPage() {
   const [error, setError] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageEntry, setPageEntry] = useState("1");
   const [zoom, setZoom] = useState(1.45);
   const [showTextLayer, setShowTextLayer] = useState(true);
   const [textDivCount, setTextDivCount] = useState(0);
@@ -124,6 +126,9 @@ export default function PdfViewerPage() {
           url: pdfUrl,
           useSystemFonts: true,
           disableFontFace: false,
+          disableStream: true,
+          disableAutoFetch: true,
+          rangeChunkSize: 65536,
           cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/cmaps/`,
           cMapPacked: true,
           standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/standard_fonts/`,
@@ -156,6 +161,10 @@ export default function PdfViewerPage() {
     if (!pdfDoc) return;
     setCurrentPage(clamp(requestedPage, 1, pdfDoc.numPages));
   }, [pdfDoc, requestedPage]);
+
+  useEffect(() => {
+    setPageEntry(String(currentPage));
+  }, [currentPage]);
 
   useEffect(() => {
     if (!pdfDoc || !pdfModule) return;
@@ -287,6 +296,16 @@ export default function PdfViewerPage() {
   const canZoomOut = zoom > 0.7;
   const canZoomIn = zoom < 2.8;
 
+  function submitPage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parsed = Number(pageEntry);
+    if (!Number.isFinite(parsed)) {
+      setPageEntry(String(currentPage));
+      return;
+    }
+    setCurrentPage(clamp(Math.floor(parsed), 1, Math.max(1, pageCount || currentPage)));
+  }
+
   return (
     <>
       <Head>
@@ -302,7 +321,7 @@ export default function PdfViewerPage() {
           fontFamily: '"Noto Sans Gujarati","Noto Serif Devanagari","Segoe UI",sans-serif',
         }}
       >
-        <div style={{ maxWidth: 1360, margin: "0 auto" }}>
+        <div style={{ width: "100%", margin: "0 auto" }}>
           <header
             style={{
               border: "1px solid #d0d6df",
@@ -345,6 +364,36 @@ export default function PdfViewerPage() {
               <span style={{ fontWeight: 700, minWidth: 84, textAlign: "center" }}>
                 {pageCount > 0 ? `Page ${currentPage}/${pageCount}` : "Page -"}
               </span>
+              <form onSubmit={submitPage} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  value={pageEntry}
+                  onChange={(event) => setPageEntry(event.target.value)}
+                  type="number"
+                  min={1}
+                  max={pageCount || undefined}
+                  inputMode="numeric"
+                  aria-label="Page number"
+                  style={{
+                    width: 82,
+                    padding: "7px 8px",
+                    borderRadius: 8,
+                    border: "1px solid #c7cfd9",
+                    background: "#fff",
+                  }}
+                />
+                <button
+                  type="submit"
+                  style={{
+                    padding: "7px 11px",
+                    borderRadius: 8,
+                    border: "1px solid #c7cfd9",
+                    background: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  Go
+                </button>
+              </form>
               <button
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.min(pageCount, p + 1))}

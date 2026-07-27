@@ -215,7 +215,7 @@ export default function OCRTextViewerPage() {
         fontFamily: '"Noto Sans Gujarati","Noto Serif Devanagari","Segoe UI",sans-serif',
       }}
     >
-      <div style={{ maxWidth: 1520, margin: "0 auto" }}>
+      <div style={{ width: "100%", margin: "0 auto" }}>
         <header style={{ marginBottom: 16 }}>
           <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.15 }}>OCR Granth Text Viewer</h1>
           <div style={{ marginTop: 10, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 16 }}>

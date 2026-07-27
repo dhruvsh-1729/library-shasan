@@ -1,7 +1,7 @@
+import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
+import type { MappingSegment } from "@/lib/granth-mapping";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { PDFDocument } from "pdf-lib";
-import type { MappingSegment } from "@/lib/granth-mapping";
 
 type BookItem = {
   id: number;
@@ -16,6 +16,55 @@ type BooksResponse = {
   items: BookItem[];
 };
 
+type ContextFile = {
+  id: number;
+  book_code: string | null;
+  code_label: string;
+  pdf_file_name: string | null;
+  pdf_url: string | null;
+  custom_id: string | null;
+  page_count: number | null;
+  cover_image_url: string | null;
+  file_size: number | null;
+  collection: string | null;
+  subcollection: string | null;
+};
+
+type PageRangeSummary = {
+  book_code: string | null;
+  code_label: string;
+  pdf_file_name: string;
+  page_start: number;
+  page_end: number;
+  min_gatha: number | null;
+  max_gatha: number | null;
+  count: number;
+};
+
+type IdentifierSummary = {
+  adhikar: number | null;
+  label: string;
+  total_gathas: number;
+  min_gatha: number | null;
+  max_gatha: number | null;
+  book_codes: string[];
+  page_ranges: PageRangeSummary[];
+};
+
+type BookContext = {
+  book: BookItem;
+  files: ContextFile[];
+  identifiers: IdentifierSummary[];
+  page_ranges: PageRangeSummary[];
+  meta: {
+    bookCode: string | null;
+    file_count: number;
+    identifier_count: number;
+    mapped_row_count: number;
+    total_gathas: number;
+  };
+};
+
 type ResolveResponse = {
   error?: string;
   conflicts?: Array<{ gatha: number; adhikars: string[] }>;
@@ -23,8 +72,17 @@ type ResolveResponse = {
   segments?: MappingSegment[];
 };
 
-function titleForBook(book: BookItem) {
+type BuildMode = "combined" | "separate";
+
+function titleForBook(book: BookItem | null) {
+  if (!book) return "Selected Granth";
   return book.title_display || book.title_english || `Granth ${book.id}`;
+}
+
+function codeLabel(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return "All";
+  return /^\d+$/.test(raw) ? raw.padStart(3, "0") : raw;
 }
 
 function fileSafe(value: string) {
@@ -34,10 +92,12 @@ function fileSafe(value: string) {
     .slice(0, 120);
 }
 
-function downloadBytes(bytes: Uint8Array, filename: string) {
-  const payload = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(payload).set(bytes);
-  const blob = new Blob([payload], { type: "application/pdf" });
+function toMB(sizeBytes: number | null) {
+  if (sizeBytes == null || !Number.isFinite(sizeBytes)) return null;
+  return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -48,10 +108,15 @@ function downloadBytes(bytes: Uint8Array, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-async function fetchPdf(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Could not fetch PDF (${res.status})`);
-  return await res.arrayBuffer();
+function rangeLabel(range: PageRangeSummary) {
+  const pages = range.page_end === range.page_start ? `p.${range.page_start}` : `p.${range.page_start}-${range.page_end}`;
+  const gathas =
+    range.min_gatha == null
+      ? ""
+      : range.max_gatha === range.min_gatha
+        ? ` | gatha ${range.min_gatha}`
+        : ` | gatha ${range.min_gatha}-${range.max_gatha}`;
+  return `${range.code_label} | ${pages}${gathas}`;
 }
 
 export default function GranthExtractorPage() {
@@ -66,9 +131,14 @@ export default function GranthExtractorPage() {
   const [adhikar, setAdhikar] = useState("");
   const [includeCover, setIncludeCover] = useState(kind === "gathas");
   const [resolving, setResolving] = useState(false);
-  const [building, setBuilding] = useState(false);
+  const [buildingMode, setBuildingMode] = useState<BuildMode | null>(null);
   const [result, setResult] = useState<ResolveResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [context, setContext] = useState<BookContext | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [contextError, setContextError] = useState<string | null>(null);
+  const [brokenCoverIds, setBrokenCoverIds] = useState<Record<number, boolean>>({});
+  const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -118,6 +188,58 @@ export default function GranthExtractorPage() {
   const selectedCodes = selectedBook?.book_codes || [];
   const segments = result?.segments || [];
   const totalPages = segments.reduce((sum, segment) => sum + segment.pages.length, 0);
+  const selectedTitle = titleForBook(selectedBook);
+
+  useEffect(() => {
+    if (!selectedBook) {
+      setContext(null);
+      return;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+
+    async function loadContext() {
+      setContextLoading(true);
+      setContextError(null);
+      try {
+        const params = new URLSearchParams({ bookId: String(selectedBook.id) });
+        if (bookCode) params.set("bookCode", bookCode);
+        const res = await fetch(`/api/granth-mapping/context?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const json = (await res.json()) as BookContext | { error?: string };
+        if (!res.ok) throw new Error(("error" in json && json.error) || `Request failed (${res.status})`);
+        if (!active) return;
+        setContext(json as BookContext);
+      } catch (loadError) {
+        if (!active || controller.signal.aborted) return;
+        setContextError(loadError instanceof Error ? loadError.message : String(loadError));
+      } finally {
+        if (active && !controller.signal.aborted) setContextLoading(false);
+      }
+    }
+
+    void loadContext();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [bookCode, selectedBook]);
+
+  const currentIdentifier = useMemo(() => {
+    if (!context || !adhikar.trim()) return null;
+    const parsed = Number(adhikar);
+    if (!Number.isFinite(parsed)) return null;
+    return context.identifiers.find((item) => item.adhikar === parsed) || null;
+  }, [adhikar, context]);
+
+  const visibleRanges = useMemo(() => {
+    if (currentIdentifier) return currentIdentifier.page_ranges;
+    return context?.page_ranges || [];
+  }, [context?.page_ranges, currentIdentifier]);
+
+  const primaryFile = context?.files.find((file) => file.cover_image_url && !brokenCoverIds[file.id]) || context?.files[0] || null;
 
   async function resolveSelection() {
     if (!selectedBook) return;
@@ -147,112 +269,83 @@ export default function GranthExtractorPage() {
     }
   }
 
-  function openLinks() {
-    const opened = new Set<string>();
-    for (const segment of segments) {
-      for (const range of segment.ranges) {
-        const url = `${segment.pdfUrl}#page=${range.pageStart}`;
-        if (opened.has(url)) continue;
-        opened.add(url);
-        window.open(url, "_blank", "noreferrer");
-      }
-    }
-  }
-
-  async function downloadCombined() {
-    if (!selectedBook || segments.length === 0) return;
-    setBuilding(true);
+  async function buildDownload(mode: BuildMode) {
+    if (!selectedBook) return;
+    setBuildingMode(mode);
     setError(null);
     try {
-      const out = await PDFDocument.create();
-      for (const segment of segments) {
-        const source = await PDFDocument.load(await fetchPdf(segment.pdfUrl));
-        const pageCount = source.getPageCount();
-        const indices = segment.pages
-          .filter((page) => page >= 1 && page <= pageCount)
-          .map((page) => page - 1);
-        const copied = await out.copyPages(source, indices);
-        copied.forEach((page) => out.addPage(page));
+      const res = await fetch("/api/granth-mapping/build-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookId: selectedBook.id,
+          bookCode,
+          kind,
+          spec,
+          adhikar: kind === "gathas" && adhikar.trim() ? adhikar.trim() : null,
+          includeCover,
+          mode,
+          title: selectedTitle,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(async () => ({ error: await res.text() }));
+        throw new Error(body?.error || `Build failed (${res.status})`);
       }
-      const bytes = await out.save();
-      downloadBytes(bytes, `granth_${fileSafe(titleForBook(selectedBook))}_${Date.now()}.pdf`);
+
+      const blob = await res.blob();
+      const suffix = mode === "separate" ? "separate.zip" : "combined.pdf";
+      downloadBlob(blob, `granth_${fileSafe(selectedTitle)}_${suffix}`);
     } catch (downloadError) {
       setError(downloadError instanceof Error ? downloadError.message : String(downloadError));
     } finally {
-      setBuilding(false);
+      setBuildingMode(null);
     }
   }
 
-  async function downloadSeparate() {
-    if (!selectedBook || segments.length === 0) return;
-    setBuilding(true);
-    setError(null);
-    try {
-      for (const segment of segments) {
-        const source = await PDFDocument.load(await fetchPdf(segment.pdfUrl));
-        const pageCount = source.getPageCount();
-        for (const range of segment.ranges) {
-          const start = Math.max(1, range.pageStart);
-          const end = Math.max(start, range.pageEnd);
-          const pages = [];
-          for (let page = start; page <= end; page += 1) {
-            if (page >= 1 && page <= pageCount) pages.push(page - 1);
-          }
-          if (pages.length === 0) continue;
-          const out = await PDFDocument.create();
-          const copied = await out.copyPages(source, pages);
-          copied.forEach((page) => out.addPage(page));
-          const bytes = await out.save();
-          const label = range.gatha
-            ? `id-${range.adhikar ?? "NA"}_gatha-${range.gatha}`
-            : `pages-${start}-${end}`;
-          downloadBytes(bytes, `granth_${fileSafe(segment.pdfFileName)}_${label}.pdf`);
-        }
-      }
-    } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : String(downloadError));
-    } finally {
-      setBuilding(false);
-    }
+  function previewSegment(segment: MappingSegment, page = segment.pages[0] || 1) {
+    setPdfTarget({
+      pdfUrl: segment.pdfUrl,
+      page,
+      title: segment.pdfFileName,
+    });
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "24px 18px 44px",
-        background: "#f7f4ed",
-        color: "#202321",
-        fontFamily: '"Noto Sans Gujarati","Noto Serif Devanagari","Segoe UI",sans-serif',
-      }}
-    >
-      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-        <header style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>Granth Page Extractor</h1>
-            <div style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap" }}>
+    <main className="extractorShell">
+      <div className="extractorFrame">
+        <header className="extractorHeader">
+          <div className="extractorHeaderText">
+            <h1>Granth Page Extractor</h1>
+            <div className="extractorNav">
               <Link href="/">Library</Link>
-              <Link href="/search">Search inside pages</Link>
+              <Link href="/search">Search pages</Link>
               <Link href="/scannable-documents">Scan status</Link>
             </div>
           </div>
-          {segments.length ? (
-            <div style={{ fontWeight: 700 }}>
-              {segments.length} PDF{segments.length === 1 ? "" : "s"} / {totalPages} page{totalPages === 1 ? "" : "s"}
-            </div>
-          ) : null}
+          <div className="extractorHeaderStats">
+            <span>{context?.meta.file_count ?? 0} PDF</span>
+            <span>{context?.meta.total_gathas ?? 0} gathas</span>
+            <span>{segments.length ? `${segments.length} output PDF / ${totalPages} pages` : "No output yet"}</span>
+          </div>
         </header>
 
-        {bookError ? <p style={{ color: "#9d1c1c" }}>{bookError}</p> : null}
+        {bookError ? <div className="extractorError">{bookError}</div> : null}
 
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 18 }}>
-          <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
+        <section className="extractorLayout">
+          <aside className="extractorControlPanel">
+            <div className="extractorPanelHeader">
+              <span>Selection</span>
+              {loadingBooks ? <strong>Loading</strong> : <strong>{filteredBooks.length}</strong>}
+            </div>
+
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search granth name"
               aria-label="Search granth name"
-              style={{ padding: 10, border: "1px solid #c9c4b8", borderRadius: 8, fontSize: 15 }}
+              className="extractorInput"
             />
 
             <select
@@ -262,9 +355,11 @@ export default function GranthExtractorPage() {
                 const next = books.find((book) => book.id === nextId) || null;
                 setBookId(nextId);
                 setBookCode(next?.book_codes?.[0] || "");
+                setAdhikar("");
+                setResult(null);
               }}
               disabled={loadingBooks}
-              style={{ padding: 10, border: "1px solid #c9c4b8", borderRadius: 8, fontSize: 15 }}
+              className="extractorInput"
             >
               {filteredBooks.map((book) => (
                 <option key={book.id} value={book.id}>
@@ -273,43 +368,44 @@ export default function GranthExtractorPage() {
               ))}
             </select>
 
-            <select
-              value={bookCode}
-              onChange={(event) => setBookCode(event.target.value)}
-              style={{ padding: 10, border: "1px solid #c9c4b8", borderRadius: 8, fontSize: 15 }}
-            >
-              <option value="">All book codes</option>
+            <div className="extractorCodeGrid" aria-label="Book codes">
+              <button
+                type="button"
+                onClick={() => {
+                  setBookCode("");
+                  setResult(null);
+                }}
+                className={!bookCode ? "isActive" : ""}
+              >
+                All
+              </button>
               {selectedCodes.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => {
+                    setBookCode(code);
+                    setResult(null);
+                  }}
+                  className={bookCode === code ? "isActive" : ""}
+                >
+                  {codeLabel(code)}
+                </button>
               ))}
-            </select>
+            </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div className="extractorModeGrid">
               <button
                 type="button"
                 onClick={() => setKind("gathas")}
-                style={{
-                  padding: 10,
-                  border: "1px solid #1f2120",
-                  borderRadius: 8,
-                  background: kind === "gathas" ? "#1f2120" : "#fff",
-                  color: kind === "gathas" ? "#fff" : "#1f2120",
-                }}
+                className={kind === "gathas" ? "isActive" : ""}
               >
                 Gathas
               </button>
               <button
                 type="button"
                 onClick={() => setKind("pages")}
-                style={{
-                  padding: 10,
-                  border: "1px solid #1f2120",
-                  borderRadius: 8,
-                  background: kind === "pages" ? "#1f2120" : "#fff",
-                  color: kind === "pages" ? "#fff" : "#1f2120",
-                }}
+                className={kind === "pages" ? "isActive" : ""}
               >
                 Pages
               </button>
@@ -318,128 +414,227 @@ export default function GranthExtractorPage() {
             <input
               value={spec}
               onChange={(event) => setSpec(event.target.value)}
-              placeholder={kind === "gathas" ? "Gatha numbers, e.g. 5 or 3-6" : "Pages, e.g. 2,5-7,10"}
+              placeholder={kind === "gathas" ? "5 or 3-6, 10" : "2, 5-7, 10"}
               aria-label={kind === "gathas" ? "Gatha numbers" : "Page numbers"}
-              style={{ padding: 10, border: "1px solid #c9c4b8", borderRadius: 8, fontSize: 15 }}
+              className="extractorInput"
             />
 
             {kind === "gathas" ? (
-              <input
+              <select
                 value={adhikar}
                 onChange={(event) => setAdhikar(event.target.value)}
-                placeholder="Identifier"
+                className="extractorInput"
                 aria-label="Identifier"
-                style={{ padding: 10, border: "1px solid #c9c4b8", borderRadius: 8, fontSize: 15 }}
-              />
+              >
+                <option value="">Any identifier</option>
+                {(context?.identifiers || []).map((item) => (
+                  <option key={item.adhikar ?? "none"} value={item.adhikar ?? ""}>
+                    {item.label} | {item.total_gathas} gathas
+                  </option>
+                ))}
+              </select>
             ) : null}
 
-            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14 }}>
+            <label className="extractorCheckbox">
               <input
                 type="checkbox"
                 checked={includeCover}
                 onChange={(event) => setIncludeCover(event.target.checked)}
               />
-              Include cover page
+              <span>Include cover page</span>
             </label>
 
-            <button
-              type="button"
-              onClick={resolveSelection}
-              disabled={resolving || !selectedBook || !spec.trim()}
-              style={{
-                padding: 11,
-                border: 0,
-                borderRadius: 8,
-                background: "#2f5f50",
-                color: "#fff",
-                fontWeight: 700,
-              }}
-            >
-              {resolving ? "Resolving..." : "Resolve"}
-            </button>
+            <div className="extractorActions">
+              <button
+                type="button"
+                onClick={resolveSelection}
+                disabled={resolving || !selectedBook || !spec.trim()}
+                className="extractorPrimaryButton"
+              >
+                {resolving ? "Resolving..." : "Resolve"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void buildDownload("combined")}
+                disabled={Boolean(buildingMode) || !selectedBook || !spec.trim()}
+              >
+                {buildingMode === "combined" ? "Building..." : "Combined PDF"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void buildDownload("separate")}
+                disabled={Boolean(buildingMode) || !selectedBook || !spec.trim()}
+              >
+                {buildingMode === "separate" ? "Building..." : "Separate ZIP"}
+              </button>
+            </div>
 
-            {error ? <div style={{ color: "#9d1c1c", whiteSpace: "pre-wrap" }}>{error}</div> : null}
+            {error ? <div className="extractorError">{error}</div> : null}
             {result?.ranges?.length ? (
-              <div style={{ fontSize: 13, lineHeight: 1.5, color: "#4d4f52" }}>
+              <div className="extractorRangeHint">
                 {result.ranges.map((range) => (
-                  <div key={`${range.adhikar ?? "none"}_${range.minGatha}_${range.maxGatha}`}>
-                    id {range.adhikar ?? "none"}: gatha {range.minGatha}-{range.maxGatha}
-                  </div>
+                  <button
+                    key={`${range.adhikar ?? "none"}_${range.minGatha}_${range.maxGatha}`}
+                    type="button"
+                    onClick={() => setAdhikar(range.adhikar == null ? "" : String(range.adhikar))}
+                  >
+                    id {range.adhikar ?? "none"}: {range.minGatha}-{range.maxGatha}
+                  </button>
                 ))}
               </div>
             ) : null}
-          </div>
+          </aside>
 
-          <div style={{ minWidth: 0 }}>
-            {segments.length ? (
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-                <button type="button" onClick={openLinks} style={{ padding: "9px 11px", borderRadius: 8 }}>
-                  Open Links
-                </button>
-                <button
-                  type="button"
-                  onClick={downloadCombined}
-                  disabled={building}
-                  style={{ padding: "9px 11px", borderRadius: 8 }}
-                >
-                  {building ? "Building..." : "Download Combined PDF"}
-                </button>
-                <button
-                  type="button"
-                  onClick={downloadSeparate}
-                  disabled={building}
-                  style={{ padding: "9px 11px", borderRadius: 8 }}
-                >
-                  Download Separate PDFs
-                </button>
+          <section className="extractorContextPanel">
+            <div className="extractorBookHero">
+              <div className="extractorCoverPreview">
+                {primaryFile?.cover_image_url && !brokenCoverIds[primaryFile.id] ? (
+                  <img
+                    src={primaryFile.cover_image_url}
+                    alt={`${selectedTitle} cover`}
+                    onError={() => setBrokenCoverIds((prev) => ({ ...prev, [primaryFile.id]: true }))}
+                  />
+                ) : (
+                  <span>No cover</span>
+                )}
+              </div>
+              <div className="extractorBookCopy">
+                <div className="extractorEyebrow">{bookCode ? codeLabel(bookCode) : "All codes"}</div>
+                <h2>{selectedTitle}</h2>
+                <p>{selectedBook?.author_text || selectedBook?.details_text || "Mapped granth selection"}</p>
+                <div className="extractorBookMeta">
+                  <span>{context?.meta.identifier_count ?? 0} identifiers</span>
+                  <span>{context?.meta.mapped_row_count ?? 0} mapped gathas</span>
+                  <span>{contextLoading ? "Loading context" : contextError || "Context ready"}</span>
+                </div>
+              </div>
+            </div>
+
+            {context?.files.length ? (
+              <div className="extractorCoverStrip" aria-label="Available PDFs">
+                {context.files.map((file) => {
+                  const isActive = !bookCode || file.book_code === bookCode;
+                  return (
+                    <button
+                      key={file.id}
+                      type="button"
+                      onClick={() => {
+                        setBookCode(file.book_code || "");
+                        setResult(null);
+                      }}
+                      className={isActive && bookCode ? "isActive" : ""}
+                    >
+                      <span className="extractorTinyCover">
+                        {file.cover_image_url && !brokenCoverIds[file.id] ? (
+                          <img
+                            src={file.cover_image_url}
+                            alt=""
+                            onError={() => setBrokenCoverIds((prev) => ({ ...prev, [file.id]: true }))}
+                          />
+                        ) : (
+                          <strong>{file.code_label}</strong>
+                        )}
+                      </span>
+                      <span>
+                        <strong>{file.code_label}</strong>
+                        <em>{file.page_count ? `${file.page_count} pages` : toMB(file.file_size) || "PDF"}</em>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
 
-            <div style={{ display: "grid", gap: 12 }}>
-              {segments.map((segment) => (
-                <article
-                  key={segment.pdfUrl}
-                  style={{
-                    background: "#fff",
-                    border: "1px solid #ddd8cc",
-                    borderRadius: 8,
-                    padding: 12,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                    <strong>{segment.pdfFileName}</strong>
-                    <a href={segment.pdfUrl} target="_blank" rel="noreferrer">
-                      Open PDF
-                    </a>
-                  </div>
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#4d4f52" }}>
-                    Pages: {segment.pages.join(", ")}
-                  </div>
-                  <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-                    {segment.ranges.slice(0, 30).map((range, index) => (
-                      <div key={`${range.pageStart}_${range.pageEnd}_${index}`} style={{ fontSize: 13 }}>
-                        {range.gatha ? (
-                          <>
-                            id {range.adhikar ?? "none"} / gatha {range.gatha}:{" "}
-                          </>
-                        ) : null}
-                        page {range.pageStart}
-                        {range.pageEnd !== range.pageStart ? `-${range.pageEnd}` : ""}
-                        {range.anchorText ? <span style={{ opacity: 0.72 }}> · {range.anchorText}</span> : null}
-                      </div>
-                    ))}
-                    {segment.ranges.length > 30 ? (
-                      <div style={{ fontSize: 13, opacity: 0.72 }}>
-                        {segment.ranges.length - 30} more range{segment.ranges.length - 30 === 1 ? "" : "s"}
-                      </div>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
+            <div className="extractorInfoGrid">
+              <section className="extractorInfoPanel">
+                <div className="extractorPanelHeader">
+                  <span>Identifiers</span>
+                  <strong>{context?.identifiers.length ?? 0}</strong>
+                </div>
+                <div className="extractorIdentifierGrid">
+                  {(context?.identifiers || []).slice(0, 12).map((item) => (
+                    <button
+                      key={item.adhikar ?? "none"}
+                      type="button"
+                      className={currentIdentifier?.adhikar === item.adhikar ? "isActive" : ""}
+                      onClick={() => setAdhikar(item.adhikar == null ? "" : String(item.adhikar))}
+                    >
+                      <span>{item.label}</span>
+                      <strong>{item.total_gathas}</strong>
+                      <em>
+                        {item.min_gatha}-{item.max_gatha}
+                      </em>
+                    </button>
+                  ))}
+                  {!contextLoading && !context?.identifiers.length ? (
+                    <div className="extractorMuted">No identifier map available.</div>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="extractorInfoPanel">
+                <div className="extractorPanelHeader">
+                  <span>Mapped Page Ranges</span>
+                  <strong>{visibleRanges.length}</strong>
+                </div>
+                <div className="extractorRangeList">
+                  {visibleRanges.slice(0, 14).map((range, index) => (
+                    <div key={`${range.pdf_file_name}_${range.page_start}_${index}`}>
+                      <strong>{rangeLabel(range)}</strong>
+                      <span>{range.pdf_file_name}</span>
+                    </div>
+                  ))}
+                  {!contextLoading && visibleRanges.length === 0 ? (
+                    <div className="extractorMuted">No mapped page ranges available.</div>
+                  ) : null}
+                </div>
+              </section>
             </div>
-          </div>
+
+            <section className="extractorResultPanel">
+              <div className="extractorPanelHeader">
+                <span>Resolved Output</span>
+                <strong>{segments.length ? `${totalPages} pages` : "Pending"}</strong>
+              </div>
+
+              {segments.length ? (
+                <div className="extractorSegmentGrid">
+                  {segments.map((segment) => (
+                    <article key={segment.pdfUrl}>
+                      <div className="extractorSegmentHead">
+                        <strong>{segment.pdfFileName}</strong>
+                        <button type="button" className="inlinePdfButton" onClick={() => previewSegment(segment)}>
+                          Preview
+                        </button>
+                      </div>
+                      <div className="extractorSegmentMeta">
+                        {codeLabel(segment.bookCode)} | {segment.pages.length} page{segment.pages.length === 1 ? "" : "s"}
+                      </div>
+                      <div className="extractorSegmentRanges">
+                        {segment.ranges.slice(0, 18).map((range, index) => (
+                          <button
+                            key={`${range.pageStart}_${range.pageEnd}_${index}`}
+                            type="button"
+                            onClick={() => previewSegment(segment, range.pageStart)}
+                          >
+                            {range.gatha ? `id ${range.adhikar ?? "none"} / gatha ${range.gatha}: ` : ""}
+                            page {range.pageStart}
+                            {range.pageEnd !== range.pageStart ? `-${range.pageEnd}` : ""}
+                          </button>
+                        ))}
+                        {segment.ranges.length > 18 ? <span>{segment.ranges.length - 18} more ranges</span> : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="extractorMuted">No pages resolved yet.</div>
+              )}
+            </section>
+          </section>
         </section>
       </div>
+      <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
     </main>
   );
 }

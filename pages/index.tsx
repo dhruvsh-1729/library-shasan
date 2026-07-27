@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import { getDocumentScanLabel, getDocumentStatusLabel, type DocumentScanState } from "@/lib/document-scan-state";
 import { useEffect, useMemo, useState } from "react";
 
@@ -89,6 +90,7 @@ export default function HomePage() {
   const [brokenCoverIds, setBrokenCoverIds] = useState<Record<number, boolean>>({});
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
   const [nameQuery, setNameQuery] = useState("");
+  const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -309,9 +311,13 @@ export default function HomePage() {
                     <span>{sizeLabel ?? "-"}</span>
                   </div>
                   {row.ufs_url ? (
-                    <a href={row.ufs_url} target="_blank" rel="noreferrer" className="libraryPdfLink">
+                    <button
+                      type="button"
+                      className="libraryPdfLink inlinePdfButton"
+                      onClick={() => setPdfTarget({ pdfUrl: row.ufs_url ?? "", title, page: 1 })}
+                    >
                       Open PDF
-                    </a>
+                    </button>
                   ) : null}
                 </div>
               </article>
@@ -326,6 +332,7 @@ export default function HomePage() {
           ) : null}
         </footer>
       </div>
+      <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
     </main>
   );
 }
