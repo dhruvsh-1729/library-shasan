@@ -218,7 +218,7 @@ export default function OCRTextViewerPage() {
       <div style={{ width: "100%", margin: "0 auto" }}>
         <header style={{ marginBottom: 16 }}>
           <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.15 }}>OCR Granth Text Viewer</h1>
-          <div style={{ marginTop: 10, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 16 }}>
+          <div className="appPillNav" style={{ marginTop: 10, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 16 }}>
             <Link href="/search">Back to search</Link>
             {granth?.xlsx_url ? (
               <a href={granth.xlsx_url} target="_blank" rel="noreferrer">

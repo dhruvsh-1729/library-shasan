@@ -151,6 +151,20 @@ function segmentDownloadPages(segment: MappingSegment, contextPages: number, inc
   ]);
 }
 
+function countCombinedDownloadPages(segments: MappingSegment[], contextPages: number, includeCover: boolean) {
+  const seenPagesByPdf = new Map<string, Set<number>>();
+
+  for (const segment of segments) {
+    const seenPages = seenPagesByPdf.get(segment.pdfUrl) ?? new Set<number>();
+    for (const page of segmentDownloadPages(segment, contextPages, includeCover)) {
+      seenPages.add(page);
+    }
+    seenPagesByPdf.set(segment.pdfUrl, seenPages);
+  }
+
+  return [...seenPagesByPdf.values()].reduce((sum, pages) => sum + pages.size, 0);
+}
+
 function readSingleQuery(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? "";
 }
@@ -241,6 +255,7 @@ export default function GranthExtractorPage() {
     (sum, segment) => sum + segmentDownloadPages(segment, downloadContextPages, includeCover).length,
     0
   );
+  const combinedDownloadPages = countCombinedDownloadPages(segments, downloadContextPages, includeCover);
   const selectedTitle = titleForBook(selectedBook);
 
   useEffect(() => {
@@ -399,7 +414,7 @@ export default function GranthExtractorPage() {
             <span>{context?.meta.total_gathas ?? 0} gathas</span>
             <span>
               {segments.length
-                ? `${segments.length} output PDF / ${totalDownloadPages} download pages`
+                ? `${segments.length} output PDF / ${combinedDownloadPages} download pages`
                 : "No output yet"}
             </span>
           </div>
@@ -783,7 +798,7 @@ export default function GranthExtractorPage() {
               <div className="extractorPanelHeader">
                 <span>Resolved Output</span>
                 <strong>
-                  {segments.length ? `${totalPages} mapped / ${totalDownloadPages} download pages` : "Pending"}
+                  {segments.length ? `${totalPages} mapped / ${combinedDownloadPages} combined pages` : "Pending"}
                 </strong>
               </div>
 
@@ -835,7 +850,7 @@ export default function GranthExtractorPage() {
         fileLabel={
           deliveryRequest?.mode === "separate"
             ? `Separate ZIP, ${totalDownloadPages} download page${totalDownloadPages === 1 ? "" : "s"}`
-            : `Combined PDF, ${totalDownloadPages} download page${totalDownloadPages === 1 ? "" : "s"}`
+            : `Combined PDF, ${combinedDownloadPages} download page${combinedDownloadPages === 1 ? "" : "s"}`
         }
         busy={Boolean(buildingMode)}
         error={error}

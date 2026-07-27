@@ -172,7 +172,7 @@ export default function CsvViewerPage() {
       <div style={{ width: "100%", margin: "0 auto" }}>
         <header style={{ marginBottom: 12 }}>
           <h1 style={{ margin: 0, fontSize: 24 }}>CSV Row Viewer</h1>
-          <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", fontSize: 14 }}>
+          <div className="appPillNav" style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", fontSize: 14 }}>
             <Link href="/search">Back to search</Link>
             {csvUrl ? (
               <a href={csvUrl} target="_blank" rel="noreferrer">

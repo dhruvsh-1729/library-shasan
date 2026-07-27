@@ -95,13 +95,13 @@ button {
 
 .pageJumpPager button,
 .pageJumpInputGroup input {
-  min-height: 38px;
+  min-height: 42px;
   border: 1px solid #b9c6c2;
   border-radius: 8px;
   background: #fff;
   color: #17211f;
   padding: 0 10px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -121,7 +121,7 @@ button {
   align-items: center;
   gap: 6px;
   color: #465451;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -165,7 +165,7 @@ button {
 
 .libraryTitle {
   margin: 0;
-  font-size: 28px;
+  font-size: 34px;
   line-height: 1.1;
   letter-spacing: 0;
 }
@@ -176,7 +176,7 @@ button {
   gap: 8px;
   margin-top: 4px;
   color: #465451;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -189,43 +189,70 @@ button {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.2;
 }
 
 .libraryNav a,
 .libraryPdfLink,
 .libraryCardActions a,
-.inlinePdfButton {
+.inlinePdfButton,
+.scanLinks a,
+.appPillNav a {
   color: #155e75;
   font-weight: 700;
   text-decoration: none;
 }
 
-.libraryNav a {
+.libraryNav a,
+.scanNav a,
+.appPillNav a {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(21, 94, 117, 0.24);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.68);
-  padding: 7px 9px;
+  padding: 8px 10px;
   line-height: 1.15;
 }
 
 .libraryNav a:hover,
 .libraryPdfLink:hover,
 .libraryCardActions a:hover,
-.inlinePdfButton:hover {
+.inlinePdfButton:hover,
+.scanLinks a:hover,
+.appPillNav a:hover {
   text-decoration: underline;
 }
 
 .inlinePdfButton {
+  min-height: 34px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   width: fit-content;
-  border: 0;
-  background: transparent;
-  padding: 0;
+  border: 1px solid rgba(21, 94, 117, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 7px 10px;
   font: inherit;
   cursor: pointer;
+}
+
+.libraryPdfLink,
+.libraryCardActions a,
+.scanLinks a {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(21, 94, 117, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 7px 10px;
+  line-height: 1.15;
 }
 
 .libraryToolbar {
@@ -365,7 +392,7 @@ button {
 
 .libraryCardTitle {
   color: #17211f;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.25;
   overflow: hidden;
@@ -413,8 +440,8 @@ button {
   display: grid;
   gap: 1px;
   color: #52605d;
-  font-size: 11px;
-  line-height: 1.2;
+  font-size: 13px;
+  line-height: 1.28;
 }
 
 .libraryCardMeta span {
@@ -427,7 +454,7 @@ button {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .libraryCardActions {
@@ -436,13 +463,22 @@ button {
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 8px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.2;
 }
 
 .libraryCardActions span {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d7dfdc;
+  border-radius: 8px;
+  background: #f6f8f7;
+  padding: 7px 10px;
   color: #7b8784;
   font-weight: 700;
+  line-height: 1.15;
 }
 
 .libraryFooter {
@@ -452,7 +488,7 @@ button {
   justify-content: space-between;
   gap: 10px;
   color: #465451;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -475,18 +511,18 @@ button {
   }
 
   .libraryTitle {
-    font-size: 20px;
+    font-size: 34px;
   }
 
   .libraryStatusLine {
     margin-top: 2px;
-    font-size: 11px;
+    font-size: 17px;
   }
 
   .libraryNav {
     justify-content: flex-start;
     gap: 6px;
-    font-size: 11px;
+    font-size: 17px;
     overflow-x: auto;
     flex-wrap: nowrap;
     max-width: 100%;
@@ -508,10 +544,10 @@ button {
   .libraryPageButton,
   .pageJumpPager button,
   .pageJumpInputGroup input {
-    min-height: 36px;
-    height: 36px;
+    min-height: 44px;
+    height: 44px;
     border-radius: 8px;
-    font-size: 12px;
+    font-size: 17px;
   }
 
   .pageJumpPager {
@@ -526,15 +562,16 @@ button {
   .libraryGrid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
-    grid-auto-rows: minmax(104px, auto);
-    gap: 6px;
+    grid-auto-rows: minmax(210px, auto);
+    gap: 10px;
     overflow: auto;
     padding-right: 2px;
   }
 
   .libraryCard {
-    grid-template-columns: 58px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-rows: auto;
+    align-items: stretch;
   }
 
   .libraryCover {
@@ -542,41 +579,50 @@ button {
   }
 
   .libraryCardBody {
-    padding: 6px;
+    gap: 8px;
+    overflow: visible;
+    padding: 10px;
   }
 
   .libraryCardTitle {
-    font-size: 11px;
-    line-height: 1.22;
+    font-size: 17px;
+    line-height: 1.25;
   }
 
   .libraryScanBadge {
-    font-size: 9px;
+    font-size: 13px;
   }
 
   .libraryCardMeta {
     margin-top: 3px;
-    font-size: 10px;
+    font-size: 15px;
   }
 
   .libraryPdfLink {
-    font-size: 10px;
+    font-size: 14px;
   }
 
   .libraryCardActions {
-    font-size: 10px;
-    gap: 3px 7px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    font-size: 14px;
+    gap: 7px;
+  }
+
+  .libraryCardActions > * {
+    width: 100%;
   }
 
   .libraryFooter {
-    min-height: 18px;
-    font-size: 11px;
+    min-height: 22px;
+    font-size: 16px;
   }
 }
 
 @media (max-width: 380px), (max-height: 660px) {
   .libraryNav {
-    font-size: 10px;
+    font-size: 15px;
   }
 
   .librarySearchInput,
@@ -584,13 +630,13 @@ button {
   .libraryPageButton,
   .pageJumpPager button,
   .pageJumpInputGroup input {
-    min-height: 32px;
-    height: 32px;
+    min-height: 40px;
+    height: 40px;
     padding-inline: 8px;
   }
 
   .libraryCardMeta {
-    font-size: 9px;
+    font-size: 14px;
   }
 }
 
@@ -633,7 +679,7 @@ button {
 
 .scanTitle {
   margin: 0;
-  font-size: 30px;
+  font-size: 34px;
   line-height: 1.1;
   letter-spacing: 0;
 }
@@ -641,7 +687,7 @@ button {
 .scanStatusLine {
   margin-top: 5px;
   color: #465451;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 800;
 }
 
@@ -657,7 +703,7 @@ button {
 
 .scanNav {
   justify-content: flex-end;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .scanNav a,
@@ -694,7 +740,7 @@ button {
 .scanStat span,
 .scanMetaLabel {
   color: #52605d;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -702,7 +748,7 @@ button {
 
 .scanStat strong {
   color: #17211f;
-  font-size: 22px;
+  font-size: 28px;
   line-height: 1;
 }
 
@@ -726,7 +772,8 @@ button {
   border-radius: 8px;
   background: #fff;
   color: #17211f;
-  padding: 7px 10px;
+  padding: 8px 11px;
+  font-size: 15px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -735,7 +782,7 @@ button {
   border-radius: 999px;
   background: #e8eee9;
   padding: 2px 7px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .scanTab.isActive {
@@ -797,19 +844,19 @@ button {
 
 .scanPrimary strong {
   color: #17211f;
-  font-size: 14px;
+  font-size: 17px;
   line-height: 1.28;
 }
 
 .scanMono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .scanMetaBlock span:last-child,
 .scanLinks span {
   color: #33413e;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.35;
 }
 
@@ -824,7 +871,7 @@ button {
   justify-content: space-between;
   gap: 10px;
   color: #465451;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -850,14 +897,14 @@ button {
   }
 
   .scanTitle {
-    font-size: 22px;
+    font-size: 34px;
   }
 
   .scanNav {
     justify-content: flex-start;
     flex-wrap: nowrap;
     overflow-x: auto;
-    font-size: 11px;
+    font-size: 17px;
     padding-bottom: 2px;
   }
 
@@ -874,13 +921,13 @@ button {
   }
 
   .scanStat strong {
-    font-size: 18px;
+    font-size: 30px;
   }
 
   .scanTab {
-    min-height: 34px;
-    padding: 6px 8px;
-    font-size: 12px;
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 17px;
   }
 
   .scanTabs {
@@ -1128,8 +1175,8 @@ button {
 }
 
 .extractorCheckbox input {
-  width: 17px;
-  height: 17px;
+  width: 22px;
+  height: 22px;
 }
 
 .extractorFieldLabel {

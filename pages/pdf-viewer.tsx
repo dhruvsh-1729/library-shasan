@@ -336,7 +336,7 @@ export default function PdfViewerPage() {
               justifyContent: "space-between",
             }}
           >
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div className="appPillNav" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <Link href="/">Library</Link>
               <Link href="/search">Search</Link>
               {originalHref ? (

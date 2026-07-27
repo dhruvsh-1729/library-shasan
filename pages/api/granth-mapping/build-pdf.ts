@@ -190,12 +190,20 @@ function pagesForDownloadRange(range: MappingRange, contextPages: number) {
 
 async function buildCombined(segments: MappingSegment[], workDir: string, contextPages: number, includeCover: boolean) {
   const outputDoc = await PDFDocument.create();
+  const seenPagesByPdf = new Map<string, Set<number>>();
   let copied = 0;
 
   for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
     const segment = segments[segmentIndex];
     const sourcePath = await downloadSourcePdf(segment.pdfUrl);
-    const pages = pagesForDownloadSegment(segment, contextPages, includeCover);
+    const seenPages = seenPagesByPdf.get(segment.pdfUrl) ?? new Set<number>();
+    const pages = pagesForDownloadSegment(segment, contextPages, includeCover).filter((page) => {
+      if (seenPages.has(page)) return false;
+      seenPages.add(page);
+      return true;
+    });
+    seenPagesByPdf.set(segment.pdfUrl, seenPages);
+    if (pages.length === 0) continue;
     copied += await copyPagesInto(outputDoc, sourcePath, pages);
   }
 
@@ -237,9 +245,24 @@ async function buildSeparateZip(segments: MappingSegment[], workDir: string, con
   return zipPath;
 }
 
-function countPages(segments: MappingSegment[], contextPages: number, includeCover: boolean) {
+function countCombinedPages(segments: MappingSegment[], contextPages: number, includeCover: boolean) {
+  const seenPagesByPdf = new Map<string, Set<number>>();
+
+  for (const segment of segments) {
+    const seenPages = seenPagesByPdf.get(segment.pdfUrl) ?? new Set<number>();
+    for (const page of pagesForDownloadSegment(segment, contextPages, includeCover)) {
+      seenPages.add(page);
+    }
+    seenPagesByPdf.set(segment.pdfUrl, seenPages);
+  }
+
+  return [...seenPagesByPdf.values()].reduce((sum, pages) => sum + pages.size, 0);
+}
+
+function countSeparatePages(segments: MappingSegment[], contextPages: number) {
   return segments.reduce(
-    (sum, segment) => sum + pagesForDownloadSegment(segment, contextPages, includeCover).length,
+    (sum, segment) =>
+      sum + segment.ranges.reduce((rangeSum, range) => rangeSum + pagesForDownloadRange(range, contextPages).length, 0),
     0
   );
 }
@@ -282,7 +305,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       includeAllIdentifiers: Boolean(body.includeAllIdentifiers),
     });
 
-    const pageTotal = countPages(resolved.segments, contextPages, includeCover);
+    const pageTotal =
+      mode === "separate"
+        ? countSeparatePages(resolved.segments, contextPages)
+        : countCombinedPages(resolved.segments, contextPages, includeCover);
     if (pageTotal > MAX_PAGES_PER_BUILD) {
       return res.status(413).json({
         error: `Selection contains ${pageTotal} pages after nearby pages are added. Narrow it below ${MAX_PAGES_PER_BUILD} pages for a browser download.`,
