@@ -16,9 +16,17 @@ const PAGES_TABLE = "document_pages";
 const PAGE_CHUNK_SIZE = 200;
 const SOURCE_PAGE_SIZE = 1000;
 const TMP_DIR = path.join(process.cwd(), ".tmp_ocr500");
+const DEFAULT_TESSDATA_DIR = path.join(process.cwd(), ".library_pipeline_state", "tessdata");
+const DEFAULT_EXTRA_TESSDATA_DIRS = "/home/dell/Downloads";
 
 const DEFAULT_DPI = 500;
-const DEFAULT_LANGS = "guj+hin+eng";
+const DEFAULT_LANGS = "guj+san+eng";
+const SYSTEM_TESSDATA_DIR_CANDIDATES = [
+  "/usr/share/tesseract-ocr/5/tessdata",
+  "/usr/share/tesseract-ocr/4.00/tessdata",
+  "/usr/share/tessdata",
+  "/usr/local/share/tessdata",
+];
 const PSM_PRIMARY = 6;
 const PSM_FALLBACK = 3;
 
@@ -33,7 +41,9 @@ Options:
   --collection X    Only process one collection value
   --reprocess       Re-process already processed docs
   --dpi N           OCR render DPI (default: 500)
-  --langs X         Tesseract langs, e.g. guj+hin+eng
+  --langs X         Tesseract langs, e.g. guj+san+eng
+  --tessdataDir PATH Combined tessdata directory (default: ${DEFAULT_TESSDATA_DIR})
+  --extraTessdataDirs PATH Extra traineddata dirs, path-list or comma-separated (default: ${DEFAULT_EXTRA_TESSDATA_DIRS})
   --tessThreads N   Threads per tesseract process via OMP_THREAD_LIMIT (default: 1)
   --maxPages N      Optional debug cap per PDF (default: all pages)
   --dry-run         Show queue only, no writes
@@ -57,6 +67,13 @@ function parseIntFlag(name, raw, min) {
   return n;
 }
 
+function parsePathList(raw) {
+  return String(raw ?? "")
+    .split(new RegExp(`[${path.delimiter},]`))
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
 function parseArgs(argv) {
   const args = {
     limit: null,
@@ -67,6 +84,8 @@ function parseArgs(argv) {
     reprocess: false,
     dpi: DEFAULT_DPI,
     langs: process.env.OCR_LANGS || DEFAULT_LANGS,
+    tessdataDir: process.env.OCR_TESSDATA_DIR || DEFAULT_TESSDATA_DIR,
+    extraTessdataDirs: parsePathList(process.env.OCR_EXTRA_TESSDATA_DIRS || DEFAULT_EXTRA_TESSDATA_DIRS),
     tessThreads: Number.parseInt(process.env.OCR_TESSERACT_THREADS || "1", 10) || 1,
     maxPages: null,
     dryRun: false,
@@ -126,6 +145,15 @@ function parseArgs(argv) {
       args.langs = arg.includes("=") ? arg.slice("--langs=".length) : argv[++i];
       continue;
     }
+    if (arg === "--tessdataDir" || arg.startsWith("--tessdataDir=")) {
+      args.tessdataDir = arg.includes("=") ? arg.slice("--tessdataDir=".length) : argv[++i];
+      continue;
+    }
+    if (arg === "--extraTessdataDirs" || arg.startsWith("--extraTessdataDirs=")) {
+      const raw = arg.includes("=") ? arg.slice("--extraTessdataDirs=".length) : argv[++i];
+      args.extraTessdataDirs = parsePathList(raw);
+      continue;
+    }
     if (arg === "--tessThreads" || arg.startsWith("--tessThreads=")) {
       const raw = arg.includes("=") ? arg.slice("--tessThreads=".length) : argv[++i];
       args.tessThreads = parseIntFlag("--tessThreads", raw, 1);
@@ -140,6 +168,7 @@ function parseArgs(argv) {
     throw new Error(`Unknown argument: ${arg}`);
   }
 
+  args.tessdataDir = path.resolve(args.tessdataDir);
   return args;
 }
 
@@ -216,11 +245,87 @@ async function ensureToolsInstalled() {
 }
 
 let cachedTesseractLangs = null;
-async function getTesseractLangs() {
+function parseTesseractLangSpec(spec) {
+  return String(spec)
+    .split("+")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+async function pathExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function tessdataSourceDirs(extraDirs = []) {
+  const dirs = [];
+  const add = (dir) => {
+    if (!dir) return;
+    const resolved = path.resolve(dir);
+    if (!dirs.includes(resolved)) dirs.push(resolved);
+  };
+
+  if (process.env.TESSDATA_PREFIX) {
+    add(process.env.TESSDATA_PREFIX);
+    add(path.join(process.env.TESSDATA_PREFIX, "tessdata"));
+  }
+  for (const dir of SYSTEM_TESSDATA_DIR_CANDIDATES) add(dir);
+  for (const dir of extraDirs) add(dir);
+  return dirs;
+}
+
+async function findTessdataSource(lang, sourceDirs) {
+  for (const dir of sourceDirs) {
+    const filePath = path.join(dir, `${lang}.traineddata`);
+    if (await pathExists(filePath)) return filePath;
+  }
+  return null;
+}
+
+async function ensureTessdataLink(source, dest) {
+  try {
+    const stat = await fs.lstat(dest);
+    if (!stat.isSymbolicLink()) return;
+    const target = await fs.readlink(dest);
+    if (path.resolve(path.dirname(dest), target) === source) return;
+    await fs.unlink(dest);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  try {
+    await fs.symlink(source, dest);
+  } catch {
+    await fs.copyFile(source, dest);
+  }
+}
+
+async function ensureCombinedTessdataDir(args) {
+  const requested = parseTesseractLangSpec(args.langs);
+  const sourceDirs = tessdataSourceDirs(args.extraTessdataDirs);
+  await fs.mkdir(args.tessdataDir, { recursive: true });
+
+  for (const lang of requested) {
+    const source = await findTessdataSource(lang, sourceDirs);
+    if (!source) continue;
+    await ensureTessdataLink(source, path.join(args.tessdataDir, `${lang}.traineddata`));
+  }
+}
+
+function addTessdataDir(commandArgs, args) {
+  if (args.tessdataDir) commandArgs.push("--tessdata-dir", args.tessdataDir);
+  return commandArgs;
+}
+
+async function getTesseractLangs(args) {
   if (cachedTesseractLangs) return cachedTesseractLangs;
 
-  const { stdout } = await runCommand("tesseract", ["--list-langs"]);
-  const langs = stdout
+  const { stdout, stderr } = await runCommand("tesseract", addTessdataDir(["--list-langs"], args));
+  const langs = `${stdout}\n${stderr}`
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.toLowerCase().startsWith("list of available languages"));
@@ -229,17 +334,14 @@ async function getTesseractLangs() {
   return cachedTesseractLangs;
 }
 
-async function resolveLangSpec(spec, verbose) {
-  const requested = String(spec)
-    .split("+")
-    .map((x) => x.trim())
-    .filter(Boolean);
+async function resolveLangSpec(args) {
+  const requested = parseTesseractLangSpec(args.langs);
 
   if (requested.length === 0) {
     throw new Error(`Empty --langs value`);
   }
 
-  const available = await getTesseractLangs();
+  const available = await getTesseractLangs(args);
   const selected = requested.filter((lang) => available.has(lang));
   const missing = requested.filter((lang) => !available.has(lang));
 
@@ -251,7 +353,7 @@ async function resolveLangSpec(spec, verbose) {
     );
   }
 
-  if (missing.length > 0 && verbose) {
+  if (missing.length > 0) {
     console.warn(`⚠️ Missing tesseract langs skipped: ${missing.join(", ")}`);
   }
 
@@ -416,17 +518,11 @@ async function renderPageToPng(pdfPath, pageNumber, imageBase, dpi) {
   return `${imageBase}.png`;
 }
 
-async function runTesseract(imagePath, langs, psm, tessThreads) {
-  const { stdout } = await runCommand("tesseract", [
-    imagePath,
-    "stdout",
-    "-l",
-    langs,
-    "--oem",
-    "1",
-    "--psm",
-    String(psm),
-  ], {
+async function runTesseract(imagePath, langs, psm, tessThreads, tessdataDir) {
+  const commandArgs = [imagePath, "stdout"];
+  if (tessdataDir) commandArgs.push("--tessdata-dir", tessdataDir);
+  commandArgs.push("-l", langs, "--oem", "1", "--psm", String(psm));
+  const { stdout } = await runCommand("tesseract", commandArgs, {
     env: {
       OMP_THREAD_LIMIT: String(tessThreads),
       OMP_NUM_THREADS: String(tessThreads),
@@ -507,7 +603,8 @@ async function main() {
   const UPLOADTHING_APP_ID = process.env.UPLOADTHING_APP_ID || null;
 
   await ensureToolsInstalled();
-  const langSpec = await resolveLangSpec(args.langs, args.verbose);
+  await ensureCombinedTessdataDir(args);
+  const langSpec = await resolveLangSpec(args);
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -541,7 +638,7 @@ async function main() {
 
   console.log(`   ${withUrl.length - filtered.length} skipped, ${batch.length} to process.`);
   console.log(
-    `OCR mode: image-per-page, dpi=${args.dpi}, langs=${langSpec}, psm=${PSM_PRIMARY} fallback=${PSM_FALLBACK}, tessThreads=${args.tessThreads}`
+    `OCR mode: image-per-page, dpi=${args.dpi}, langs=${langSpec}, tessdataDir=${args.tessdataDir}, psm=${PSM_PRIMARY} fallback=${PSM_FALLBACK}, tessThreads=${args.tessThreads}`
   );
   console.log(`Processing (fileConcurrency=${args.concurrency}, pageConcurrency=${args.pageConcurrency})\n`);
 
@@ -617,10 +714,10 @@ async function main() {
           await renderPageToPng(temp.pdfPath, page, imageBase, args.dpi);
 
           console.log(`${label} page ${page}/${pagesToProcess} ocr start`);
-          let text = await runTesseract(imagePath, langSpec, PSM_PRIMARY, args.tessThreads);
+          let text = await runTesseract(imagePath, langSpec, PSM_PRIMARY, args.tessThreads, args.tessdataDir);
 
           if (!hasMeaningfulText(text)) {
-            text = await runTesseract(imagePath, langSpec, PSM_FALLBACK, args.tessThreads);
+            text = await runTesseract(imagePath, langSpec, PSM_FALLBACK, args.tessThreads, args.tessdataDir);
             psmUsed = PSM_FALLBACK;
           }
 

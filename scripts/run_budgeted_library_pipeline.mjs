@@ -19,6 +19,7 @@ const DEFAULT_SOURCE_ROOT =
 const DEFAULT_STATE_DIR = path.join(process.cwd(), ".library_pipeline_state");
 const DEFAULT_OUTPUT_DIR = path.join(process.cwd(), ".library_pipeline_output");
 const DEFAULT_TMP_DIR = path.join(process.cwd(), ".tmp_library_pipeline");
+const DEFAULT_EXTRA_TESSDATA_DIRS = "/home/dell/Downloads";
 
 const SOURCE_TABLE = "granth_ocr_files";
 const DOCS_TABLE = "documents";
@@ -38,6 +39,22 @@ const DEFAULT_GOOGLE_PROJECT_ID = "461791694388";
 const DEFAULT_GOOGLE_LOCATION = "asia-south1";
 const DEFAULT_GOOGLE_PROCESSOR_ID = "c6b075985ab223a8";
 const DEFAULT_GOOGLE_PROCESSOR_VERSION = "pretrained-ocr-v2.1.1-2025-01-31";
+const DEFAULT_TESSERACT_LANGS = "guj+san+eng";
+const DEFAULT_GOOGLE_LANGUAGE_HINTS = "gu,sa,en";
+const SYSTEM_TESSDATA_DIR_CANDIDATES = [
+  "/usr/share/tesseract-ocr/5/tessdata",
+  "/usr/share/tesseract-ocr/4.00/tessdata",
+  "/usr/share/tessdata",
+  "/usr/local/share/tessdata",
+];
+const GOOGLE_LANGUAGE_HINT_ALIASES = new Map([
+  ["guj", "gu"],
+  ["gu", "gu"],
+  ["san", "sa"],
+  ["sa", "sa"],
+  ["eng", "en"],
+  ["en", "en"],
+]);
 
 function usage() {
   console.log(`Usage: node scripts/run_budgeted_library_pipeline.mjs [options]
@@ -64,11 +81,14 @@ OCR options:
   --maxPages N             Debug cap per PDF
   --pageConcurrency N      Parallel local page workers per PDF (default: 2)
   --dpi N                  Page image render DPI for OCR (default: 300)
-  --langs X                Tesseract langs (default: guj+hin+eng)
+  --langs X                Tesseract langs (default: ${DEFAULT_TESSERACT_LANGS})
+  --tessdataDir PATH       Combined tessdata directory (default: stateDir/tessdata)
+  --extraTessdataDirs PATH Extra traineddata dirs, path-list or comma-separated (default: ${DEFAULT_EXTRA_TESSDATA_DIRS})
   --tessThreads N          OMP_THREAD_LIMIT per tesseract process (default: 1)
   --tessTimeoutMs N        Per-page tesseract timeout (default: 90000)
   --googleMode X           off|low-confidence|all (default: low-confidence)
   --googleBudgetUsd N      Hard cap for Google OCR attempts (default: 20)
+  --googleLanguageHints X  Google OCR BCP-47 hints, comma-separated. Empty/auto omits hints.
   --googleLowTextPages     Allow paid OCR for very low-text pages
   --noResumePages          Ignore existing page text and process selected pages again
   --resumeMinChars N       Reuse existing page text only above this char count (default: 80)
@@ -114,6 +134,25 @@ function readValueArg(argv, index, longName) {
   return { value: argv[index + 1], nextIndex: index + 1 };
 }
 
+function parseGoogleLanguageHints(raw) {
+  const value = String(raw ?? "").trim();
+  if (!value || /^(auto|none|off)$/i.test(value)) return [];
+  return value
+    .split(/[,+]/)
+    .map((x) => {
+      const hint = x.trim();
+      return GOOGLE_LANGUAGE_HINT_ALIASES.get(hint.toLowerCase()) || hint;
+    })
+    .filter(Boolean);
+}
+
+function parsePathList(raw) {
+  return String(raw ?? "")
+    .split(new RegExp(`[${path.delimiter},]`))
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
 function parseArgs(argv) {
   const args = {
     sourceRoot: DEFAULT_SOURCE_ROOT,
@@ -131,7 +170,7 @@ function parseArgs(argv) {
     maxPages: null,
     pageConcurrency: Number.parseInt(process.env.OCR_PAGE_CONCURRENCY || "2", 10) || 2,
     dpi: Number.parseInt(process.env.OCR_DPI || "300", 10) || 300,
-    langs: process.env.OCR_LANGS || "guj+hin+eng",
+    langs: process.env.OCR_LANGS || DEFAULT_TESSERACT_LANGS,
     tessThreads: Number.parseInt(process.env.OCR_TESSERACT_THREADS || "1", 10) || 1,
     tessTimeoutMs: Number.parseInt(process.env.OCR_TESSERACT_TIMEOUT_MS || "90000", 10) || 90000,
     googleMode: process.env.LIBRARY_GOOGLE_OCR_MODE || "low-confidence",
@@ -154,10 +193,9 @@ function parseArgs(argv) {
     googleProcessorId: process.env.GOOGLE_DOCUMENTAI_PROCESSOR_ID || DEFAULT_GOOGLE_PROCESSOR_ID,
     googleProcessorVersion:
       process.env.GOOGLE_DOCUMENTAI_PROCESSOR_VERSION || DEFAULT_GOOGLE_PROCESSOR_VERSION,
-    googleLanguageHints: (process.env.GOOGLE_DOCUMENTAI_LANGUAGE_HINTS || "gu,hi,en")
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean),
+    googleLanguageHints: parseGoogleLanguageHints(
+      process.env.GOOGLE_DOCUMENTAI_LANGUAGE_HINTS ?? DEFAULT_GOOGLE_LANGUAGE_HINTS
+    ),
     resumePages: process.env.LIBRARY_PIPELINE_RESUME_PAGES !== "0",
     resumeMinChars: Number.parseInt(process.env.LIBRARY_PIPELINE_RESUME_MIN_CHARS || "80", 10) || 80,
     resumeMinScore: parseFloatFlag(
@@ -171,6 +209,8 @@ function parseArgs(argv) {
     stateDir: DEFAULT_STATE_DIR,
     outputDir: DEFAULT_OUTPUT_DIR,
     tmpDir: DEFAULT_TMP_DIR,
+    tessdataDir: process.env.OCR_TESSDATA_DIR || null,
+    extraTessdataDirs: parsePathList(process.env.OCR_EXTRA_TESSDATA_DIRS || DEFAULT_EXTRA_TESSDATA_DIRS),
     minFreeMemMB: Number.parseInt(process.env.LIBRARY_PIPELINE_MIN_FREE_MEM_MB || "2048", 10) || 2048,
     memoryWaitSeconds:
       Number.parseInt(process.env.LIBRARY_PIPELINE_MEMORY_WAIT_SECONDS || "900", 10) || 900,
@@ -268,6 +308,8 @@ function parseArgs(argv) {
       "--stateDir",
       "--outputDir",
       "--tmpDir",
+      "--tessdataDir",
+      "--extraTessdataDirs",
       "--minFreeMemMB",
       "--memoryWaitSeconds",
     ]);
@@ -303,16 +345,14 @@ function parseArgs(argv) {
     else if (flagName === "--googleLocation") args.googleLocation = value;
     else if (flagName === "--googleProcessorId") args.googleProcessorId = value;
     else if (flagName === "--googleProcessorVersion") args.googleProcessorVersion = value;
-    else if (flagName === "--googleLanguageHints")
-      args.googleLanguageHints = String(value)
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
+    else if (flagName === "--googleLanguageHints") args.googleLanguageHints = parseGoogleLanguageHints(value);
     else if (flagName === "--resumeMinChars") args.resumeMinChars = parseIntFlag(flagName, value, 0);
     else if (flagName === "--resumeMinScore") args.resumeMinScore = parseFloatFlag(flagName, value, 0);
     else if (flagName === "--stateDir") args.stateDir = value;
     else if (flagName === "--outputDir") args.outputDir = value;
     else if (flagName === "--tmpDir") args.tmpDir = value;
+    else if (flagName === "--tessdataDir") args.tessdataDir = value;
+    else if (flagName === "--extraTessdataDirs") args.extraTessdataDirs = parsePathList(value);
     else if (flagName === "--minFreeMemMB") args.minFreeMemMB = parseIntFlag(flagName, value, 256);
     else if (flagName === "--memoryWaitSeconds")
       args.memoryWaitSeconds = parseIntFlag(flagName, value, 0);
@@ -336,6 +376,7 @@ function parseArgs(argv) {
   if (args.dryRun) {
     args.execute = false;
   }
+  args.tessdataDir = path.resolve(args.tessdataDir || path.join(args.stateDir, "tessdata"));
   return args;
 }
 
@@ -515,21 +556,94 @@ async function ensureTools() {
 }
 
 let cachedTesseractLangs = null;
-async function resolveTesseractLangs(requestedSpec, verbose) {
+function parseTesseractLangSpec(spec) {
+  return String(spec)
+    .split("+")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+async function pathExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function tessdataSourceDirs(extraDirs = []) {
+  const dirs = [];
+  const add = (dir) => {
+    if (!dir) return;
+    const resolved = path.resolve(dir);
+    if (!dirs.includes(resolved)) dirs.push(resolved);
+  };
+
+  if (process.env.TESSDATA_PREFIX) {
+    add(process.env.TESSDATA_PREFIX);
+    add(path.join(process.env.TESSDATA_PREFIX, "tessdata"));
+  }
+  for (const dir of SYSTEM_TESSDATA_DIR_CANDIDATES) add(dir);
+  for (const dir of extraDirs) add(dir);
+  return dirs;
+}
+
+async function findTessdataSource(lang, sourceDirs) {
+  for (const dir of sourceDirs) {
+    const filePath = path.join(dir, `${lang}.traineddata`);
+    if (await pathExists(filePath)) return filePath;
+  }
+  return null;
+}
+
+async function ensureTessdataLink(source, dest) {
+  try {
+    const stat = await fs.lstat(dest);
+    if (!stat.isSymbolicLink()) return;
+    const target = await fs.readlink(dest);
+    if (path.resolve(path.dirname(dest), target) === source) return;
+    await fs.unlink(dest);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  try {
+    await fs.symlink(source, dest);
+  } catch {
+    await fs.copyFile(source, dest);
+  }
+}
+
+async function ensureCombinedTessdataDir(args) {
+  const requested = parseTesseractLangSpec(args.langs);
+  const sourceDirs = tessdataSourceDirs(args.extraTessdataDirs);
+  await fs.mkdir(args.tessdataDir, { recursive: true });
+
+  for (const lang of requested) {
+    const source = await findTessdataSource(lang, sourceDirs);
+    if (!source) continue;
+    await ensureTessdataLink(source, path.join(args.tessdataDir, `${lang}.traineddata`));
+  }
+}
+
+function addTessdataDir(commandArgs, args) {
+  if (args.tessdataDir) commandArgs.push("--tessdata-dir", args.tessdataDir);
+  return commandArgs;
+}
+
+async function resolveTesseractLangs(args) {
   if (!cachedTesseractLangs) {
-    const { stdout } = await runCommand("tesseract", ["--list-langs"]);
+    const { stdout, stderr } = await runCommand("tesseract", addTessdataDir(["--list-langs"], args));
     cachedTesseractLangs = new Set(
-      stdout
+      `${stdout}\n${stderr}`
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter((line) => line && !line.toLowerCase().startsWith("list of available languages"))
     );
   }
 
-  const requested = String(requestedSpec)
-    .split("+")
-    .map((x) => x.trim())
-    .filter(Boolean);
+  const requested = parseTesseractLangSpec(args.langs);
   const selected = requested.filter((lang) => cachedTesseractLangs.has(lang));
   const missing = requested.filter((lang) => !cachedTesseractLangs.has(lang));
 
@@ -540,7 +654,7 @@ async function resolveTesseractLangs(requestedSpec, verbose) {
       )}, available=${[...cachedTesseractLangs].join(",")}`
     );
   }
-  if (missing.length > 0 && verbose) {
+  if (missing.length > 0) {
     console.warn(`[ocr] Missing tesseract langs skipped: ${missing.join(", ")}`);
   }
   return selected.join("+");
@@ -1294,9 +1408,11 @@ async function renderPage(meta, pageNumber, args) {
 
 async function tesseractPage(imagePath, pageNumber, args) {
   await waitForMemory(args, `tesseract p${pageNumber}`, 512);
+  const commandArgs = addTessdataDir([imagePath, "stdout"], args);
+  commandArgs.push("-l", args.resolvedLangs, "--oem", "1", "--psm", "6");
   const { stdout } = await runCommand(
     "tesseract",
-    [imagePath, "stdout", "-l", args.resolvedLangs, "--oem", "1", "--psm", "6"],
+    commandArgs,
     {
       timeoutMs: args.tessTimeoutMs,
       env: {
@@ -1392,21 +1508,25 @@ async function runGoogleDocumentAi(imagePath, args) {
   const name = args.googleProcessorVersion
     ? `projects/${args.googleProjectId}/locations/${args.googleLocation}/processors/${args.googleProcessorId}/processorVersions/${args.googleProcessorVersion}`
     : `projects/${args.googleProjectId}/locations/${args.googleLocation}/processors/${args.googleProcessorId}`;
-
-  const [result] = await client.processDocument({
+  const request = {
     name,
     rawDocument: {
       content,
       mimeType: "image/png",
     },
-    processOptions: {
+  };
+
+  if (args.googleLanguageHints.length > 0) {
+    request.processOptions = {
       ocrConfig: {
         hints: {
           languageHints: args.googleLanguageHints,
         },
       },
-    },
-  });
+    };
+  }
+
+  const [result] = await client.processDocument(request);
 
   return normalizeText(result?.document?.text || "");
 }
@@ -2009,7 +2129,14 @@ async function main() {
 
   await waitForMemory(args, "startup", 0);
   await ensureTools();
-  args.resolvedLangs = await resolveTesseractLangs(args.langs, args.verbose);
+  await ensureCombinedTessdataDir(args);
+  args.resolvedLangs = await resolveTesseractLangs(args);
+  console.log(
+    `[ocr] Tesseract langs requested=${args.langs} resolved=${args.resolvedLangs} tessdataDir=${args.tessdataDir}`
+  );
+  console.log(
+    `[ocr] Google language hints=${args.googleLanguageHints.length ? args.googleLanguageHints.join(",") : "auto"}`
+  );
 
   const sourceStat = await fs.stat(args.sourceRoot).catch((error) => {
     throw new Error(`Cannot read --sourceRoot ${args.sourceRoot}: ${error.message}`);

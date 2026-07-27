@@ -49,12 +49,23 @@ npm run library:pipeline -- --execute --bookNumber 001 --googleBudgetUsd 20
 # Faster local OCR if RAM is healthy
 npm run library:pipeline -- --execute --phase text --pageConcurrency 4 --minFreeMemMB 4096
 
+# Force local OCR language packs for a known Sanskrit-heavy run
+npm run library:pipeline -- --execute --phase text --langs guj+san+eng
+
 # PDF/covers only, no searchable text
 npm run library:pipeline -- --execute --phase catalog
 
 # No paid Google calls, only embedded text + local Tesseract
 npm run library:pipeline -- --execute --phase text --googleMode off
 ```
+
+Local OCR defaults to Gujarati, Sanskrit, and English (`guj+san+eng`). The
+pipeline builds a combined tessdata directory under `stateDir/tessdata`, linking
+system language packs plus extra packs from `/home/dell/Downloads` by default.
+That lets `/home/dell/Downloads/san.traineddata` be used without a system-wide
+install. Google Document AI language hints default to `gu,sa,en`; these are OCR
+hints, not a guaranteed hard language constraint. Use `--googleLanguageHints auto`
+to omit hints.
 
 ## What Gets Updated
 

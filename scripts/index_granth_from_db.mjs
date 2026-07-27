@@ -222,9 +222,12 @@ async function main() {
   const UT_TOKEN = reqEnv("UPLOADTHING_TOKEN");
 
   // OCR control (in-memory)
-  const OCR_LANGS = process.env.OCR_LANGS || "guj+hin+san";
+  const OCR_LANGS = process.env.OCR_LANGS || "guj+san+eng";
   const OCR_DPI = process.env.OCR_DPI || "300";
   const USE_OCR_FALLBACK = process.env.USE_OCR_FALLBACK || "1";
+  const OCR_TESSDATA_DIR =
+    process.env.OCR_TESSDATA_DIR || path.join(process.cwd(), ".library_pipeline_state", "tessdata");
+  const OCR_EXTRA_TESSDATA_DIRS = process.env.OCR_EXTRA_TESSDATA_DIRS || "/home/dell/Downloads";
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -285,7 +288,7 @@ async function main() {
       console.log(`${label} extracting (PyMuPDF in-memory)...`);
       const parsed = await extractViaPython(
         pdfBuf,
-        { OCR_LANGS, OCR_DPI, USE_OCR_FALLBACK },
+        { OCR_LANGS, OCR_DPI, USE_OCR_FALLBACK, OCR_TESSDATA_DIR, OCR_EXTRA_TESSDATA_DIRS },
         args.verbose
       );
 
