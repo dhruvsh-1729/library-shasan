@@ -35,6 +35,15 @@ type BuildBody = {
   email?: string | null;
   mode?: BuildMode;
   title?: string | null;
+  selection?: {
+    pagesByPdf?: Array<{ pdfUrl?: string | null; pages?: Array<number | string> | null }> | null;
+    rangeIndexesByPdf?: Array<{ pdfUrl?: string | null; rangeIndexes?: Array<number | string> | null }> | null;
+  } | null;
+};
+
+type BuildSelection = {
+  pagesByPdf: Map<string, Set<number>>;
+  rangeIndexesByPdf: Map<string, Set<number>>;
 };
 
 const SOURCE_CACHE_DIR = path.join(tmpdir(), "ndms-library-pdf-source-cache");
@@ -141,6 +150,41 @@ function uniqueSortedPages(pages: number[]) {
   return [...new Set(pages.map((page) => Math.floor(Number(page))).filter((page) => page > 0))].sort((a, b) => a - b);
 }
 
+function parseBuildSelection(selection: BuildBody["selection"]): BuildSelection {
+  const pagesByPdf = new Map<string, Set<number>>();
+  const rangeIndexesByPdf = new Map<string, Set<number>>();
+
+  for (const item of selection?.pagesByPdf || []) {
+    const pdfUrl = String(item?.pdfUrl || "").trim();
+    if (!pdfUrl) continue;
+    const pages = uniqueSortedPages((item?.pages || []).map((page) => Number(page)));
+    if (pages.length > 0) pagesByPdf.set(pdfUrl, new Set(pages));
+  }
+
+  for (const item of selection?.rangeIndexesByPdf || []) {
+    const pdfUrl = String(item?.pdfUrl || "").trim();
+    if (!pdfUrl) continue;
+    const rangeIndexes = uniqueSortedPages((item?.rangeIndexes || []).map((rangeIndex) => Number(rangeIndex)))
+      .map((rangeIndex) => rangeIndex - 1)
+      .filter((rangeIndex) => rangeIndex >= 0);
+    if (rangeIndexes.length > 0) rangeIndexesByPdf.set(pdfUrl, new Set(rangeIndexes));
+  }
+
+  return { pagesByPdf, rangeIndexesByPdf };
+}
+
+function rangeIsSelected(segment: MappingSegment, rangeIndex: number, selection: BuildSelection) {
+  if (selection.rangeIndexesByPdf.size === 0) return true;
+  return selection.rangeIndexesByPdf.get(segment.pdfUrl)?.has(rangeIndex) ?? false;
+}
+
+function filterSelectedPages(segment: MappingSegment, pages: number[], selection: BuildSelection) {
+  if (selection.pagesByPdf.size === 0) return pages;
+  const selectedPages = selection.pagesByPdf.get(segment.pdfUrl);
+  if (!selectedPages) return [];
+  return pages.filter((page) => selectedPages.has(page));
+}
+
 async function loadSourcePdf(sourcePath: string) {
   await ensureFreeMemory("load source PDF");
   return PDFDocument.load(await readFile(sourcePath), { ignoreEncryption: true });
@@ -176,19 +220,43 @@ function pagesForRange(range: MappingRange) {
   return pages;
 }
 
-function pagesForDownloadSegment(segment: MappingSegment, contextPages: number, includeCover: boolean) {
-  const rangePages = segment.ranges.flatMap((range) => pagesForRange(range));
+function pagesForDownloadSegment(
+  segment: MappingSegment,
+  contextPages: number,
+  includeCover: boolean,
+  selection: BuildSelection
+) {
+  const selectedRanges = segment.ranges.filter((_, index) => rangeIsSelected(segment, index, selection));
+  if (selectedRanges.length === 0) return [];
+  const rangePages = selectedRanges.flatMap((range) => pagesForRange(range));
   return uniqueSortedPages([
     ...(includeCover ? [1] : []),
     ...expandPagesWithContext(rangePages, contextPages),
   ]);
 }
 
-function pagesForDownloadRange(range: MappingRange, contextPages: number) {
-  return expandPagesWithContext(pagesForRange(range), contextPages);
+function pagesForDownloadRange(
+  segment: MappingSegment,
+  range: MappingRange,
+  rangeIndex: number,
+  contextPages: number,
+  includeCover: boolean,
+  selection: BuildSelection
+) {
+  if (!rangeIsSelected(segment, rangeIndex, selection)) return [];
+  return uniqueSortedPages([
+    ...(includeCover ? [1] : []),
+    ...expandPagesWithContext(pagesForRange(range), contextPages),
+  ]);
 }
 
-async function buildCombined(segments: MappingSegment[], workDir: string, contextPages: number, includeCover: boolean) {
+async function buildCombined(
+  segments: MappingSegment[],
+  workDir: string,
+  contextPages: number,
+  includeCover: boolean,
+  selection: BuildSelection
+) {
   const outputDoc = await PDFDocument.create();
   const seenPagesByPdf = new Map<string, Set<number>>();
   let copied = 0;
@@ -197,7 +265,7 @@ async function buildCombined(segments: MappingSegment[], workDir: string, contex
     const segment = segments[segmentIndex];
     const sourcePath = await downloadSourcePdf(segment.pdfUrl);
     const seenPages = seenPagesByPdf.get(segment.pdfUrl) ?? new Set<number>();
-    const pages = pagesForDownloadSegment(segment, contextPages, includeCover).filter((page) => {
+    const pages = filterSelectedPages(segment, pagesForDownloadSegment(segment, contextPages, includeCover, selection), selection).filter((page) => {
       if (seenPages.has(page)) return false;
       seenPages.add(page);
       return true;
@@ -216,7 +284,13 @@ async function buildCombined(segments: MappingSegment[], workDir: string, contex
   return outPath;
 }
 
-async function buildSeparateZip(segments: MappingSegment[], workDir: string, contextPages: number) {
+async function buildSeparateZip(
+  segments: MappingSegment[],
+  workDir: string,
+  contextPages: number,
+  includeCover: boolean,
+  selection: BuildSelection
+) {
   const outDir = path.join(workDir, "separate");
   await mkdir(outDir, { recursive: true });
   const builtFiles: string[] = [];
@@ -233,7 +307,13 @@ async function buildSeparateZip(segments: MappingSegment[], workDir: string, con
         outDir,
         `${safeFileName(segment.pdfFileName, `segment-${segmentIndex + 1}`)}_${safeFileName(label, `range-${rangeIndex + 1}`)}.pdf`
       );
-      await makePdfFromPages(sourcePath, pagesForDownloadRange(range, contextPages), outPath);
+      const pages = filterSelectedPages(
+        segment,
+        pagesForDownloadRange(segment, range, rangeIndex, contextPages, includeCover, selection),
+        selection
+      );
+      if (pages.length === 0) continue;
+      await makePdfFromPages(sourcePath, pages, outPath);
       builtFiles.push(outPath);
     }
   }
@@ -245,12 +325,17 @@ async function buildSeparateZip(segments: MappingSegment[], workDir: string, con
   return zipPath;
 }
 
-function countCombinedPages(segments: MappingSegment[], contextPages: number, includeCover: boolean) {
+function countCombinedPages(
+  segments: MappingSegment[],
+  contextPages: number,
+  includeCover: boolean,
+  selection: BuildSelection
+) {
   const seenPagesByPdf = new Map<string, Set<number>>();
 
   for (const segment of segments) {
     const seenPages = seenPagesByPdf.get(segment.pdfUrl) ?? new Set<number>();
-    for (const page of pagesForDownloadSegment(segment, contextPages, includeCover)) {
+    for (const page of filterSelectedPages(segment, pagesForDownloadSegment(segment, contextPages, includeCover, selection), selection)) {
       seenPages.add(page);
     }
     seenPagesByPdf.set(segment.pdfUrl, seenPages);
@@ -259,10 +344,19 @@ function countCombinedPages(segments: MappingSegment[], contextPages: number, in
   return [...seenPagesByPdf.values()].reduce((sum, pages) => sum + pages.size, 0);
 }
 
-function countSeparatePages(segments: MappingSegment[], contextPages: number) {
+function countSeparatePages(
+  segments: MappingSegment[],
+  contextPages: number,
+  includeCover: boolean,
+  selection: BuildSelection
+) {
   return segments.reduce(
     (sum, segment) =>
-      sum + segment.ranges.reduce((rangeSum, range) => rangeSum + pagesForDownloadRange(range, contextPages).length, 0),
+      sum +
+      segment.ranges.reduce((rangeSum, range, rangeIndex) => {
+        const pages = pagesForDownloadRange(segment, range, rangeIndex, contextPages, includeCover, selection);
+        return rangeSum + filterSelectedPages(segment, pages, selection).length;
+      }, 0),
     0
   );
 }
@@ -294,6 +388,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const adhikar = body.adhikar == null || body.adhikar === "" ? null : toInt(body.adhikar, null);
     const includeCover = Boolean(body.includeCover);
     const contextPages = normalizeContextPageRadius(body.contextPages);
+    const selection = parseBuildSelection(body.selection);
 
     const resolved = await resolveGranthSelection({
       bookId: toInt(body.bookId, null),
@@ -307,8 +402,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const pageTotal =
       mode === "separate"
-        ? countSeparatePages(resolved.segments, contextPages)
-        : countCombinedPages(resolved.segments, contextPages, includeCover);
+        ? countSeparatePages(resolved.segments, contextPages, includeCover, selection)
+        : countCombinedPages(resolved.segments, contextPages, includeCover, selection);
+    if (pageTotal <= 0) {
+      return res.status(400).json({ error: "Select at least one mapped page before building the PDF." });
+    }
     if (pageTotal > MAX_PAGES_PER_BUILD) {
       return res.status(413).json({
         error: `Selection contains ${pageTotal} pages after nearby pages are added. Narrow it below ${MAX_PAGES_PER_BUILD} pages for a browser download.`,
@@ -319,7 +417,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const title = safeFileName(String(body.title || "granth_selection"), "granth_selection");
 
     if (mode === "separate") {
-      const zipPath = await buildSeparateZip(resolved.segments, workDir, contextPages);
+      const zipPath = await buildSeparateZip(resolved.segments, workDir, contextPages, includeCover, selection);
       const filename = `${title}_separate.zip`;
       if (delivery === "email") {
         const recipientClientKey = getDownloadRecipientClientKey(req, res);
@@ -344,7 +442,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
-    const pdfPath = await buildCombined(resolved.segments, workDir, contextPages, includeCover);
+    const pdfPath = await buildCombined(resolved.segments, workDir, contextPages, includeCover, selection);
     const filename = `${title}_combined.pdf`;
     if (delivery === "email") {
       const recipientClientKey = getDownloadRecipientClientKey(req, res);

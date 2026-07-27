@@ -86,6 +86,39 @@ type DeliveryRequest = {
   mode: BuildMode;
 };
 
+type PreviewRange = {
+  key: string;
+  index: number;
+  range: MappingSegment["ranges"][number];
+  pages: number[];
+};
+
+type PreviewSegment = {
+  key: string;
+  segment: MappingSegment;
+  ranges: PreviewRange[];
+  pages: number[];
+};
+
+type PreviewSelectionState = {
+  disabledSegments: Record<string, boolean>;
+  disabledRanges: Record<string, boolean>;
+  disabledPages: Record<string, Record<number, boolean>>;
+};
+
+type BuildSelectionPayload = {
+  pagesByPdf: Array<{ pdfUrl: string; pages: number[] }>;
+  rangeIndexesByPdf: Array<{ pdfUrl: string; rangeIndexes: number[] }>;
+};
+
+type PreparedSelection = {
+  selection: BuildSelectionPayload;
+  combinedPages: number;
+  separatePages: number;
+  selectedSegments: number;
+  selectedRanges: number;
+};
+
 function titleForBook(book: BookItem | null) {
   if (!book) return "Selected Granth";
   return book.title_display || book.title_english || `Granth ${book.id}`;
@@ -165,6 +198,99 @@ function countCombinedDownloadPages(segments: MappingSegment[], contextPages: nu
   return [...seenPagesByPdf.values()].reduce((sum, pages) => sum + pages.size, 0);
 }
 
+function rangeDownloadPages(range: MappingSegment["ranges"][number], contextPages: number, includeCover: boolean) {
+  return uniqueSortedPages([
+    ...(includeCover ? [1] : []),
+    ...expandPagesWithContext(pagesInRange(range.pageStart, range.pageEnd), contextPages),
+  ]);
+}
+
+function buildPreviewSegments(segments: MappingSegment[], contextPages: number, includeCover: boolean): PreviewSegment[] {
+  return segments.map((segment, segmentIndex) => {
+    const ranges = segment.ranges.map((range, rangeIndex) => ({
+      key: `${segmentIndex}:${rangeIndex}`,
+      index: rangeIndex,
+      range,
+      pages: rangeDownloadPages(range, contextPages, includeCover),
+    }));
+    return {
+      key: segment.pdfUrl,
+      segment,
+      ranges,
+      pages: uniqueSortedPages(ranges.flatMap((range) => range.pages)),
+    };
+  });
+}
+
+function emptyPreviewSelection(): PreviewSelectionState {
+  return {
+    disabledSegments: {},
+    disabledRanges: {},
+    disabledPages: {},
+  };
+}
+
+function isPageDisabled(selection: PreviewSelectionState, segmentKey: string, page: number) {
+  return Boolean(selection.disabledPages[segmentKey]?.[page]);
+}
+
+function selectedRangePages(
+  previewSegment: PreviewSegment,
+  range: PreviewRange,
+  selection: PreviewSelectionState
+) {
+  if (selection.disabledSegments[previewSegment.key] || selection.disabledRanges[range.key]) return [];
+  return range.pages.filter((page) => !isPageDisabled(selection, previewSegment.key, page));
+}
+
+function selectedSegmentPages(previewSegment: PreviewSegment, selection: PreviewSelectionState) {
+  if (selection.disabledSegments[previewSegment.key]) return [];
+  return uniqueSortedPages(
+    previewSegment.ranges
+      .filter((range) => !selection.disabledRanges[range.key])
+      .flatMap((range) => selectedRangePages(previewSegment, range, selection))
+  );
+}
+
+function prepareBuildSelection(previewSegments: PreviewSegment[], selection: PreviewSelectionState): PreparedSelection {
+  const pagesByPdf: BuildSelectionPayload["pagesByPdf"] = [];
+  const rangeIndexesByPdf: BuildSelectionPayload["rangeIndexesByPdf"] = [];
+  let combinedPages = 0;
+  let separatePages = 0;
+  let selectedSegments = 0;
+  let selectedRanges = 0;
+
+  for (const previewSegment of previewSegments) {
+    const pages = selectedSegmentPages(previewSegment, selection);
+    const rangeIndexes = previewSegment.ranges
+      .filter((range) => selectedRangePages(previewSegment, range, selection).length > 0)
+      .map((range) => range.index + 1);
+
+    if (pages.length > 0) {
+      selectedSegments += 1;
+      combinedPages += pages.length;
+      pagesByPdf.push({ pdfUrl: previewSegment.segment.pdfUrl, pages });
+    }
+
+    if (rangeIndexes.length > 0) {
+      selectedRanges += rangeIndexes.length;
+      rangeIndexesByPdf.push({ pdfUrl: previewSegment.segment.pdfUrl, rangeIndexes });
+      separatePages += previewSegment.ranges.reduce(
+        (sum, range) => sum + selectedRangePages(previewSegment, range, selection).length,
+        0
+      );
+    }
+  }
+
+  return {
+    selection: { pagesByPdf, rangeIndexesByPdf },
+    combinedPages,
+    separatePages,
+    selectedSegments,
+    selectedRanges,
+  };
+}
+
 function readSingleQuery(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? "";
 }
@@ -186,6 +312,10 @@ export default function GranthExtractorPage() {
   const [resolving, setResolving] = useState(false);
   const [buildingMode, setBuildingMode] = useState<BuildMode | null>(null);
   const [deliveryRequest, setDeliveryRequest] = useState<DeliveryRequest | null>(null);
+  const [previewMode, setPreviewMode] = useState<BuildMode | null>(null);
+  const [previewSelection, setPreviewSelection] = useState<PreviewSelectionState>(() => emptyPreviewSelection());
+  const [previewingKey, setPreviewingKey] = useState<string | null>(null);
+  const [previewObjectUrl, setPreviewObjectUrl] = useState<string | null>(null);
   const [result, setResult] = useState<ResolveResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -256,7 +386,17 @@ export default function GranthExtractorPage() {
     0
   );
   const combinedDownloadPages = countCombinedDownloadPages(segments, downloadContextPages, includeCover);
+  const previewSegments = useMemo(
+    () => buildPreviewSegments(segments, downloadContextPages, includeCover),
+    [downloadContextPages, includeCover, segments]
+  );
+  const preparedSelection = useMemo(
+    () => prepareBuildSelection(previewSegments, previewSelection),
+    [previewSegments, previewSelection]
+  );
   const selectedTitle = titleForBook(selectedBook);
+  const activePreviewPages = previewMode === "separate" ? preparedSelection.separatePages : preparedSelection.combinedPages;
+  const previewReady = Boolean(previewMode && previewObjectUrl && activePreviewPages > 0);
 
   useEffect(() => {
     if (!selectedBook) {
@@ -309,11 +449,19 @@ export default function GranthExtractorPage() {
 
   const primaryFile = context?.files.find((file) => file.cover_image_url && !brokenCoverIds[file.id]) || context?.files[0] || null;
 
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    };
+  }, [previewObjectUrl]);
+
   async function resolveSelection(forceIncludeAllIdentifiers = includeAllIdentifiers) {
-    if (!selectedBook) return;
+    if (!selectedBook) return null;
     setResolving(true);
     setError(null);
+    setNotice(null);
     setResult(null);
+    resetPreviewState();
     try {
       const params = new URLSearchParams({
         bookId: String(selectedBook.id),
@@ -334,36 +482,223 @@ export default function GranthExtractorPage() {
       }
       setIncludeAllIdentifiers(forceIncludeAllIdentifiers && !adhikar.trim());
       setResult(json);
+      setPreviewSelection(emptyPreviewSelection());
+      return json;
     } catch (resolveError) {
       setError(resolveError instanceof Error ? resolveError.message : String(resolveError));
+      return null;
     } finally {
       setResolving(false);
     }
   }
 
+  function invalidateProcessedPreview() {
+    setPdfTarget(null);
+    setPreviewObjectUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+  }
+
+  function resetPreviewState() {
+    setPreviewMode(null);
+    setDeliveryRequest(null);
+    setPreviewSelection(emptyPreviewSelection());
+    setPreviewingKey(null);
+    invalidateProcessedPreview();
+  }
+
+  function buildRequestBody(
+    mode: BuildMode,
+    delivery: DeliveryMode,
+    email: string | undefined,
+    selection: BuildSelectionPayload,
+    title = selectedTitle
+  ) {
+    if (!selectedBook) return null;
+    return {
+      bookId: selectedBook.id,
+      bookCode,
+      kind,
+      spec,
+      adhikar: kind === "gathas" && adhikar.trim() ? adhikar.trim() : null,
+      includeCover,
+      includeAllIdentifiers: kind === "gathas" && includeAllIdentifiers && !adhikar.trim(),
+      contextPages: downloadContextPages,
+      delivery,
+      email,
+      mode,
+      title,
+      selection,
+    };
+  }
+
+  async function openProcessedPreview(
+    previewKey: string,
+    title: string,
+    selection: BuildSelectionPayload = preparedSelection.selection
+  ) {
+    if (!selectedBook) return;
+    const pageCount = selection.pagesByPdf.reduce((sum, item) => sum + item.pages.length, 0);
+    if (pageCount <= 0) {
+      setError("Select at least one page before generating the preview.");
+      return;
+    }
+
+    setPreviewingKey(previewKey);
+    setError(null);
+    setNotice(null);
+    try {
+      const body = buildRequestBody("combined", "download", undefined, selection, `${selectedTitle}_preview`);
+      if (!body) return;
+      const res = await fetch("/api/granth-mapping/build-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(async () => ({ error: await res.text() }));
+        throw new Error(body?.error || `Preview failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      setPreviewObjectUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return objectUrl;
+      });
+      setPdfTarget({
+        pdfUrl: objectUrl,
+        page: 1,
+        title,
+      });
+    } catch (previewError) {
+      invalidateProcessedPreview();
+      setError(previewError instanceof Error ? previewError.message : String(previewError));
+    } finally {
+      setPreviewingKey(null);
+    }
+  }
+
+  async function openDownloadPreview(mode: BuildMode) {
+    setError(null);
+    setNotice(null);
+    setPreviewMode(mode);
+
+    if (segments.length > 0) {
+      await openProcessedPreview("download-preview", `${selectedTitle} selected pages`);
+      return;
+    }
+
+    const resolved = await resolveSelection();
+    const resolvedSegments = resolved?.segments || [];
+    if (resolvedSegments.length === 0) return;
+    const nextPreviewSegments = buildPreviewSegments(resolvedSegments, downloadContextPages, includeCover);
+    const nextPrepared = prepareBuildSelection(nextPreviewSegments, emptyPreviewSelection());
+    setPreviewMode(mode);
+    await openProcessedPreview("download-preview", `${selectedTitle} selected pages`, nextPrepared.selection);
+  }
+
+  function updatePreviewSelection(update: (current: PreviewSelectionState) => PreviewSelectionState) {
+    invalidateProcessedPreview();
+    setPreviewSelection(update);
+  }
+
+  function setSegmentSelected(segmentKey: string, selected: boolean) {
+    updatePreviewSelection((current) => {
+      const disabledSegments = { ...current.disabledSegments };
+      if (selected) {
+        delete disabledSegments[segmentKey];
+      } else {
+        disabledSegments[segmentKey] = true;
+      }
+      return { ...current, disabledSegments };
+    });
+  }
+
+  function setRangeSelected(rangeKey: string, selected: boolean) {
+    updatePreviewSelection((current) => {
+      const disabledRanges = { ...current.disabledRanges };
+      if (selected) {
+        delete disabledRanges[rangeKey];
+      } else {
+        disabledRanges[rangeKey] = true;
+      }
+      return { ...current, disabledRanges };
+    });
+  }
+
+  function setPageSelected(segmentKey: string, page: number, selected: boolean) {
+    updatePreviewSelection((current) => {
+      const segmentPages = { ...(current.disabledPages[segmentKey] || {}) };
+      if (selected) {
+        delete segmentPages[page];
+      } else {
+        segmentPages[page] = true;
+      }
+
+      const disabledPages = { ...current.disabledPages };
+      if (Object.keys(segmentPages).length === 0) {
+        delete disabledPages[segmentKey];
+      } else {
+        disabledPages[segmentKey] = segmentPages;
+      }
+      return { ...current, disabledPages };
+    });
+  }
+
+  function selectAllPreviewParts() {
+    resetPreviewState();
+    setPreviewMode(previewMode);
+  }
+
+  function clearAllPreviewParts() {
+    updatePreviewSelection(() => ({
+      disabledSegments: Object.fromEntries(previewSegments.map((segment) => [segment.key, true])),
+      disabledRanges: {},
+      disabledPages: {},
+    }));
+  }
+
+  function segmentSelectionPayload(previewSegment: PreviewSegment): BuildSelectionPayload {
+    return {
+      pagesByPdf: [{ pdfUrl: previewSegment.segment.pdfUrl, pages: previewSegment.pages }],
+      rangeIndexesByPdf: [
+        {
+          pdfUrl: previewSegment.segment.pdfUrl,
+          rangeIndexes: previewSegment.ranges.map((range) => range.index + 1),
+        },
+      ],
+    };
+  }
+
+  function rangeSelectionPayload(previewSegment: PreviewSegment, range: PreviewRange): BuildSelectionPayload {
+    return {
+      pagesByPdf: [{ pdfUrl: previewSegment.segment.pdfUrl, pages: range.pages }],
+      rangeIndexesByPdf: [{ pdfUrl: previewSegment.segment.pdfUrl, rangeIndexes: [range.index + 1] }],
+    };
+  }
+
   async function buildDownload(mode: BuildMode, delivery: DeliveryMode, email?: string) {
     if (!selectedBook) return;
+    const activeSelection = prepareBuildSelection(previewSegments, previewSelection);
+    const selectedPageCount = mode === "separate" ? activeSelection.separatePages : activeSelection.combinedPages;
+    if (selectedPageCount <= 0) {
+      setError("Select at least one page before downloading.");
+      return;
+    }
+
     setBuildingMode(mode);
     setError(null);
     setNotice(null);
     try {
+      const body = buildRequestBody(mode, delivery, email, activeSelection.selection);
+      if (!body) return;
       const res = await fetch("/api/granth-mapping/build-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookId: selectedBook.id,
-          bookCode,
-          kind,
-          spec,
-          adhikar: kind === "gathas" && adhikar.trim() ? adhikar.trim() : null,
-          includeCover,
-          includeAllIdentifiers: kind === "gathas" && includeAllIdentifiers && !adhikar.trim(),
-          contextPages: downloadContextPages,
-          delivery,
-          email,
-          mode,
-          title: selectedTitle,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -387,14 +722,6 @@ export default function GranthExtractorPage() {
     } finally {
       setBuildingMode(null);
     }
-  }
-
-  function previewSegment(segment: MappingSegment, page = segment.pages[0] || 1) {
-    setPdfTarget({
-      pdfUrl: segment.pdfUrl,
-      page,
-      title: segment.pdfFileName,
-    });
   }
 
   return (
@@ -447,6 +774,7 @@ export default function GranthExtractorPage() {
                 setAdhikar("");
                 setIncludeAllIdentifiers(false);
                 setResult(null);
+                resetPreviewState();
               }}
               disabled={loadingBooks}
               className="extractorInput"
@@ -465,6 +793,7 @@ export default function GranthExtractorPage() {
                   setBookCode("");
                   setIncludeAllIdentifiers(false);
                   setResult(null);
+                  resetPreviewState();
                 }}
                 className={!bookCode ? "isActive" : ""}
               >
@@ -478,6 +807,7 @@ export default function GranthExtractorPage() {
                     setBookCode(code);
                     setIncludeAllIdentifiers(false);
                     setResult(null);
+                    resetPreviewState();
                   }}
                   className={bookCode === code ? "isActive" : ""}
                 >
@@ -493,6 +823,7 @@ export default function GranthExtractorPage() {
                   setKind("gathas");
                   setIncludeAllIdentifiers(false);
                   setResult(null);
+                  resetPreviewState();
                 }}
                 className={kind === "gathas" ? "isActive" : ""}
               >
@@ -504,6 +835,7 @@ export default function GranthExtractorPage() {
                   setKind("pages");
                   setIncludeAllIdentifiers(false);
                   setResult(null);
+                  resetPreviewState();
                 }}
                 className={kind === "pages" ? "isActive" : ""}
               >
@@ -517,6 +849,7 @@ export default function GranthExtractorPage() {
                 setSpec(event.target.value);
                 setIncludeAllIdentifiers(false);
                 setResult(null);
+                resetPreviewState();
               }}
               placeholder={kind === "gathas" ? "5 or 3-6, 10" : "2, 5-7, 10"}
               aria-label={kind === "gathas" ? "Gatha numbers" : "Page numbers"}
@@ -529,6 +862,8 @@ export default function GranthExtractorPage() {
                 onChange={(event) => {
                   setAdhikar(event.target.value);
                   setIncludeAllIdentifiers(false);
+                  setResult(null);
+                  resetPreviewState();
                 }}
                 className="extractorInput"
                 aria-label="Identifier"
@@ -546,7 +881,11 @@ export default function GranthExtractorPage() {
               <input
                 type="checkbox"
                 checked={includeCover}
-                onChange={(event) => setIncludeCover(event.target.checked)}
+                onChange={(event) => {
+                  setIncludeCover(event.target.checked);
+                  setPreviewSelection(emptyPreviewSelection());
+                  resetPreviewState();
+                }}
               />
               <span>Include cover page</span>
             </label>
@@ -559,9 +898,11 @@ export default function GranthExtractorPage() {
                 max={MAX_CONTEXT_PAGE_RADIUS}
                 inputMode="numeric"
                 value={downloadContextPages}
-                onChange={(event) =>
-                  setDownloadContextPages(event.target.value === "" ? 0 : normalizeContextPageRadius(event.target.value))
-                }
+                onChange={(event) => {
+                  setDownloadContextPages(event.target.value === "" ? 0 : normalizeContextPageRadius(event.target.value));
+                  setPreviewSelection(emptyPreviewSelection());
+                  resetPreviewState();
+                }}
                 className="extractorInput"
               />
             </label>
@@ -585,32 +926,32 @@ export default function GranthExtractorPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setDeliveryRequest({ mode: "combined" })}
-                disabled={Boolean(buildingMode) || !selectedBook || !spec.trim()}
-                aria-busy={buildingMode === "combined"}
+                onClick={() => void openDownloadPreview("combined")}
+                disabled={Boolean(buildingMode) || resolving || Boolean(previewingKey) || !selectedBook || !spec.trim()}
+                aria-busy={previewingKey === "download-preview"}
               >
-                {buildingMode === "combined" ? (
+                {previewingKey === "download-preview" && previewMode === "combined" ? (
                   <span className="buttonSpinnerLabel">
                     <span className="loadingSpinner" aria-hidden="true" />
-                    Building
+                    Previewing
                   </span>
                 ) : (
-                  "Combined PDF"
+                  "Preview combined"
                 )}
               </button>
               <button
                 type="button"
-                onClick={() => setDeliveryRequest({ mode: "separate" })}
-                disabled={Boolean(buildingMode) || !selectedBook || !spec.trim()}
-                aria-busy={buildingMode === "separate"}
+                onClick={() => void openDownloadPreview("separate")}
+                disabled={Boolean(buildingMode) || resolving || Boolean(previewingKey) || !selectedBook || !spec.trim()}
+                aria-busy={previewingKey === "download-preview"}
               >
-                {buildingMode === "separate" ? (
+                {previewingKey === "download-preview" && previewMode === "separate" ? (
                   <span className="buttonSpinnerLabel">
                     <span className="loadingSpinner" aria-hidden="true" />
-                    Building
+                    Previewing
                   </span>
                 ) : (
-                  "Separate ZIP"
+                  "Preview separate"
                 )}
               </button>
             </div>
@@ -633,6 +974,7 @@ export default function GranthExtractorPage() {
                               setAdhikar(id === "none" ? "" : id);
                               setIncludeAllIdentifiers(false);
                               setResult(null);
+                              resetPreviewState();
                             }}
                           >
                             id {id}
@@ -670,7 +1012,11 @@ export default function GranthExtractorPage() {
                   <button
                     key={`${range.adhikar ?? "none"}_${range.minGatha}_${range.maxGatha}`}
                     type="button"
-                    onClick={() => setAdhikar(range.adhikar == null ? "" : String(range.adhikar))}
+                    onClick={() => {
+                      setAdhikar(range.adhikar == null ? "" : String(range.adhikar));
+                      setResult(null);
+                      resetPreviewState();
+                    }}
                   >
                     id {range.adhikar ?? "none"}: {range.minGatha}-{range.maxGatha}
                   </button>
@@ -724,6 +1070,7 @@ export default function GranthExtractorPage() {
                       onClick={() => {
                         setBookCode(file.book_code || "");
                         setResult(null);
+                        resetPreviewState();
                       }}
                       className={isActive && bookCode ? "isActive" : ""}
                     >
@@ -760,7 +1107,11 @@ export default function GranthExtractorPage() {
                       key={item.adhikar ?? "none"}
                       type="button"
                       className={currentIdentifier?.adhikar === item.adhikar ? "isActive" : ""}
-                      onClick={() => setAdhikar(item.adhikar == null ? "" : String(item.adhikar))}
+                      onClick={() => {
+                        setAdhikar(item.adhikar == null ? "" : String(item.adhikar));
+                        setResult(null);
+                        resetPreviewState();
+                      }}
                     >
                       <span>{item.label}</span>
                       <strong>{item.total_gathas}</strong>
@@ -802,36 +1153,62 @@ export default function GranthExtractorPage() {
                 </strong>
               </div>
 
-              {segments.length ? (
+              {previewSegments.length ? (
                 <div className="extractorSegmentGrid">
-                  {segments.map((segment) => {
-                    const downloadPageCount = segmentDownloadPages(segment, downloadContextPages, includeCover).length;
+                  {previewSegments.map((previewSegment) => {
+                    const segmentKey = `segment:${previewSegment.key}`;
                     return (
-                      <article key={segment.pdfUrl}>
+                      <article key={previewSegment.key}>
                         <div className="extractorSegmentHead">
-                          <strong>{segment.pdfFileName}</strong>
-                          <button type="button" className="inlinePdfButton" onClick={() => previewSegment(segment)}>
-                            Preview
+                          <strong>{previewSegment.segment.pdfFileName}</strong>
+                          <button
+                            type="button"
+                            className="inlinePdfButton"
+                            onClick={() =>
+                              void openProcessedPreview(
+                                segmentKey,
+                                `${previewSegment.segment.pdfFileName} selected pages`,
+                                segmentSelectionPayload(previewSegment)
+                              )
+                            }
+                            disabled={Boolean(previewingKey)}
+                            aria-busy={previewingKey === segmentKey}
+                          >
+                            {previewingKey === segmentKey ? "Previewing" : "Preview selected"}
                           </button>
                         </div>
                         <div className="extractorSegmentMeta">
-                          {codeLabel(segment.bookCode)} | {segment.pages.length} mapped page
-                          {segment.pages.length === 1 ? "" : "s"} | {downloadPageCount} download page
-                          {downloadPageCount === 1 ? "" : "s"}
+                          {codeLabel(previewSegment.segment.bookCode)} | {previewSegment.segment.pages.length} mapped page
+                          {previewSegment.segment.pages.length === 1 ? "" : "s"} | {previewSegment.pages.length} preview page
+                          {previewSegment.pages.length === 1 ? "" : "s"}
                         </div>
                         <div className="extractorSegmentRanges">
-                          {segment.ranges.slice(0, 18).map((range, index) => (
-                            <button
-                              key={`${range.pageStart}_${range.pageEnd}_${index}`}
-                              type="button"
-                              onClick={() => previewSegment(segment, range.pageStart)}
-                            >
-                              {range.gatha ? `id ${range.adhikar ?? "none"} / gatha ${range.gatha}: ` : ""}
-                              page {range.pageStart}
-                              {range.pageEnd !== range.pageStart ? `-${range.pageEnd}` : ""}
-                            </button>
-                          ))}
-                          {segment.ranges.length > 18 ? <span>{segment.ranges.length - 18} more ranges</span> : null}
+                          {previewSegment.ranges.slice(0, 18).map((range) => {
+                            const rangeKey = `range:${range.key}`;
+                            return (
+                              <button
+                                key={range.key}
+                                type="button"
+                                onClick={() =>
+                                  void openProcessedPreview(
+                                    rangeKey,
+                                    `${previewSegment.segment.pdfFileName} page ${range.range.pageStart}`,
+                                    rangeSelectionPayload(previewSegment, range)
+                                  )
+                                }
+                                disabled={Boolean(previewingKey)}
+                                aria-busy={previewingKey === rangeKey}
+                              >
+                                {previewingKey === rangeKey ? "Previewing " : ""}
+                                {range.range.gatha ? `id ${range.range.adhikar ?? "none"} / gatha ${range.range.gatha}: ` : ""}
+                                page {range.range.pageStart}
+                                {range.range.pageEnd !== range.range.pageStart ? `-${range.range.pageEnd}` : ""}
+                              </button>
+                            );
+                          })}
+                          {previewSegment.ranges.length > 18 ? (
+                            <span>{previewSegment.ranges.length - 18} more ranges</span>
+                          ) : null}
                         </div>
                       </article>
                     );
@@ -841,6 +1218,131 @@ export default function GranthExtractorPage() {
                 <div className="extractorMuted">No pages resolved yet.</div>
               )}
             </section>
+
+            {previewMode ? (
+              <section className="extractorPreviewPanel">
+                <div className="extractorPanelHeader">
+                  <span>Processed Download Preview</span>
+                  <strong>
+                    {activePreviewPages} selected page{activePreviewPages === 1 ? "" : "s"}
+                  </strong>
+                </div>
+
+                <div className="extractorPreviewNotice" role="status">
+                  The modal preview is a generated PDF containing only the selected pages below. After changing any checkbox,
+                  generate the preview again before downloading.
+                </div>
+
+                <div className="extractorPreviewToolbar">
+                  <button
+                    type="button"
+                    className="extractorPrimaryButton"
+                    onClick={() => void openProcessedPreview("download-preview", `${selectedTitle} selected pages`)}
+                    disabled={activePreviewPages <= 0 || Boolean(previewingKey) || Boolean(buildingMode)}
+                    aria-busy={previewingKey === "download-preview"}
+                  >
+                    {previewingKey === "download-preview" ? (
+                      <span className="buttonSpinnerLabel">
+                        <span className="loadingSpinner" aria-hidden="true" />
+                        Generating preview
+                      </span>
+                    ) : previewObjectUrl ? (
+                      "Regenerate preview"
+                    ) : (
+                      "Generate limited preview"
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!previewObjectUrl) return;
+                      setPdfTarget({ pdfUrl: previewObjectUrl, page: 1, title: `${selectedTitle} selected pages` });
+                    }}
+                    disabled={!previewObjectUrl}
+                  >
+                    Open preview
+                  </button>
+                  <button type="button" onClick={selectAllPreviewParts} disabled={Boolean(previewingKey)}>
+                    Select all
+                  </button>
+                  <button type="button" onClick={clearAllPreviewParts} disabled={Boolean(previewingKey)}>
+                    Clear all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryRequest({ mode: previewMode })}
+                    disabled={!previewReady || Boolean(previewingKey) || Boolean(buildingMode)}
+                  >
+                    Continue to delivery
+                  </button>
+                </div>
+
+                <div className="extractorPreviewGrid">
+                  {previewSegments.map((previewSegment) => {
+                    const segmentPages = selectedSegmentPages(previewSegment, previewSelection);
+                    const segmentSelected = !previewSelection.disabledSegments[previewSegment.key] && segmentPages.length > 0;
+                    return (
+                      <article key={previewSegment.key} className={segmentSelected ? "" : "isDisabled"}>
+                        <label className="extractorPreviewSegmentCheck">
+                          <input
+                            type="checkbox"
+                            checked={segmentSelected}
+                            onChange={(event) => setSegmentSelected(previewSegment.key, event.target.checked)}
+                          />
+                          <span>
+                            <strong>{previewSegment.segment.pdfFileName}</strong>
+                            <em>
+                              {codeLabel(previewSegment.segment.bookCode)} | {segmentPages.length} of {previewSegment.pages.length} page
+                              {previewSegment.pages.length === 1 ? "" : "s"}
+                            </em>
+                          </span>
+                        </label>
+
+                        <div className="extractorPreviewRanges" aria-label={`${previewSegment.segment.pdfFileName} ranges`}>
+                          {previewSegment.ranges.map((range) => {
+                            const rangePages = selectedRangePages(previewSegment, range, previewSelection);
+                            const checked =
+                              !previewSelection.disabledSegments[previewSegment.key] &&
+                              !previewSelection.disabledRanges[range.key] &&
+                              rangePages.length > 0;
+                            return (
+                              <label key={range.key}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={previewSelection.disabledSegments[previewSegment.key]}
+                                  onChange={(event) => setRangeSelected(range.key, event.target.checked)}
+                                />
+                                <span>
+                                  {range.range.gatha ? `Gatha ${range.range.gatha} | ` : ""}
+                                  p.{range.range.pageStart}
+                                  {range.range.pageEnd !== range.range.pageStart ? `-${range.range.pageEnd}` : ""}
+                                  <em>{rangePages.length} pages</em>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+
+                        <div className="extractorPreviewPages" aria-label={`${previewSegment.segment.pdfFileName} pages`}>
+                          {previewSegment.pages.map((page) => (
+                            <label key={page} className={isPageDisabled(previewSelection, previewSegment.key, page) ? "isOff" : ""}>
+                              <input
+                                type="checkbox"
+                                checked={!isPageDisabled(previewSelection, previewSegment.key, page)}
+                                disabled={previewSelection.disabledSegments[previewSegment.key]}
+                                onChange={(event) => setPageSelected(previewSegment.key, page, event.target.checked)}
+                              />
+                              <span>{page === 1 && includeCover ? "Cover" : `p.${page}`}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
           </section>
         </section>
       </div>
@@ -849,8 +1351,8 @@ export default function GranthExtractorPage() {
         title="Choose download method"
         fileLabel={
           deliveryRequest?.mode === "separate"
-            ? `Separate ZIP, ${totalDownloadPages} download page${totalDownloadPages === 1 ? "" : "s"}`
-            : `Combined PDF, ${combinedDownloadPages} download page${combinedDownloadPages === 1 ? "" : "s"}`
+            ? `Separate ZIP, ${preparedSelection.separatePages} selected page${preparedSelection.separatePages === 1 ? "" : "s"}`
+            : `Combined PDF, ${preparedSelection.combinedPages} selected page${preparedSelection.combinedPages === 1 ? "" : "s"}`
         }
         busy={Boolean(buildingMode)}
         error={error}

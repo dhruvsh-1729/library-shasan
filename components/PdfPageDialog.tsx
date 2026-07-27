@@ -43,7 +43,7 @@ function normalizePdfUrl(value: string | null | undefined) {
 
   try {
     const url = new URL(raw);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.protocol !== "http:" && url.protocol !== "https:" && url.protocol !== "blob:") return null;
     return url.toString();
   } catch {
     return null;
