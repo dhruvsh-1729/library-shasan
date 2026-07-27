@@ -7,6 +7,12 @@ import {
   parseOCRSearchMode,
 } from "@/lib/ocr-search";
 import { buildIndicQueryOptions } from "@/lib/phonetic-transliteration";
+import {
+  DEFAULT_CONTEXT_PAGE_RADIUS,
+  MAX_CONTEXT_PAGE_RADIUS,
+  expandPagesWithContext,
+  normalizeContextPageRadius,
+} from "@/lib/page-context";
 import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import Link from "next/link";
@@ -59,6 +65,7 @@ type DownloadPreviewState = {
   error: string | null;
   preview: SearchMatchPreview | null;
   selectedPages: number[];
+  contextPages: number;
 };
 
 type GranthOption = {
@@ -116,6 +123,14 @@ function downloadBlob(blob: Blob, filename: string) {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function contextRangeLabel(pageNumber: number, contextPages: number) {
+  const radius = normalizeContextPageRadius(contextPages);
+  if (radius === 0) return `PDF page ${pageNumber}`;
+  const start = Math.max(1, pageNumber - radius);
+  const end = pageNumber + radius;
+  return `PDF pages ${start}-${end}`;
 }
 
 export default function SearchPage() {
@@ -419,6 +434,7 @@ export default function SearchPage() {
       error: null,
       preview: null,
       selectedPages: [],
+      contextPages: DEFAULT_CONTEXT_PAGE_RADIUS,
     });
 
     try {
@@ -482,6 +498,17 @@ export default function SearchPage() {
     });
   }
 
+  function setDownloadContextPages(value: string) {
+    setDownloadPreview((prev) =>
+      prev
+        ? {
+            ...prev,
+            contextPages: value === "" ? 0 : normalizeContextPageRadius(value),
+          }
+        : prev
+    );
+  }
+
   async function downloadMatchedPdf() {
     if (!downloadPreview?.preview || downloadPreview.selectedPages.length === 0) return;
 
@@ -497,6 +524,7 @@ export default function SearchPage() {
           queryVariants: downloadPreview.queries.slice(1),
           matchMode: downloadPreview.matchMode,
           pages: downloadPreview.selectedPages,
+          contextPages: downloadPreview.contextPages,
           title: downloadPreview.preview.pdf_name,
         }),
       });
@@ -937,7 +965,10 @@ export default function SearchPage() {
             const selectedSet = new Set(downloadPreview.selectedPages);
             const selectedCount = downloadPreview.selectedPages.length;
             const maxPages = downloadPreview.preview?.max_download_pages ?? 0;
-            const tooManyPages = Boolean(maxPages && selectedCount > maxPages);
+            const expandedSelectedPages = expandPagesWithContext(downloadPreview.selectedPages, downloadPreview.contextPages);
+            const finalDownloadPages = selectedCount > 0 ? [1, ...expandedSelectedPages.filter((page) => page !== 1)] : [];
+            const finalPageCount = finalDownloadPages.length;
+            const tooManyPages = Boolean(maxPages && finalPageCount > maxPages);
             return (
               <div className="searchDownloadOverlay" role="dialog" aria-modal="true" aria-label="Matched page PDF preview">
                 <div className="searchDownloadPanel">
@@ -966,7 +997,7 @@ export default function SearchPage() {
                       <div className="searchDownloadSummary">
                         <strong>{selectedCount}</strong> of{" "}
                         <strong>{downloadPreview.preview.total_matched_pages}</strong> matching page(s) selected.
-                        <span> Cover page 1 is included first.</span>
+                        <span> Download includes up to {finalPageCount} PDF page(s), with cover page 1 first.</span>
                         {downloadPreview.preview.truncated ? <span> Preview is capped; narrow the search if needed.</span> : null}
                       </div>
 
@@ -977,6 +1008,17 @@ export default function SearchPage() {
                         <button type="button" onClick={() => setAllPreviewPages(false)}>
                           Clear
                         </button>
+                        <label className="searchDownloadContextInput">
+                          <span>Nearby pages</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={MAX_CONTEXT_PAGE_RADIUS}
+                            inputMode="numeric"
+                            value={downloadPreview.contextPages}
+                            onChange={(event) => setDownloadContextPages(event.target.value)}
+                          />
+                        </label>
                       </div>
 
                       <div className="searchDownloadPageList">
@@ -993,6 +1035,7 @@ export default function SearchPage() {
                               <span className="searchDownloadPageMeta">
                                 Page {page.page_number}
                                 {isCover ? " | cover" : ""} | {page.occurrence_count} match(es)
+                                <em>{contextRangeLabel(page.page_number, downloadPreview.contextPages)}</em>
                               </span>
                               <span className="searchDownloadSnippet">
                                 {renderHighlightedText(page.snippet, downloadPreview.queries, downloadPreview.matchMode)}
@@ -1005,7 +1048,7 @@ export default function SearchPage() {
                       <footer className="searchDownloadFooter">
                         {tooManyPages ? (
                           <span className="searchDownloadErrorText">
-                            Select {maxPages} pages or fewer.
+                            Reduce the selection to {maxPages} PDF pages or fewer.
                           </span>
                         ) : null}
                         <button

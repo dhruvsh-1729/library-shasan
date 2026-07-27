@@ -1132,6 +1132,18 @@ button {
   height: 17px;
 }
 
+.extractorFieldLabel {
+  display: grid;
+  gap: 6px;
+  color: #34413e;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.extractorFieldLabel input {
+  max-width: 132px;
+}
+
 .extractorError {
   border: 1px solid #efb4b4;
   border-radius: 8px;
@@ -1906,6 +1918,27 @@ button {
   justify-content: flex-start;
 }
 
+.searchDownloadContextInput {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: #43504d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.searchDownloadContextInput input {
+  width: 78px;
+  min-height: 36px;
+  border: 1px solid #c7cfd9;
+  border-radius: 8px;
+  padding: 7px 8px;
+  color: #1f2120;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .searchDownloadPageList {
   min-height: 0;
   overflow: auto;
@@ -1933,6 +1966,15 @@ button {
   color: #26312f;
   font-size: 13px;
   font-weight: 900;
+}
+
+.searchDownloadPageMeta em {
+  display: block;
+  margin-top: 4px;
+  color: #5b6764;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .searchDownloadSnippet {
@@ -2004,6 +2046,12 @@ button {
 
   .searchDownloadPageRow {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .searchDownloadContextInput {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
   }
 
   .searchDownloadSnippet {

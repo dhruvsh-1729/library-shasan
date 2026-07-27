@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { rm } from "node:fs/promises";
 import { parseOCRSearchMode } from "@/lib/ocr-search";
 import { buildHighlightedSearchPdf } from "@/lib/pdf-highlight-builder";
+import { expandPagesWithContext, normalizeContextPageRadius } from "@/lib/page-context";
 import { setNoStore } from "@/lib/api-cache";
 import {
   MAX_MATCH_PAGE_DOWNLOAD,
@@ -25,6 +26,7 @@ type DownloadBody = {
   queryVariants?: unknown;
   matchMode?: string | null;
   pages?: unknown;
+  contextPages?: unknown;
   title?: string | null;
 };
 
@@ -84,6 +86,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const matchMode = parseOCRSearchMode(body.matchMode);
     const queries = validateSearchDownloadQueries(String(body.q || "").trim(), parseQueryVariants(body.queryVariants), matchMode);
     const requestedPages = parseSelectedPages(body.pages);
+    const contextPages = normalizeContextPageRadius(body.contextPages);
 
     const source = await resolveSearchPdfSource(customId, sourceRelPath);
     const { pages: matchingPages } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, queries, matchMode);
@@ -94,14 +97,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (selectedPages.length === 0) {
       throw new SearchMatchError(400, "Select at least one matching page before downloading.");
     }
-    if (selectedPages.length > MAX_MATCH_PAGE_DOWNLOAD) {
+
+    const expandedPages = expandPagesWithContext(selectedPages, contextPages);
+    const orderedPages = [1, ...expandedPages.filter((page) => page !== 1)];
+
+    if (orderedPages.length > MAX_MATCH_PAGE_DOWNLOAD) {
       throw new SearchMatchError(
         413,
-        `Selection contains ${selectedPages.length} pages. Keep it at ${MAX_MATCH_PAGE_DOWNLOAD} pages or fewer.`
+        `Selection contains ${orderedPages.length} pages after nearby pages are added. Keep it at ${MAX_MATCH_PAGE_DOWNLOAD} pages or fewer.`
       );
     }
 
-    const orderedPages = [1, ...selectedPages.filter((page) => page !== 1)];
     const built = await buildHighlightedSearchPdf({
       pdfUrl: source.pdfUrl,
       pages: orderedPages,

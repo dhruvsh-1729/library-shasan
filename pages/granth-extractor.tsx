@@ -1,5 +1,11 @@
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import type { MappingSegment } from "@/lib/granth-mapping";
+import {
+  DEFAULT_CONTEXT_PAGE_RADIUS,
+  MAX_CONTEXT_PAGE_RADIUS,
+  expandPagesWithContext,
+  normalizeContextPageRadius,
+} from "@/lib/page-context";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
@@ -120,6 +126,26 @@ function rangeLabel(range: PageRangeSummary) {
   return `${range.code_label} | ${pages}${gathas}`;
 }
 
+function pagesInRange(start: number, end: number) {
+  const first = Math.max(1, Math.floor(Number(start)));
+  const last = Math.max(first, Math.floor(Number(end || start)));
+  const pages: number[] = [];
+  for (let page = first; page <= last; page += 1) pages.push(page);
+  return pages;
+}
+
+function uniqueSortedPages(pages: number[]) {
+  return [...new Set(pages.map((page) => Math.floor(Number(page))).filter((page) => page > 0))].sort((a, b) => a - b);
+}
+
+function segmentDownloadPages(segment: MappingSegment, contextPages: number, includeCover: boolean) {
+  const mappedPages = segment.ranges.flatMap((range) => pagesInRange(range.pageStart, range.pageEnd));
+  return uniqueSortedPages([
+    ...(includeCover ? [1] : []),
+    ...expandPagesWithContext(mappedPages, contextPages),
+  ]);
+}
+
 function readSingleQuery(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? "";
 }
@@ -137,6 +163,7 @@ export default function GranthExtractorPage() {
   const [adhikar, setAdhikar] = useState("");
   const [includeAllIdentifiers, setIncludeAllIdentifiers] = useState(false);
   const [includeCover, setIncludeCover] = useState(kind === "gathas");
+  const [downloadContextPages, setDownloadContextPages] = useState(DEFAULT_CONTEXT_PAGE_RADIUS);
   const [resolving, setResolving] = useState(false);
   const [buildingMode, setBuildingMode] = useState<BuildMode | null>(null);
   const [result, setResult] = useState<ResolveResponse | null>(null);
@@ -203,6 +230,10 @@ export default function GranthExtractorPage() {
   const selectedCodes = selectedBook?.book_codes || [];
   const segments = result?.segments || [];
   const totalPages = segments.reduce((sum, segment) => sum + segment.pages.length, 0);
+  const totalDownloadPages = segments.reduce(
+    (sum, segment) => sum + segmentDownloadPages(segment, downloadContextPages, includeCover).length,
+    0
+  );
   const selectedTitle = titleForBook(selectedBook);
 
   useEffect(() => {
@@ -304,6 +335,7 @@ export default function GranthExtractorPage() {
           adhikar: kind === "gathas" && adhikar.trim() ? adhikar.trim() : null,
           includeCover,
           includeAllIdentifiers: kind === "gathas" && includeAllIdentifiers && !adhikar.trim(),
+          contextPages: downloadContextPages,
           mode,
           title: selectedTitle,
         }),
@@ -347,7 +379,11 @@ export default function GranthExtractorPage() {
           <div className="extractorHeaderStats">
             <span>{context?.meta.file_count ?? 0} PDF</span>
             <span>{context?.meta.total_gathas ?? 0} gathas</span>
-            <span>{segments.length ? `${segments.length} output PDF / ${totalPages} pages` : "No output yet"}</span>
+            <span>
+              {segments.length
+                ? `${segments.length} output PDF / ${totalDownloadPages} download pages`
+                : "No output yet"}
+            </span>
           </div>
         </header>
 
@@ -480,6 +516,21 @@ export default function GranthExtractorPage() {
                 onChange={(event) => setIncludeCover(event.target.checked)}
               />
               <span>Include cover page</span>
+            </label>
+
+            <label className="extractorFieldLabel">
+              <span>Nearby pages</span>
+              <input
+                type="number"
+                min={0}
+                max={MAX_CONTEXT_PAGE_RADIUS}
+                inputMode="numeric"
+                value={downloadContextPages}
+                onChange={(event) =>
+                  setDownloadContextPages(event.target.value === "" ? 0 : normalizeContextPageRadius(event.target.value))
+                }
+                className="extractorInput"
+              />
             </label>
 
             <div className="extractorActions">
@@ -712,38 +763,45 @@ export default function GranthExtractorPage() {
             <section className="extractorResultPanel">
               <div className="extractorPanelHeader">
                 <span>Resolved Output</span>
-                <strong>{segments.length ? `${totalPages} pages` : "Pending"}</strong>
+                <strong>
+                  {segments.length ? `${totalPages} mapped / ${totalDownloadPages} download pages` : "Pending"}
+                </strong>
               </div>
 
               {segments.length ? (
                 <div className="extractorSegmentGrid">
-                  {segments.map((segment) => (
-                    <article key={segment.pdfUrl}>
-                      <div className="extractorSegmentHead">
-                        <strong>{segment.pdfFileName}</strong>
-                        <button type="button" className="inlinePdfButton" onClick={() => previewSegment(segment)}>
-                          Preview
-                        </button>
-                      </div>
-                      <div className="extractorSegmentMeta">
-                        {codeLabel(segment.bookCode)} | {segment.pages.length} page{segment.pages.length === 1 ? "" : "s"}
-                      </div>
-                      <div className="extractorSegmentRanges">
-                        {segment.ranges.slice(0, 18).map((range, index) => (
-                          <button
-                            key={`${range.pageStart}_${range.pageEnd}_${index}`}
-                            type="button"
-                            onClick={() => previewSegment(segment, range.pageStart)}
-                          >
-                            {range.gatha ? `id ${range.adhikar ?? "none"} / gatha ${range.gatha}: ` : ""}
-                            page {range.pageStart}
-                            {range.pageEnd !== range.pageStart ? `-${range.pageEnd}` : ""}
+                  {segments.map((segment) => {
+                    const downloadPageCount = segmentDownloadPages(segment, downloadContextPages, includeCover).length;
+                    return (
+                      <article key={segment.pdfUrl}>
+                        <div className="extractorSegmentHead">
+                          <strong>{segment.pdfFileName}</strong>
+                          <button type="button" className="inlinePdfButton" onClick={() => previewSegment(segment)}>
+                            Preview
                           </button>
-                        ))}
-                        {segment.ranges.length > 18 ? <span>{segment.ranges.length - 18} more ranges</span> : null}
-                      </div>
-                    </article>
-                  ))}
+                        </div>
+                        <div className="extractorSegmentMeta">
+                          {codeLabel(segment.bookCode)} | {segment.pages.length} mapped page
+                          {segment.pages.length === 1 ? "" : "s"} | {downloadPageCount} download page
+                          {downloadPageCount === 1 ? "" : "s"}
+                        </div>
+                        <div className="extractorSegmentRanges">
+                          {segment.ranges.slice(0, 18).map((range, index) => (
+                            <button
+                              key={`${range.pageStart}_${range.pageEnd}_${index}`}
+                              type="button"
+                              onClick={() => previewSegment(segment, range.pageStart)}
+                            >
+                              {range.gatha ? `id ${range.adhikar ?? "none"} / gatha ${range.gatha}: ` : ""}
+                              page {range.pageStart}
+                              {range.pageEnd !== range.pageStart ? `-${range.pageEnd}` : ""}
+                            </button>
+                          ))}
+                          {segment.ranges.length > 18 ? <span>{segment.ranges.length - 18} more ranges</span> : null}
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="extractorMuted">No pages resolved yet.</div>

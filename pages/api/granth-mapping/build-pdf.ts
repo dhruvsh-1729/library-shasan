@@ -11,6 +11,7 @@ import { pipeline } from "node:stream/promises";
 import { PDFDocument } from "pdf-lib";
 import { GranthResolveError, resolveGranthSelection } from "@/lib/granth-resolver";
 import type { MappingRange, MappingSegment } from "@/lib/granth-mapping";
+import { expandPagesWithContext, normalizeContextPageRadius } from "@/lib/page-context";
 
 export const config = {
   api: {
@@ -28,6 +29,7 @@ type BuildBody = {
   adhikar?: number | string | null;
   includeCover?: boolean;
   includeAllIdentifiers?: boolean;
+  contextPages?: number | string | null;
   mode?: BuildMode;
   title?: string | null;
 };
@@ -171,14 +173,26 @@ function pagesForRange(range: MappingRange) {
   return pages;
 }
 
-async function buildCombined(segments: MappingSegment[], workDir: string) {
+function pagesForDownloadSegment(segment: MappingSegment, contextPages: number, includeCover: boolean) {
+  const rangePages = segment.ranges.flatMap((range) => pagesForRange(range));
+  return uniqueSortedPages([
+    ...(includeCover ? [1] : []),
+    ...expandPagesWithContext(rangePages, contextPages),
+  ]);
+}
+
+function pagesForDownloadRange(range: MappingRange, contextPages: number) {
+  return expandPagesWithContext(pagesForRange(range), contextPages);
+}
+
+async function buildCombined(segments: MappingSegment[], workDir: string, contextPages: number, includeCover: boolean) {
   const outputDoc = await PDFDocument.create();
   let copied = 0;
 
   for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
     const segment = segments[segmentIndex];
     const sourcePath = await downloadSourcePdf(segment.pdfUrl);
-    const pages = uniqueSortedPages(segment.pages);
+    const pages = pagesForDownloadSegment(segment, contextPages, includeCover);
     copied += await copyPagesInto(outputDoc, sourcePath, pages);
   }
 
@@ -191,7 +205,7 @@ async function buildCombined(segments: MappingSegment[], workDir: string) {
   return outPath;
 }
 
-async function buildSeparateZip(segments: MappingSegment[], workDir: string) {
+async function buildSeparateZip(segments: MappingSegment[], workDir: string, contextPages: number) {
   const outDir = path.join(workDir, "separate");
   await mkdir(outDir, { recursive: true });
   const builtFiles: string[] = [];
@@ -208,7 +222,7 @@ async function buildSeparateZip(segments: MappingSegment[], workDir: string) {
         outDir,
         `${safeFileName(segment.pdfFileName, `segment-${segmentIndex + 1}`)}_${safeFileName(label, `range-${rangeIndex + 1}`)}.pdf`
       );
-      await makePdfFromPages(sourcePath, pagesForRange(range), outPath);
+      await makePdfFromPages(sourcePath, pagesForDownloadRange(range, contextPages), outPath);
       builtFiles.push(outPath);
     }
   }
@@ -220,8 +234,11 @@ async function buildSeparateZip(segments: MappingSegment[], workDir: string) {
   return zipPath;
 }
 
-function countPages(segments: MappingSegment[]) {
-  return segments.reduce((sum, segment) => sum + uniqueSortedPages(segment.pages).length, 0);
+function countPages(segments: MappingSegment[], contextPages: number, includeCover: boolean) {
+  return segments.reduce(
+    (sum, segment) => sum + pagesForDownloadSegment(segment, contextPages, includeCover).length,
+    0
+  );
 }
 
 function streamFile(res: NextApiResponse, filePath: string, contentType: string, filename: string, cleanupDir: string) {
@@ -248,6 +265,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const body = (req.body || {}) as BuildBody;
     const mode: BuildMode = body.mode === "separate" ? "separate" : "combined";
     const adhikar = body.adhikar == null || body.adhikar === "" ? null : toInt(body.adhikar, null);
+    const includeCover = Boolean(body.includeCover);
+    const contextPages = normalizeContextPageRadius(body.contextPages);
 
     const resolved = await resolveGranthSelection({
       bookId: toInt(body.bookId, null),
@@ -255,14 +274,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       kind: body.kind || "gathas",
       spec: String(body.spec || ""),
       adhikar,
-      includeCover: Boolean(body.includeCover),
+      includeCover,
       includeAllIdentifiers: Boolean(body.includeAllIdentifiers),
     });
 
-    const pageTotal = countPages(resolved.segments);
+    const pageTotal = countPages(resolved.segments, contextPages, includeCover);
     if (pageTotal > MAX_PAGES_PER_BUILD) {
       return res.status(413).json({
-        error: `Selection contains ${pageTotal} pages. Narrow it below ${MAX_PAGES_PER_BUILD} pages for a browser download.`,
+        error: `Selection contains ${pageTotal} pages after nearby pages are added. Narrow it below ${MAX_PAGES_PER_BUILD} pages for a browser download.`,
       });
     }
 
@@ -270,12 +289,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const title = safeFileName(String(body.title || "granth_selection"), "granth_selection");
 
     if (mode === "separate") {
-      const zipPath = await buildSeparateZip(resolved.segments, workDir);
+      const zipPath = await buildSeparateZip(resolved.segments, workDir, contextPages);
       streamFile(res, zipPath, "application/zip", `${title}_separate.zip`, workDir);
       return;
     }
 
-    const pdfPath = await buildCombined(resolved.segments, workDir);
+    const pdfPath = await buildCombined(resolved.segments, workDir, contextPages, includeCover);
     streamFile(res, pdfPath, "application/pdf", `${title}_combined.pdf`, workDir);
   } catch (error) {
     if (workDir) await rm(workDir, { recursive: true, force: true });
