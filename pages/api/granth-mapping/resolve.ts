@@ -18,10 +18,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const bookId = Number.parseInt(String(firstString(req.query.bookId) || ""), 10);
+    const rawFileId = Number.parseInt(String(firstString(req.query.rawFileId) || ""), 10);
     const adhikarRaw = String(firstString(req.query.adhikar) || "").trim();
     const payload = await resolveGranthSelection({
       bookId: Number.isFinite(bookId) ? bookId : null,
       bookCode: String(firstString(req.query.bookCode) || "").trim(),
+      rawFileId: Number.isFinite(rawFileId) ? rawFileId : null,
       kind: String(firstString(req.query.kind) || "gathas"),
       spec: String(firstString(req.query.spec) || "").trim(),
       adhikar: adhikarRaw ? Number.parseInt(adhikarRaw, 10) : null,

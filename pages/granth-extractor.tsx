@@ -24,6 +24,32 @@ type BooksResponse = {
   items: BookItem[];
 };
 
+type PageSourceItem = {
+  id: number;
+  file_name: string | null;
+  display_name: string;
+  pdf_url: string | null;
+  file_size: number | null;
+  custom_id: string | null;
+  collection: string | null;
+  subcollection: string | null;
+  original_rel_path: string | null;
+  cover_image_url: string | null;
+  page_count: number | null;
+  ocr_granth_key: string | null;
+  text_row_count: number | null;
+  xlsx_url: string | null;
+  mapping_book_id: number | null;
+  mapping_book_code: string | null;
+};
+
+type PageSourcesResponse = {
+  items: PageSourceItem[];
+  meta?: {
+    total?: number;
+  };
+};
+
 type ContextFile = {
   id: number;
   book_code: string | null;
@@ -122,6 +148,11 @@ type PreparedSelection = {
 function titleForBook(book: BookItem | null) {
   if (!book) return "Selected Granth";
   return book.title_display || book.title_english || `Granth ${book.id}`;
+}
+
+function titleForPageSource(source: PageSourceItem | null) {
+  if (!source) return "Selected PDF";
+  return source.display_name || source.file_name || source.original_rel_path || `PDF ${source.id}`;
 }
 
 function codeLabel(value: string | null | undefined) {
@@ -300,8 +331,12 @@ export default function GranthExtractorPage() {
   const [books, setBooks] = useState<BookItem[]>([]);
   const [loadingBooks, setLoadingBooks] = useState(true);
   const [bookError, setBookError] = useState<string | null>(null);
+  const [pageSources, setPageSources] = useState<PageSourceItem[]>([]);
+  const [loadingPageSources, setLoadingPageSources] = useState(true);
+  const [pageSourceError, setPageSourceError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [bookId, setBookId] = useState<number | null>(null);
+  const [pageSourceId, setPageSourceId] = useState<number | null>(null);
   const [bookCode, setBookCode] = useState("");
   const [kind, setKind] = useState<"gathas" | "pages">("gathas");
   const [spec, setSpec] = useState("");
@@ -361,6 +396,43 @@ export default function GranthExtractorPage() {
     };
   }, [router.isReady, router.query.bookCode, router.query.bookId]);
 
+  useEffect(() => {
+    if (!router.isReady) return;
+    let active = true;
+    async function load() {
+      setLoadingPageSources(true);
+      setPageSourceError(null);
+      try {
+        const res = await fetch("/api/granth-mapping/page-sources?limit=5000");
+        const json = (await res.json()) as PageSourcesResponse | { error?: string };
+        if (!res.ok) throw new Error(("error" in json && json.error) || `Request failed (${res.status})`);
+        if (!active) return;
+        const items = (json as PageSourcesResponse).items || [];
+        const routeRawFileId = Number(readSingleQuery(router.query.rawFileId));
+        const routeSource = Number.isFinite(routeRawFileId)
+          ? items.find((item) => item.id === routeRawFileId)
+          : null;
+        const initialSource = routeSource || items[0] || null;
+
+        setPageSources(items);
+        if (initialSource) setPageSourceId(initialSource.id);
+        if (routeSource) {
+          setKind("pages");
+          setIncludeCover(false);
+          setDownloadContextPages(0);
+        }
+      } catch (loadError) {
+        if (active) setPageSourceError(loadError instanceof Error ? loadError.message : String(loadError));
+      } finally {
+        if (active) setLoadingPageSources(false);
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [router.isReady, router.query.rawFileId]);
+
   const filteredBooks = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return books;
@@ -373,12 +445,39 @@ export default function GranthExtractorPage() {
     );
   }, [books, query]);
 
+  const filteredPageSources = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return pageSources;
+    return pageSources.filter((source) =>
+      [
+        source.display_name,
+        source.file_name,
+        source.custom_id,
+        source.collection,
+        source.subcollection,
+        source.original_rel_path,
+        source.ocr_granth_key,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [pageSources, query]);
+
   const selectedBook = useMemo(
     () => books.find((book) => book.id === bookId) || filteredBooks[0] || null,
     [bookId, books, filteredBooks]
   );
 
-  const selectedCodes = selectedBook?.book_codes || [];
+  const selectedPageSource = useMemo(
+    () => pageSources.find((source) => source.id === pageSourceId) || filteredPageSources[0] || null,
+    [filteredPageSources, pageSourceId, pageSources]
+  );
+
+  const isPageMode = kind === "pages";
+  const selectedCodes = isPageMode ? [] : selectedBook?.book_codes || [];
+  const activeSourceReady = isPageMode ? Boolean(selectedPageSource) : Boolean(selectedBook);
   const segments = result?.segments || [];
   const totalPages = segments.reduce((sum, segment) => sum + segment.pages.length, 0);
   const totalDownloadPages = segments.reduce(
@@ -394,13 +493,15 @@ export default function GranthExtractorPage() {
     () => prepareBuildSelection(previewSegments, previewSelection),
     [previewSegments, previewSelection]
   );
-  const selectedTitle = titleForBook(selectedBook);
+  const selectedTitle = isPageMode ? titleForPageSource(selectedPageSource) : titleForBook(selectedBook);
   const activePreviewPages = previewMode === "separate" ? preparedSelection.separatePages : preparedSelection.combinedPages;
   const previewReady = Boolean(previewMode && previewObjectUrl && activePreviewPages > 0);
 
   useEffect(() => {
-    if (!selectedBook) {
+    if (!selectedBook || isPageMode) {
       setContext(null);
+      setContextError(null);
+      setContextLoading(false);
       return;
     }
 
@@ -433,7 +534,7 @@ export default function GranthExtractorPage() {
       active = false;
       controller.abort();
     };
-  }, [bookCode, selectedBook]);
+  }, [bookCode, isPageMode, selectedBook]);
 
   const currentIdentifier = useMemo(() => {
     if (!context || !adhikar.trim()) return null;
@@ -448,6 +549,7 @@ export default function GranthExtractorPage() {
   }, [context?.page_ranges, currentIdentifier]);
 
   const primaryFile = context?.files.find((file) => file.cover_image_url && !brokenCoverIds[file.id]) || context?.files[0] || null;
+  const rawCoverKey = selectedPageSource ? -selectedPageSource.id : 0;
 
   useEffect(() => {
     return () => {
@@ -456,7 +558,7 @@ export default function GranthExtractorPage() {
   }, [previewObjectUrl]);
 
   async function resolveSelection(forceIncludeAllIdentifiers = includeAllIdentifiers) {
-    if (!selectedBook) return null;
+    if (!activeSourceReady) return null;
     setResolving(true);
     setError(null);
     setNotice(null);
@@ -464,12 +566,16 @@ export default function GranthExtractorPage() {
     resetPreviewState();
     try {
       const params = new URLSearchParams({
-        bookId: String(selectedBook.id),
         kind,
         spec,
         includeCover: includeCover ? "1" : "0",
       });
-      if (bookCode) params.set("bookCode", bookCode);
+      if (isPageMode && selectedPageSource) {
+        params.set("rawFileId", String(selectedPageSource.id));
+      } else if (selectedBook) {
+        params.set("bookId", String(selectedBook.id));
+        if (bookCode) params.set("bookCode", bookCode);
+      }
       if (kind === "gathas" && adhikar.trim()) params.set("adhikar", adhikar.trim());
       if (kind === "gathas" && forceIncludeAllIdentifiers && !adhikar.trim()) {
         params.set("includeAllIdentifiers", "1");
@@ -515,10 +621,12 @@ export default function GranthExtractorPage() {
     selection: BuildSelectionPayload,
     title = selectedTitle
   ) {
-    if (!selectedBook) return null;
+    const rawFileId = isPageMode ? selectedPageSource?.id : null;
+    if (!rawFileId && !selectedBook) return null;
     return {
-      bookId: selectedBook.id,
-      bookCode,
+      bookId: rawFileId ? null : selectedBook?.id,
+      bookCode: rawFileId ? "" : bookCode,
+      rawFileId,
       kind,
       spec,
       adhikar: kind === "gathas" && adhikar.trim() ? adhikar.trim() : null,
@@ -538,7 +646,7 @@ export default function GranthExtractorPage() {
     title: string,
     selection: BuildSelectionPayload = preparedSelection.selection
   ) {
-    if (!selectedBook) return;
+    if (!activeSourceReady) return;
     const pageCount = selection.pagesByPdf.reduce((sum, item) => sum + item.pages.length, 0);
     if (pageCount <= 0) {
       setError("Select at least one page before generating the preview.");
@@ -681,7 +789,7 @@ export default function GranthExtractorPage() {
   }
 
   async function buildDownload(mode: BuildMode, delivery: DeliveryMode, email?: string) {
-    if (!selectedBook) return;
+    if (!activeSourceReady) return;
     const activeSelection = prepareBuildSelection(previewSegments, previewSelection);
     const selectedPageCount = mode === "separate" ? activeSelection.separatePages : activeSelection.combinedPages;
     if (selectedPageCount <= 0) {
@@ -737,8 +845,14 @@ export default function GranthExtractorPage() {
             </div>
           </div>
           <div className="extractorHeaderStats">
-            <span>{context?.meta.file_count ?? 0} PDF</span>
-            <span>{context?.meta.total_gathas ?? 0} gathas</span>
+            <span>{isPageMode ? `${pageSources.length} PDF` : `${context?.meta.file_count ?? 0} PDF`}</span>
+            <span>
+              {isPageMode
+                ? selectedPageSource?.page_count
+                  ? `${selectedPageSource.page_count} pages`
+                  : "Page source"
+                : `${context?.meta.total_gathas ?? 0} gathas`}
+            </span>
             <span>
               {segments.length
                 ? `${segments.length} output PDF / ${combinedDownloadPages} download pages`
@@ -748,79 +862,111 @@ export default function GranthExtractorPage() {
         </header>
 
         {bookError ? <div className="extractorError" role="alert">{bookError}</div> : null}
+        {pageSourceError ? <div className="extractorError" role="alert">{pageSourceError}</div> : null}
 
         <section className="extractorLayout">
           <aside className="extractorControlPanel">
             <div className="extractorPanelHeader">
               <span>Selection</span>
-              {loadingBooks ? <strong>Loading</strong> : <strong>{filteredBooks.length}</strong>}
+              {isPageMode
+                ? loadingPageSources
+                  ? <strong>Loading</strong>
+                  : <strong>{filteredPageSources.length}</strong>
+                : loadingBooks
+                  ? <strong>Loading</strong>
+                  : <strong>{filteredBooks.length}</strong>}
             </div>
 
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search granth name"
-              aria-label="Search granth name"
+              placeholder="Search granth name or PDF"
+              aria-label="Search granth name or PDF"
               className="extractorInput"
             />
 
-            <select
-              value={selectedBook?.id || ""}
-              onChange={(event) => {
-                const nextId = Number(event.target.value);
-                const next = books.find((book) => book.id === nextId) || null;
-                setBookId(nextId);
-                setBookCode(next?.book_codes?.[0] || "");
-                setAdhikar("");
-                setIncludeAllIdentifiers(false);
-                setResult(null);
-                resetPreviewState();
-              }}
-              disabled={loadingBooks}
-              className="extractorInput"
-            >
-              {filteredBooks.map((book) => (
-                <option key={book.id} value={book.id}>
-                  {titleForBook(book)}
-                </option>
-              ))}
-            </select>
-
-            <div className="extractorCodeGrid" aria-label="Book codes">
-              <button
-                type="button"
-                onClick={() => {
-                  setBookCode("");
+            {isPageMode ? (
+              <select
+                value={selectedPageSource?.id || ""}
+                onChange={(event) => {
+                  const nextId = Number(event.target.value);
+                  setPageSourceId(nextId);
                   setIncludeAllIdentifiers(false);
                   setResult(null);
                   resetPreviewState();
                 }}
-                className={!bookCode ? "isActive" : ""}
+                disabled={loadingPageSources}
+                className="extractorInput"
               >
-                All
-              </button>
-              {selectedCodes.map((code) => (
+                {filteredPageSources.map((source) => (
+                  <option key={source.id} value={source.id}>
+                    {titleForPageSource(source)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={selectedBook?.id || ""}
+                onChange={(event) => {
+                  const nextId = Number(event.target.value);
+                  const next = books.find((book) => book.id === nextId) || null;
+                  setBookId(nextId);
+                  setBookCode(next?.book_codes?.[0] || "");
+                  setAdhikar("");
+                  setIncludeAllIdentifiers(false);
+                  setResult(null);
+                  resetPreviewState();
+                }}
+                disabled={loadingBooks}
+                className="extractorInput"
+              >
+                {filteredBooks.map((book) => (
+                  <option key={book.id} value={book.id}>
+                    {titleForBook(book)}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {isPageMode ? null : (
+              <div className="extractorCodeGrid" aria-label="Book codes">
                 <button
-                  key={code}
                   type="button"
                   onClick={() => {
-                    setBookCode(code);
+                    setBookCode("");
                     setIncludeAllIdentifiers(false);
                     setResult(null);
                     resetPreviewState();
                   }}
-                  className={bookCode === code ? "isActive" : ""}
+                  className={!bookCode ? "isActive" : ""}
                 >
-                  {codeLabel(code)}
+                  All
                 </button>
-              ))}
-            </div>
+                {selectedCodes.map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => {
+                      setBookCode(code);
+                      setIncludeAllIdentifiers(false);
+                      setResult(null);
+                      resetPreviewState();
+                    }}
+                    className={bookCode === code ? "isActive" : ""}
+                  >
+                    {codeLabel(code)}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="extractorModeGrid">
               <button
                 type="button"
                 onClick={() => {
                   setKind("gathas");
+                  setIncludeCover(true);
+                  setDownloadContextPages(DEFAULT_CONTEXT_PAGE_RADIUS);
                   setIncludeAllIdentifiers(false);
                   setResult(null);
                   resetPreviewState();
@@ -833,6 +979,9 @@ export default function GranthExtractorPage() {
                 type="button"
                 onClick={() => {
                   setKind("pages");
+                  setIncludeCover(false);
+                  setDownloadContextPages(0);
+                  if (!pageSourceId && pageSources[0]) setPageSourceId(pageSources[0].id);
                   setIncludeAllIdentifiers(false);
                   setResult(null);
                   resetPreviewState();
@@ -911,7 +1060,7 @@ export default function GranthExtractorPage() {
               <button
                 type="button"
                 onClick={() => void resolveSelection()}
-                disabled={resolving || !selectedBook || !spec.trim()}
+                disabled={resolving || !activeSourceReady || !spec.trim()}
                 className="extractorPrimaryButton"
                 aria-busy={resolving}
               >
@@ -927,7 +1076,7 @@ export default function GranthExtractorPage() {
               <button
                 type="button"
                 onClick={() => void openDownloadPreview("combined")}
-                disabled={Boolean(buildingMode) || resolving || Boolean(previewingKey) || !selectedBook || !spec.trim()}
+                disabled={Boolean(buildingMode) || resolving || Boolean(previewingKey) || !activeSourceReady || !spec.trim()}
                 aria-busy={previewingKey === "download-preview"}
               >
                 {previewingKey === "download-preview" && previewMode === "combined" ? (
@@ -942,7 +1091,7 @@ export default function GranthExtractorPage() {
               <button
                 type="button"
                 onClick={() => void openDownloadPreview("separate")}
-                disabled={Boolean(buildingMode) || resolving || Boolean(previewingKey) || !selectedBook || !spec.trim()}
+                disabled={Boolean(buildingMode) || resolving || Boolean(previewingKey) || !activeSourceReady || !spec.trim()}
                 aria-busy={previewingKey === "download-preview"}
               >
                 {previewingKey === "download-preview" && previewMode === "separate" ? (
@@ -1028,7 +1177,13 @@ export default function GranthExtractorPage() {
           <section className="extractorContextPanel">
             <div className="extractorBookHero">
               <div className="extractorCoverPreview">
-                {primaryFile?.cover_image_url && !brokenCoverIds[primaryFile.id] ? (
+                {isPageMode && selectedPageSource?.cover_image_url && !brokenCoverIds[rawCoverKey] ? (
+                  <img
+                    src={selectedPageSource.cover_image_url}
+                    alt={`${selectedTitle} cover`}
+                    onError={() => setBrokenCoverIds((prev) => ({ ...prev, [rawCoverKey]: true }))}
+                  />
+                ) : !isPageMode && primaryFile?.cover_image_url && !brokenCoverIds[primaryFile.id] ? (
                   <img
                     src={primaryFile.cover_image_url}
                     alt={`${selectedTitle} cover`}
@@ -1039,14 +1194,34 @@ export default function GranthExtractorPage() {
                 )}
               </div>
               <div className="extractorBookCopy">
-                <div className="extractorEyebrow">{bookCode ? codeLabel(bookCode) : "All codes"}</div>
+                <div className="extractorEyebrow">
+                  {isPageMode ? selectedPageSource?.collection || "PDF" : bookCode ? codeLabel(bookCode) : "All codes"}
+                </div>
                 <h2>{selectedTitle}</h2>
-                <p>{selectedBook?.author_text || selectedBook?.details_text || "Mapped granth selection"}</p>
+                <p>
+                  {isPageMode
+                    ? selectedPageSource?.file_name || selectedPageSource?.original_rel_path || "Uploaded PDF"
+                    : selectedBook?.author_text || selectedBook?.details_text || "Mapped granth selection"}
+                </p>
                 <div className="extractorBookMeta">
-                  <span>{context?.meta.identifier_count ?? 0} identifiers</span>
-                  <span>{context?.meta.mapped_row_count ?? 0} mapped gathas</span>
                   <span>
-                    {contextLoading ? (
+                    {isPageMode
+                      ? selectedPageSource?.page_count
+                        ? `${selectedPageSource.page_count} pages`
+                        : toMB(selectedPageSource?.file_size ?? null) || "PDF"
+                      : `${context?.meta.identifier_count ?? 0} identifiers`}
+                  </span>
+                  <span>
+                    {isPageMode
+                      ? selectedPageSource?.text_row_count
+                        ? `${selectedPageSource.text_row_count} OCR pages`
+                        : selectedPageSource?.subcollection || "PDF"
+                      : `${context?.meta.mapped_row_count ?? 0} mapped gathas`}
+                  </span>
+                  <span>
+                    {isPageMode ? (
+                      selectedPageSource?.mapping_book_id ? "Mapping available" : "Ready"
+                    ) : contextLoading ? (
                       <span className="buttonSpinnerLabel">
                         <span className="loadingSpinner" aria-hidden="true" />
                         Loading context
@@ -1059,7 +1234,7 @@ export default function GranthExtractorPage() {
               </div>
             </div>
 
-            {context?.files.length ? (
+            {!isPageMode && context?.files.length ? (
               <div className="extractorCoverStrip" aria-label="Available PDFs">
                 {context.files.map((file) => {
                   const isActive = !bookCode || file.book_code === bookCode;
@@ -1095,61 +1270,112 @@ export default function GranthExtractorPage() {
               </div>
             ) : null}
 
-            <div className="extractorInfoGrid">
-              <section className="extractorInfoPanel">
-                <div className="extractorPanelHeader">
-                  <span>Identifiers</span>
-                  <strong>{context?.identifiers.length ?? 0}</strong>
-                </div>
-                <div className="extractorIdentifierGrid">
-                  {(context?.identifiers || []).slice(0, 12).map((item) => (
-                    <button
-                      key={item.adhikar ?? "none"}
-                      type="button"
-                      className={currentIdentifier?.adhikar === item.adhikar ? "isActive" : ""}
-                      onClick={() => {
-                        setAdhikar(item.adhikar == null ? "" : String(item.adhikar));
-                        setResult(null);
-                        resetPreviewState();
-                      }}
-                    >
-                      <span>{item.label}</span>
-                      <strong>{item.total_gathas}</strong>
-                      <em>
-                        {item.min_gatha}-{item.max_gatha}
-                      </em>
-                    </button>
-                  ))}
-                  {!contextLoading && !context?.identifiers.length ? (
-                    <div className="extractorMuted">No identifier map available.</div>
-                  ) : null}
-                </div>
-              </section>
+            {isPageMode ? (
+              <div className="extractorInfoGrid">
+                <section className="extractorInfoPanel">
+                  <div className="extractorPanelHeader">
+                    <span>PDF Source</span>
+                    <strong>{selectedPageSource?.page_count ? `${selectedPageSource.page_count}` : "PDF"}</strong>
+                  </div>
+                  <div className="extractorRangeList">
+                    {selectedPageSource?.file_name ? (
+                      <div>
+                        <strong>{selectedPageSource.file_name}</strong>
+                        <span>{selectedPageSource.original_rel_path || selectedPageSource.custom_id || "Uploaded file"}</span>
+                      </div>
+                    ) : null}
+                    {selectedPageSource?.collection || selectedPageSource?.subcollection ? (
+                      <div>
+                        <strong>{[selectedPageSource.collection, selectedPageSource.subcollection].filter(Boolean).join(" / ")}</strong>
+                        <span>{toMB(selectedPageSource.file_size) || "PDF"}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
 
-              <section className="extractorInfoPanel">
-                <div className="extractorPanelHeader">
-                  <span>Mapped Page Ranges</span>
-                  <strong>{visibleRanges.length}</strong>
-                </div>
-                <div className="extractorRangeList">
-                  {visibleRanges.slice(0, 14).map((range, index) => (
-                    <div key={`${range.pdf_file_name}_${range.page_start}_${index}`}>
-                      <strong>{rangeLabel(range)}</strong>
-                      <span>{range.pdf_file_name}</span>
-                    </div>
-                  ))}
-                  {!contextLoading && visibleRanges.length === 0 ? (
-                    <div className="extractorMuted">No mapped page ranges available.</div>
-                  ) : null}
-                </div>
-              </section>
-            </div>
+                <section className="extractorInfoPanel">
+                  <div className="extractorPanelHeader">
+                    <span>Linked Data</span>
+                    <strong>{selectedPageSource?.ocr_granth_key ? "OCR" : "PDF"}</strong>
+                  </div>
+                  <div className="extractorRangeList">
+                    {selectedPageSource?.ocr_granth_key ? (
+                      <div>
+                        <strong>{selectedPageSource.ocr_granth_key}</strong>
+                        <span>{selectedPageSource.text_row_count ?? 0} OCR pages</span>
+                      </div>
+                    ) : null}
+                    {selectedPageSource?.mapping_book_id ? (
+                      <div>
+                        <strong>Mapped book {selectedPageSource.mapping_book_id}</strong>
+                        <span>{selectedPageSource.mapping_book_code ? `Code ${codeLabel(selectedPageSource.mapping_book_code)}` : "All codes"}</span>
+                      </div>
+                    ) : null}
+                    {!selectedPageSource?.ocr_granth_key && !selectedPageSource?.mapping_book_id ? (
+                      <div className="extractorMuted">No linked OCR or mapping data.</div>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+            ) : (
+              <div className="extractorInfoGrid">
+                <section className="extractorInfoPanel">
+                  <div className="extractorPanelHeader">
+                    <span>Identifiers</span>
+                    <strong>{context?.identifiers.length ?? 0}</strong>
+                  </div>
+                  <div className="extractorIdentifierGrid">
+                    {(context?.identifiers || []).slice(0, 12).map((item) => (
+                      <button
+                        key={item.adhikar ?? "none"}
+                        type="button"
+                        className={currentIdentifier?.adhikar === item.adhikar ? "isActive" : ""}
+                        onClick={() => {
+                          setAdhikar(item.adhikar == null ? "" : String(item.adhikar));
+                          setResult(null);
+                          resetPreviewState();
+                        }}
+                      >
+                        <span>{item.label}</span>
+                        <strong>{item.total_gathas}</strong>
+                        <em>
+                          {item.min_gatha}-{item.max_gatha}
+                        </em>
+                      </button>
+                    ))}
+                    {!contextLoading && !context?.identifiers.length ? (
+                      <div className="extractorMuted">No identifier map available.</div>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="extractorInfoPanel">
+                  <div className="extractorPanelHeader">
+                    <span>Mapped Page Ranges</span>
+                    <strong>{visibleRanges.length}</strong>
+                  </div>
+                  <div className="extractorRangeList">
+                    {visibleRanges.slice(0, 14).map((range, index) => (
+                      <div key={`${range.pdf_file_name}_${range.page_start}_${index}`}>
+                        <strong>{rangeLabel(range)}</strong>
+                        <span>{range.pdf_file_name}</span>
+                      </div>
+                    ))}
+                    {!contextLoading && visibleRanges.length === 0 ? (
+                      <div className="extractorMuted">No mapped page ranges available.</div>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+            )}
 
             <section className="extractorResultPanel">
               <div className="extractorPanelHeader">
                 <span>Resolved Output</span>
                 <strong>
-                  {segments.length ? `${totalPages} mapped / ${combinedDownloadPages} combined pages` : "Pending"}
+                  {segments.length
+                    ? `${totalPages} ${isPageMode ? "selected" : "mapped"} / ${combinedDownloadPages} combined pages`
+                    : "Pending"}
                 </strong>
               </div>
 
@@ -1178,7 +1404,8 @@ export default function GranthExtractorPage() {
                           </button>
                         </div>
                         <div className="extractorSegmentMeta">
-                          {codeLabel(previewSegment.segment.bookCode)} | {previewSegment.segment.pages.length} mapped page
+                          {codeLabel(previewSegment.segment.bookCode)} | {previewSegment.segment.pages.length}{" "}
+                          {isPageMode ? "selected" : "mapped"} page
                           {previewSegment.segment.pages.length === 1 ? "" : "s"} | {previewSegment.pages.length} preview page
                           {previewSegment.pages.length === 1 ? "" : "s"}
                         </div>

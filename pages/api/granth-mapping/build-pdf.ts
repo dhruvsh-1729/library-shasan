@@ -25,6 +25,7 @@ type BuildMode = "combined" | "separate";
 type BuildBody = {
   bookId?: number | string | null;
   bookCode?: string | null;
+  rawFileId?: number | string | null;
   kind?: string;
   spec?: string;
   adhikar?: number | string | null;
@@ -393,6 +394,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const resolved = await resolveGranthSelection({
       bookId: toInt(body.bookId, null),
       bookCode: body.bookCode || "",
+      rawFileId: toInt(body.rawFileId, null),
       kind: body.kind || "gathas",
       spec: String(body.spec || ""),
       adhikar,

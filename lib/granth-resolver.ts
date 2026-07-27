@@ -6,6 +6,7 @@ export type GranthResolveKind = "gathas" | "pages";
 export type GranthResolveInput = {
   bookId?: number | null;
   bookCode?: string | null;
+  rawFileId?: number | string | null;
   kind: GranthResolveKind | string;
   spec: string;
   adhikar?: number | null;
@@ -81,6 +82,8 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
   const supabase = getSupabaseAdmin();
   const bookId = Number(input.bookId);
   const hasBookId = Number.isFinite(bookId);
+  const rawFileId = Number(input.rawFileId);
+  const hasRawFileId = Number.isFinite(rawFileId) && rawFileId > 0;
   const bookCode = String(input.bookCode || "").trim();
   const kind = String(input.kind || "gathas");
   const spec = String(input.spec || "").trim();
@@ -88,8 +91,8 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
   const includeAllIdentifiers = Boolean(input.includeAllIdentifiers);
   const adhikar = input.adhikar == null || !Number.isFinite(Number(input.adhikar)) ? null : Number(input.adhikar);
 
-  if (!hasBookId && !bookCode) {
-    throw new GranthResolveError(400, { error: "bookId or bookCode is required" });
+  if (!hasBookId && !bookCode && !hasRawFileId) {
+    throw new GranthResolveError(400, { error: "bookId, bookCode, or rawFileId is required" });
   }
   if (!spec) throw new GranthResolveError(400, { error: "spec is required" });
 
@@ -100,6 +103,43 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
     throw new GranthResolveError(400, { error: error instanceof Error ? error.message : String(error) });
   }
   if (requested.length === 0) throw new GranthResolveError(400, { error: "No valid numbers requested" });
+
+  if (hasRawFileId) {
+    if (kind !== "pages") {
+      throw new GranthResolveError(400, { error: "rawFileId downloads only support page numbers" });
+    }
+
+    const { data, error } = await supabase
+      .from("granth_ocr_files")
+      .select("id,file_name,ufs_url,custom_id,original_rel_path")
+      .eq("id", rawFileId)
+      .limit(1);
+
+    if (error) throw error;
+    const file = data?.[0];
+    if (!file) throw new GranthResolveError(404, { error: "PDF source not found" });
+    if (!file.ufs_url) throw new GranthResolveError(404, { error: "Selected granth is not linked to an uploaded PDF" });
+
+    const pdfFileName = String(file.file_name || file.original_rel_path || `granth-${rawFileId}.pdf`);
+    const rows = requested.map((page) => ({
+      pdf_url: file.ufs_url as string | null,
+      pdf_file_name: pdfFileName,
+      custom_id: (file.custom_id as string | null) || null,
+      book_code: null,
+      page_start: page,
+      page_end: page,
+      adhikar: null,
+      gatha: null,
+      anchor_text: null,
+    }));
+
+    return {
+      kind,
+      requested,
+      includeCover,
+      segments: groupSegments(rows, includeCover),
+    };
+  }
 
   if (kind === "pages") {
     const files = await fetchAll((from, to) => {
