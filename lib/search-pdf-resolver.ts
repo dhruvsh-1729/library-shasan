@@ -58,7 +58,12 @@ export type ResolvedGranthPdf = {
   source_page_number: number;
 };
 
-const PDF_CATALOG_TTL_MS = 5 * 60 * 1000;
+/**
+ * Metadata tables change only when documents are scanned or uploaded, so a long
+ * TTL keeps bulk exports and busy search sessions off Supabase egress. Targeted
+ * single-granth lookups below stay uncached and therefore always fresh.
+ */
+const PDF_CATALOG_TTL_MS = 15 * 60 * 1000;
 /**
  * Supabase filters travel in the request URL, and granth rel paths are long, so
  * `in.(...)` lookups break once a few dozen paths are batched together. Small
@@ -530,6 +535,48 @@ export async function fetchDocumentMetaByRelPaths(relPaths: string[]) {
 
     if (error) throw new Error(error.message);
     rows.push(...((data ?? []) as DocumentMeta[]));
+  }
+  return rows;
+}
+
+export async function fetchSourceMetaByCustomIds(customIds: string[]) {
+  const unique = Array.from(new Set(customIds.filter(Boolean)));
+  if (unique.length === 0) return [] as SourceMeta[];
+  if (unique.length > TARGETED_REL_PATH_LIMIT) {
+    const wanted = new Set(unique);
+    return (await fetchSourceCatalog()).filter((row) => wanted.has(String(row.custom_id || "")));
+  }
+
+  const rows: SourceMeta[] = [];
+  for (let index = 0; index < unique.length; index += REL_PATH_CHUNK_SIZE) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("granth_ocr_files")
+      .select("custom_id,original_rel_path,file_name,file_type,ufs_url,cover_image_url")
+      .in("custom_id", unique.slice(index, index + REL_PATH_CHUNK_SIZE));
+
+    if (error) throw new Error(error.message);
+    rows.push(...((data ?? []) as SourceMeta[]));
+  }
+  return rows;
+}
+
+export async function fetchLibraryFileMetaByCustomIds(customIds: string[]) {
+  const unique = Array.from(new Set(customIds.filter(Boolean)));
+  if (unique.length === 0) return [] as LibraryFileMeta[];
+  if (unique.length > TARGETED_REL_PATH_LIMIT) {
+    const wanted = new Set(unique);
+    return (await fetchLibraryFileCatalog()).filter((row) => wanted.has(String(row.custom_id || "")));
+  }
+
+  const rows: LibraryFileMeta[] = [];
+  for (let index = 0; index < unique.length; index += REL_PATH_CHUNK_SIZE) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("granth_library_files")
+      .select("custom_id,pdf_rel_path,pdf_file_name,pdf_url")
+      .in("custom_id", unique.slice(index, index + REL_PATH_CHUNK_SIZE));
+
+    if (error) throw new Error(error.message);
+    rows.push(...((data ?? []) as LibraryFileMeta[]));
   }
   return rows;
 }

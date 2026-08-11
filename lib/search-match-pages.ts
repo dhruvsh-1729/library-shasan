@@ -9,8 +9,12 @@ import {
   type LibraryFileMeta,
   type SourceMeta,
   fetchDocumentCatalog,
+  fetchDocumentMetaByCustomIds,
   fetchLibraryFileCatalog,
+  fetchLibraryFileMetaByCustomIds,
   fetchSourceCatalog,
+  fetchSourceMetaByCustomIds,
+  fetchSourceMetaByRelPaths,
 } from "@/lib/search-pdf-resolver";
 import { getTursoClient } from "@/lib/turso";
 
@@ -110,26 +114,70 @@ export type SearchPdfSourceResult =
   | { ok: true; source: SearchPdfSource }
   | { ok: false; status: number; error: string };
 
+/** Above this many granths, one full (cached) table read beats a query per granth. */
+const CATALOG_LOOKUP_THRESHOLD = 8;
+
+function deriveSourceRelPath(
+  request: SearchPdfSourceRequest,
+  doc: { original_relative_path: string | null } | null,
+  sourceByCustomId: SourceMeta | null,
+  libraryFile: LibraryFileMeta | null
+) {
+  return String(
+    request.sourceRelPath ||
+      doc?.original_relative_path ||
+      sourceByCustomId?.original_rel_path ||
+      libraryFile?.pdf_rel_path ||
+      ""
+  ).trim();
+}
+
 /**
- * Resolves many granths to their uploaded PDF in one pass. The document, OCR
- * file and library file tables are small and cached, so a search-wide export
- * costs the same lookups as a single-granth download.
+ * Resolves granths to their uploaded PDF in one pass. Small requests (a single
+ * granth download) stay on targeted lookups; bulk exports read the small
+ * document/OCR/library tables in full instead of issuing a query per granth.
  */
 export async function resolveSearchPdfSources(
   requests: SearchPdfSourceRequest[]
 ): Promise<SearchPdfSourceResult[]> {
   if (requests.length === 0) return [];
 
-  const [documents, sources, libraryFiles] = await Promise.all([
-    fetchDocumentCatalog(),
-    fetchSourceCatalog(),
-    fetchLibraryFileCatalog(),
-  ]);
+  const customIds = requests.map((request) => String(request.customId || "").trim()).filter(Boolean);
+  const useCatalogs = requests.length > CATALOG_LOOKUP_THRESHOLD;
+
+  const [documents, sourcesByIdRows, libraryFiles] = useCatalogs
+    ? await Promise.all([fetchDocumentCatalog(), fetchSourceCatalog(), fetchLibraryFileCatalog()])
+    : await Promise.all([
+        fetchDocumentMetaByCustomIds(customIds),
+        fetchSourceMetaByCustomIds(customIds),
+        fetchLibraryFileMetaByCustomIds(customIds),
+      ]);
 
   const docsByCustomId = indexBy(documents, (row) => String(row.custom_id || ""));
-  const sourcesByCustomId = indexBy(sources, (row) => String(row.custom_id || ""));
-  const sourcesByRelPath = indexBy(sources, (row) => String(row.original_rel_path || ""));
+  const sourcesByCustomId = indexBy(sourcesByIdRows, (row) => String(row.custom_id || ""));
   const libraryByCustomId = indexBy(libraryFiles as LibraryFileMeta[], (row) => String(row.custom_id || ""));
+
+  // The rel path can come from the request or from the rows just fetched, so
+  // the targeted branch resolves it before looking OCR files up by rel path.
+  let sourcesByRelPath = indexBy(sourcesByIdRows, (row) => String(row.original_rel_path || ""));
+  if (!useCatalogs) {
+    const relPaths = requests.map((request) => {
+      const customId = String(request.customId || "").trim();
+      return deriveSourceRelPath(
+        request,
+        docsByCustomId.get(customId) ?? null,
+        sourcesByCustomId.get(customId) ?? null,
+        libraryByCustomId.get(customId) ?? null
+      );
+    });
+    const missing = relPaths.filter((relPath) => relPath && !sourcesByRelPath.has(relPath));
+    if (missing.length > 0) {
+      sourcesByRelPath = indexBy(
+        [...sourcesByIdRows, ...(await fetchSourceMetaByRelPaths(missing))],
+        (row) => String(row.original_rel_path || "")
+      );
+    }
+  }
 
   return requests.map((request) => {
     const normalizedCustomId = String(request.customId || "").trim();
@@ -141,13 +189,7 @@ export async function resolveSearchPdfSources(
     const sourceByCustomId = sourcesByCustomId.get(normalizedCustomId) ?? null;
     const libraryFile = libraryByCustomId.get(normalizedCustomId) ?? null;
 
-    const sourceRelPath = String(
-      request.sourceRelPath ||
-        doc?.original_relative_path ||
-        sourceByCustomId?.original_rel_path ||
-        libraryFile?.pdf_rel_path ||
-        ""
-    ).trim();
+    const sourceRelPath = deriveSourceRelPath(request, doc, sourceByCustomId, libraryFile);
     const sourceByRelPath =
       sourceRelPath && sourceByCustomId?.original_rel_path !== sourceRelPath
         ? sourcesByRelPath.get(sourceRelPath) ?? null
