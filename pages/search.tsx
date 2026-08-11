@@ -16,6 +16,8 @@ import {
 import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
+import { SearchExportDialog, type ExportFormat } from "@/components/SearchExportDialog";
+import { downloadBlob, fileSafe, filenameFromResponse } from "@/lib/download-file";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { KeyboardEvent, ReactNode } from "react";
@@ -110,23 +112,6 @@ function isValidHttpUrl(value: string | null | undefined) {
   }
 }
 
-function fileSafe(value: string) {
-  return String(value || "download")
-    .replace(/\.pdf$/i, "")
-    .replace(/[^a-z0-9._\-\u0900-\u097f\u0a80-\u0aff]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 110) || "download";
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 function contextRangeLabel(pageNumber: number, contextPages: number) {
   const radius = normalizeContextPageRadius(contextPages);
   if (radius === 0) return `PDF page ${pageNumber}`;
@@ -148,6 +133,11 @@ export default function SearchPage() {
   const [searchMode, setSearchMode] = useState<OCRSearchMode>("exact_word");
   const [selectedQueryOptionIds, setSelectedQueryOptionIds] = useState<string[]>([]);
   const [lastSearchQueries, setLastSearchQueries] = useState<string[]>([]);
+  // The export dialog covers the search that produced the results on screen,
+  // even if the granth filter is edited afterwards.
+  const [lastSearchGranthIds, setLastSearchGranthIds] = useState<string[]>([]);
+  const [lastSearchScopeLabel, setLastSearchScopeLabel] = useState("All granths");
+  const [lastSearchMode, setLastSearchMode] = useState<OCRSearchMode>("exact_word");
 
   const [granthOptions, setGranthOptions] = useState<GranthOption[]>([]);
   const [loadingGranths, setLoadingGranths] = useState(true);
@@ -157,7 +147,8 @@ export default function SearchPage() {
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
   const [downloadPreview, setDownloadPreview] = useState<DownloadPreviewState | null>(null);
-  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false);
+  const [deliveryFormat, setDeliveryFormat] = useState<ExportFormat | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const previewCacheRef = useRef(new Map<string, SearchMatchPreview>());
   const [routePrefillApplied, setRoutePrefillApplied] = useState(false);
 
@@ -411,6 +402,9 @@ export default function SearchPage() {
       setTotalIsExact(json.total_is_exact !== false);
       setSearchMode(parseOCRSearchMode(json.match_mode));
       setLastSearchQueries(json.queries?.length ? json.queries : queriesForSearch);
+      setLastSearchGranthIds(selectionMode === "all" ? [] : selectedCustomIds);
+      setLastSearchScopeLabel(selectedLabel);
+      setLastSearchMode(parseOCRSearchMode(json.match_mode));
       setHasSearched(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -513,42 +507,47 @@ export default function SearchPage() {
     );
   }
 
-  async function downloadMatchedPdf(delivery: DeliveryMode, email?: string) {
+  async function downloadMatchedPages(format: ExportFormat, delivery: DeliveryMode, email?: string) {
     if (!downloadPreview?.preview || downloadPreview.selectedPages.length === 0) return;
 
+    const preview = downloadPreview.preview;
     setDownloadPreview((prev) => (prev ? { ...prev, downloading: true, error: null, notice: null } : prev));
     try {
-      const res = await fetch("/api/search-match-pdf", {
+      const endpoint = format === "pdf" ? "/api/search-match-pdf" : "/api/search-match-csv";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customId: downloadPreview.preview.custom_id,
+          customId: preview.custom_id,
           sourceRelPath: downloadPreview.result.source_rel_path || "",
+          granthName: preview.pdf_name,
           q: downloadPreview.query,
           queryVariants: downloadPreview.queries.slice(1),
           matchMode: downloadPreview.matchMode,
           pages: downloadPreview.selectedPages,
-          contextPages: downloadPreview.contextPages,
+          ...(format === "pdf" ? { contextPages: downloadPreview.contextPages } : {}),
           delivery,
           email,
-          title: downloadPreview.preview.pdf_name,
+          title: preview.pdf_name,
         }),
       });
 
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(json.error || `PDF download failed (${res.status})`);
+        throw new Error(json.error || `${format === "pdf" ? "PDF" : "CSV"} export failed (${res.status})`);
       }
 
       if (delivery === "email") {
-        const json = (await res.json()) as { email?: string };
-        setDeliveryDialogOpen(false);
+        const json = (await res.json()) as { email?: string; row_count?: number };
+        setDeliveryFormat(null);
         setDownloadPreview((prev) =>
           prev
             ? {
                 ...prev,
                 downloading: false,
-                notice: `Email sent to ${json.email || email}.`,
+                notice: `Email sent to ${json.email || email}${
+                  typeof json.row_count === "number" ? ` with ${json.row_count} CSV row(s)` : ""
+                }.`,
               }
             : prev
         );
@@ -556,8 +555,12 @@ export default function SearchPage() {
       }
 
       const blob = await res.blob();
-      downloadBlob(blob, `${fileSafe(downloadPreview.preview.pdf_name)}_${fileSafe(downloadPreview.queries.join("_"))}_matched_pages.pdf`);
-      setDeliveryDialogOpen(false);
+      const fallbackName =
+        format === "pdf"
+          ? `${fileSafe(preview.pdf_name)}_${fileSafe(downloadPreview.queries.join("_"))}_matched_pages.pdf`
+          : `${fileSafe(preview.pdf_name)}_${fileSafe(downloadPreview.queries.join("_"))}_page_lines.csv`;
+      downloadBlob(blob, filenameFromResponse(res, fallbackName));
+      setDeliveryFormat(null);
       setDownloadPreview(null);
     } catch (downloadError) {
       setDownloadPreview((prev) =>
@@ -863,6 +866,21 @@ export default function SearchPage() {
             </div>
           ) : null}
 
+          {hasSearched && results.length > 0 && lastSearchQueries.length > 0 ? (
+            <div className="searchExportBar">
+              <div>
+                <strong>Export this whole search</strong>
+                <span>
+                  One combined PDF with the matched pages of every granth this search found, or a CSV of every match
+                  with its PDF page number and line number.
+                </span>
+              </div>
+              <button type="button" onClick={() => setExportDialogOpen(true)}>
+                Export all matched granths
+              </button>
+            </div>
+          ) : null}
+
           {hasSearched ? (
             <div style={{ marginBottom: 14 }}>
               <PageJumpPager
@@ -999,7 +1017,7 @@ export default function SearchPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setDeliveryDialogOpen(false);
+                        setDeliveryFormat(null);
                         setDownloadPreview(null);
                       }}
                     >
@@ -1079,11 +1097,27 @@ export default function SearchPage() {
                         ) : null}
                         <button
                           type="button"
-                          onClick={() => setDeliveryDialogOpen(true)}
+                          onClick={() => setDeliveryFormat("csv")}
+                          title="Export the page number and line number of every match as CSV"
+                          aria-busy={downloadPreview.downloading}
+                          disabled={downloadPreview.downloading || selectedCount === 0}
+                        >
+                          {downloadPreview.downloading && deliveryFormat === "csv" ? (
+                            <span className="buttonSpinnerLabel">
+                              <span className="loadingSpinner" aria-hidden="true" />
+                              Building CSV
+                            </span>
+                          ) : (
+                            "Export CSV"
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeliveryFormat("pdf")}
                           aria-busy={downloadPreview.downloading}
                           disabled={downloadPreview.downloading || selectedCount === 0 || tooManyPages}
                         >
-                          {downloadPreview.downloading ? (
+                          {downloadPreview.downloading && deliveryFormat === "pdf" ? (
                             <span className="buttonSpinnerLabel">
                               <span className="loadingSpinner" aria-hidden="true" />
                               Building PDF
@@ -1094,14 +1128,18 @@ export default function SearchPage() {
                         </button>
                       </footer>
                       <DownloadDeliveryDialog
-                        open={deliveryDialogOpen}
-                        title="Choose download method"
-                        fileLabel={`${finalPageCount} PDF page(s), cover first`}
+                        open={deliveryFormat !== null}
+                        title={deliveryFormat === "csv" ? "Choose CSV delivery" : "Choose download method"}
+                        fileLabel={
+                          deliveryFormat === "csv"
+                            ? `${selectedCount} matched page(s), one row per matched line`
+                            : `${finalPageCount} PDF page(s), cover first`
+                        }
                         busy={downloadPreview.downloading}
                         error={downloadPreview.error}
-                        onClose={() => setDeliveryDialogOpen(false)}
-                        onDownload={() => void downloadMatchedPdf("download")}
-                        onEmail={(email) => void downloadMatchedPdf("email", email)}
+                        onClose={() => setDeliveryFormat(null)}
+                        onDownload={() => void downloadMatchedPages(deliveryFormat ?? "pdf", "download")}
+                        onEmail={(email) => void downloadMatchedPages(deliveryFormat ?? "pdf", "email", email)}
                       />
                     </>
                   ) : null}
@@ -1110,6 +1148,14 @@ export default function SearchPage() {
             );
           })()
         : null}
+      <SearchExportDialog
+        open={exportDialogOpen}
+        queries={lastSearchQueries}
+        matchMode={lastSearchMode}
+        granthIds={lastSearchGranthIds}
+        scopeLabel={lastSearchScopeLabel}
+        onClose={() => setExportDialogOpen(false)}
+      />
       <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
     </main>
   );

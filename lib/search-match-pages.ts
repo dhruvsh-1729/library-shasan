@@ -5,32 +5,14 @@ import {
   type OCRSearchMode,
 } from "@/lib/ocr-search";
 import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import {
+  type LibraryFileMeta,
+  type SourceMeta,
+  fetchDocumentCatalog,
+  fetchLibraryFileCatalog,
+  fetchSourceCatalog,
+} from "@/lib/search-pdf-resolver";
 import { getTursoClient } from "@/lib/turso";
-
-type DocumentRow = {
-  custom_id: string | null;
-  original_relative_path: string | null;
-  pdf_name: string | null;
-  pdf_url: string | null;
-  csv_url: string | null;
-};
-
-type SourceRow = {
-  custom_id: string | null;
-  original_rel_path: string | null;
-  file_name: string | null;
-  file_type: string | null;
-  ufs_url: string | null;
-  cover_image_url: string | null;
-};
-
-type LibraryFileRow = {
-  custom_id: string | null;
-  pdf_rel_path: string | null;
-  pdf_file_name: string | null;
-  pdf_url: string | null;
-};
 
 export type SearchPdfSource = {
   customId: string;
@@ -46,8 +28,33 @@ export type SearchMatchPage = {
   snippet: string;
 };
 
+export type SearchMatchGranthSummary = {
+  granth_key: string;
+  source_rel_path: string;
+  granth_name: string;
+  matched_pages: number;
+  first_page: number;
+};
+
+export type SearchMatchLine = {
+  page_number: number;
+  line_number: number;
+  occurrence_count: number;
+  matched_words: string[];
+  line_text: string;
+};
+
 export const MAX_MATCH_PAGE_PREVIEW = 2000;
 export const MAX_MATCH_PAGE_DOWNLOAD = 900;
+/** Granths listed in the search-wide export dialog. */
+export const MAX_EXPORT_GRANTH_PREVIEW = 500;
+/** Granths merged into a single combined PDF. */
+export const MAX_COMBINED_PDF_GRANTHS = 60;
+/** Granths scanned for one CSV export. */
+export const MAX_CSV_GRANTHS = 500;
+/** Rows written to one CSV export. */
+export const MAX_CSV_ROWS = 100000;
+const MAX_CSV_LINE_TEXT_CHARS = 400;
 
 export class SearchMatchError extends Error {
   status: number;
@@ -76,7 +83,7 @@ function normalizeHttpUrl(value: string | null | undefined) {
   }
 }
 
-function looksLikePdf(row: Pick<SourceRow, "file_name" | "file_type" | "ufs_url"> | null | undefined) {
+function looksLikePdf(row: Pick<SourceMeta, "file_name" | "file_type" | "ufs_url"> | null | undefined) {
   if (!row) return false;
   const fileName = String(row.file_name || "").trim().toLowerCase();
   const fileType = String(row.file_type || "").trim().toLowerCase();
@@ -84,100 +91,110 @@ function looksLikePdf(row: Pick<SourceRow, "file_name" | "file_type" | "ufs_url"
   return fileName.endsWith(".pdf") || fileType.includes("pdf") || /\.pdf(?:[?#]|$)/i.test(url);
 }
 
-function firstRow<T>(rows: T[] | null | undefined) {
-  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+function indexBy<T>(rows: T[], key: (row: T) => string) {
+  const map = new Map<string, T>();
+  for (const row of rows) {
+    const value = key(row).trim();
+    if (!value || map.has(value)) continue;
+    map.set(value, row);
+  }
+  return map;
 }
 
-async function fetchDocumentByCustomId(customId: string) {
-  const { data, error } = await getSupabaseAdmin()
-    .from("documents")
-    .select("custom_id,original_relative_path,pdf_name,pdf_url,csv_url")
-    .eq("custom_id", customId)
-    .limit(1);
+export type SearchPdfSourceRequest = {
+  customId: string;
+  sourceRelPath?: string;
+};
 
-  if (error) throw new SearchMatchError(500, error.message);
-  return firstRow((data ?? []) as DocumentRow[]);
-}
+export type SearchPdfSourceResult =
+  | { ok: true; source: SearchPdfSource }
+  | { ok: false; status: number; error: string };
 
-async function fetchSourceByCustomId(customId: string) {
-  const { data, error } = await getSupabaseAdmin()
-    .from("granth_ocr_files")
-    .select("custom_id,original_rel_path,file_name,file_type,ufs_url,cover_image_url")
-    .eq("custom_id", customId)
-    .limit(1);
+/**
+ * Resolves many granths to their uploaded PDF in one pass. The document, OCR
+ * file and library file tables are small and cached, so a search-wide export
+ * costs the same lookups as a single-granth download.
+ */
+export async function resolveSearchPdfSources(
+  requests: SearchPdfSourceRequest[]
+): Promise<SearchPdfSourceResult[]> {
+  if (requests.length === 0) return [];
 
-  if (error) throw new SearchMatchError(500, error.message);
-  return firstRow((data ?? []) as SourceRow[]);
-}
+  const [documents, sources, libraryFiles] = await Promise.all([
+    fetchDocumentCatalog(),
+    fetchSourceCatalog(),
+    fetchLibraryFileCatalog(),
+  ]);
 
-async function fetchSourceByRelPath(relPath: string) {
-  if (!relPath) return null;
+  const docsByCustomId = indexBy(documents, (row) => String(row.custom_id || ""));
+  const sourcesByCustomId = indexBy(sources, (row) => String(row.custom_id || ""));
+  const sourcesByRelPath = indexBy(sources, (row) => String(row.original_rel_path || ""));
+  const libraryByCustomId = indexBy(libraryFiles as LibraryFileMeta[], (row) => String(row.custom_id || ""));
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("granth_ocr_files")
-    .select("custom_id,original_rel_path,file_name,file_type,ufs_url,cover_image_url")
-    .eq("original_rel_path", relPath)
-    .limit(1);
+  return requests.map((request) => {
+    const normalizedCustomId = String(request.customId || "").trim();
+    if (!normalizedCustomId) {
+      return { ok: false as const, status: 400, error: "Missing granth identifier." };
+    }
 
-  if (error) throw new SearchMatchError(500, error.message);
-  return firstRow((data ?? []) as SourceRow[]);
-}
+    const doc = docsByCustomId.get(normalizedCustomId) ?? null;
+    const sourceByCustomId = sourcesByCustomId.get(normalizedCustomId) ?? null;
+    const libraryFile = libraryByCustomId.get(normalizedCustomId) ?? null;
 
-async function fetchLibraryFileByCustomId(customId: string) {
-  const { data, error } = await getSupabaseAdmin()
-    .from("granth_library_files")
-    .select("custom_id,pdf_rel_path,pdf_file_name,pdf_url")
-    .eq("custom_id", customId)
-    .limit(1);
+    const sourceRelPath = String(
+      request.sourceRelPath ||
+        doc?.original_relative_path ||
+        sourceByCustomId?.original_rel_path ||
+        libraryFile?.pdf_rel_path ||
+        ""
+    ).trim();
+    const sourceByRelPath =
+      sourceRelPath && sourceByCustomId?.original_rel_path !== sourceRelPath
+        ? sourcesByRelPath.get(sourceRelPath) ?? null
+        : null;
+    const pdfSource = looksLikePdf(sourceByCustomId)
+      ? sourceByCustomId
+      : looksLikePdf(sourceByRelPath)
+        ? sourceByRelPath
+        : null;
+    const source = pdfSource ?? sourceByCustomId ?? sourceByRelPath;
+    const sourcePdfUrl = normalizeHttpUrl(pdfSource?.ufs_url);
+    const pdfUrl = normalizeHttpUrl(doc?.pdf_url) || sourcePdfUrl || normalizeHttpUrl(libraryFile?.pdf_url);
+    const pdfName = String(
+      doc?.pdf_name || source?.file_name || libraryFile?.pdf_file_name || normalizedCustomId || "granth.pdf"
+    ).trim();
 
-  if (error) throw new SearchMatchError(500, error.message);
-  return firstRow((data ?? []) as LibraryFileRow[]);
+    if (!sourceRelPath) {
+      return {
+        ok: false as const,
+        status: 404,
+        error: "This result is not linked to searchable granth page metadata.",
+      };
+    }
+    if (!pdfUrl) {
+      return { ok: false as const, status: 404, error: "This result is not linked to an uploaded PDF." };
+    }
+
+    return {
+      ok: true as const,
+      source: {
+        customId: normalizedCustomId,
+        sourceRelPath,
+        pdfName,
+        pdfUrl,
+        coverImageUrl: source?.cover_image_url ?? null,
+      },
+    };
+  });
 }
 
 export async function resolveSearchPdfSource(
   customId: string,
   preferredSourceRelPath = ""
 ): Promise<SearchPdfSource> {
-  const normalizedCustomId = String(customId || "").trim();
-  if (!normalizedCustomId) throw new SearchMatchError(400, "Missing granth identifier.");
-
-  const [doc, sourceByCustomId, libraryFile] = await Promise.all([
-    fetchDocumentByCustomId(normalizedCustomId),
-    fetchSourceByCustomId(normalizedCustomId),
-    fetchLibraryFileByCustomId(normalizedCustomId),
-  ]);
-
-  const sourceRelPath = String(
-    preferredSourceRelPath || doc?.original_relative_path || sourceByCustomId?.original_rel_path || libraryFile?.pdf_rel_path || ""
-  ).trim();
-  const sourceByRelPath =
-    sourceRelPath && sourceByCustomId?.original_rel_path !== sourceRelPath
-      ? await fetchSourceByRelPath(sourceRelPath)
-      : null;
-  const pdfSource = looksLikePdf(sourceByCustomId)
-    ? sourceByCustomId
-    : looksLikePdf(sourceByRelPath)
-      ? sourceByRelPath
-      : null;
-  const source = pdfSource ?? sourceByCustomId ?? sourceByRelPath;
-  const sourcePdfUrl = normalizeHttpUrl(pdfSource?.ufs_url);
-  const pdfUrl = normalizeHttpUrl(doc?.pdf_url) || sourcePdfUrl || normalizeHttpUrl(libraryFile?.pdf_url);
-  const pdfName = String(doc?.pdf_name || source?.file_name || libraryFile?.pdf_file_name || normalizedCustomId || "granth.pdf").trim();
-
-  if (!sourceRelPath) {
-    throw new SearchMatchError(404, "This result is not linked to searchable granth page metadata.");
-  }
-  if (!pdfUrl) {
-    throw new SearchMatchError(404, "This result is not linked to an uploaded PDF.");
-  }
-
-  return {
-    customId: normalizedCustomId,
-    sourceRelPath,
-    pdfName,
-    pdfUrl,
-    coverImageUrl: source?.cover_image_url ?? null,
-  };
+  const [result] = await resolveSearchPdfSources([{ customId, sourceRelPath: preferredSourceRelPath }]);
+  if (!result.ok) throw new SearchMatchError(result.status, result.error);
+  return result.source;
 }
 
 export function validateSearchDownloadQuery(query: string, matchMode: OCRSearchMode) {
@@ -213,30 +230,154 @@ function ftsMatchQuery(query: string, matchMode: OCRSearchMode) {
   return escapeFtsPhrase(query);
 }
 
-export async function loadSearchMatchPages(
-  sourceRelPath: string,
-  query: string | string[],
-  matchMode: OCRSearchMode,
-  limit = MAX_MATCH_PAGE_PREVIEW,
-  queryVariants?: string | string[] | null
-) {
-  const queries = validateSearchDownloadQueries(query, queryVariants, matchMode);
-  const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_MATCH_PAGE_PREVIEW));
-  const { table } = ftsConfig(matchMode);
-  const client = getTursoClient();
-  const hitSql = queries
+/**
+ * Builds the FTS hit sub-query. `relPaths` scopes it to specific granths;
+ * `null` searches every indexed granth (the "All granths" filter mode).
+ */
+function buildHitQuery(table: string, queries: string[], matchMode: OCRSearchMode, relPaths: string[] | null) {
+  const scopedPaths = relPaths ?? [];
+  const relFilterSql = scopedPaths.length
+    ? ` AND g.source_rel_path IN (${scopedPaths.map(() => "?").join(",")})`
+    : "";
+  const sql = queries
     .map(
       () => `SELECT p.id AS page_id
              FROM ${table}
              JOIN ocr_pages p ON p.id = ${table}.rowid
              JOIN ocr_granths g ON g.granth_key = p.granth_key
-             WHERE ${table} MATCH ? AND g.source_rel_path = ?`
+             WHERE ${table} MATCH ?${relFilterSql}`
     )
     .join(" UNION ALL ");
-  const hitArgs = queries.flatMap((searchQuery) => [ftsMatchQuery(searchQuery, matchMode), sourceRelPath]);
 
-  const result = await client.execute({
-    sql: `WITH hits AS (${hitSql}),
+  return {
+    sql,
+    args: queries.flatMap((searchQuery) => [ftsMatchQuery(searchQuery, matchMode), ...scopedPaths]),
+  };
+}
+
+function normalizeLineBreaks(value: string) {
+  return String(value ?? "").replace(/\r\n?/g, "\n");
+}
+
+function collapseLineText(value: string) {
+  const cleaned = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (cleaned.length <= MAX_CSV_LINE_TEXT_CHARS) return cleaned;
+  return `${cleaned.slice(0, MAX_CSV_LINE_TEXT_CHARS - 1).trimEnd()}…`;
+}
+
+/**
+ * Maps every match on a page to the OCR line it sits on, so exports can point
+ * at "page 42, line 7" instead of just the page.
+ */
+export function findMatchLinesInPageContent(
+  content: string,
+  queries: string[],
+  matchMode: OCRSearchMode
+): Array<Omit<SearchMatchLine, "page_number">> {
+  const normalized = normalizeLineBreaks(content);
+  const matches = findOCRSearchMatchesForQueries(normalized, queries, matchMode);
+  if (matches.length === 0) return [];
+
+  const lines = normalized.split("\n");
+  const lineStarts: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    lineStarts.push(offset);
+    offset += line.length + 1;
+  }
+
+  const byLine = new Map<number, { occurrences: number; words: Set<string> }>();
+  let lineIndex = 0;
+
+  for (const match of matches) {
+    while (lineIndex + 1 < lineStarts.length && lineStarts[lineIndex + 1] <= match.start) lineIndex += 1;
+    const entry = byLine.get(lineIndex) ?? { occurrences: 0, words: new Set<string>() };
+    entry.occurrences += 1;
+    const matchedText = normalized.slice(match.start, match.end).replace(/\s+/g, " ").trim();
+    if (matchedText) entry.words.add(matchedText);
+    byLine.set(lineIndex, entry);
+  }
+
+  return [...byLine.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([index, entry]) => ({
+      line_number: index + 1,
+      occurrence_count: entry.occurrences,
+      matched_words: [...entry.words],
+      line_text: collapseLineText(lines[index] ?? ""),
+    }));
+}
+
+/**
+ * Lists every granth that has at least one matching page for the search, so a
+ * multi-granth or all-granth search can be exported in one file.
+ */
+export async function loadSearchMatchGranths(
+  relPaths: string[] | null,
+  query: string | string[],
+  matchMode: OCRSearchMode,
+  limit = MAX_EXPORT_GRANTH_PREVIEW,
+  queryVariants?: string | string[] | null
+) {
+  const queries = validateSearchDownloadQueries(query, queryVariants, matchMode);
+  const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_EXPORT_GRANTH_PREVIEW));
+  const { table } = ftsConfig(matchMode);
+  const hits = buildHitQuery(table, queries, matchMode, relPaths);
+
+  const result = await getTursoClient().execute({
+    sql: `WITH hits AS (${hits.sql}),
+            unique_hits AS (
+              SELECT page_id
+              FROM hits
+              GROUP BY page_id
+            )
+          SELECT
+            g.granth_key,
+            g.source_rel_path,
+            g.granth_name,
+            COUNT(*) AS matched_pages,
+            MIN(p.page_number) AS first_page
+          FROM unique_hits
+          JOIN ocr_pages p ON p.id = unique_hits.page_id
+          JOIN ocr_granths g ON g.granth_key = p.granth_key
+          GROUP BY g.granth_key, g.source_rel_path, g.granth_name
+          ORDER BY matched_pages DESC, g.granth_name ASC
+          LIMIT ?`,
+    args: [...hits.args, boundedLimit + 1],
+  });
+
+  const granths: SearchMatchGranthSummary[] = result.rows.slice(0, boundedLimit).map((row) => ({
+    granth_key: String(row.granth_key ?? ""),
+    source_rel_path: String(row.source_rel_path ?? ""),
+    granth_name: String(row.granth_name ?? ""),
+    matched_pages: toInt(row.matched_pages),
+    first_page: Math.max(1, toInt(row.first_page, 1)),
+  }));
+
+  return {
+    granths,
+    truncated: result.rows.length > boundedLimit,
+    queries,
+  };
+}
+
+/**
+ * Page-and-line level matches for one granth, used by the CSV export.
+ */
+export async function loadSearchMatchLines(
+  sourceRelPath: string,
+  query: string | string[],
+  matchMode: OCRSearchMode,
+  options: { pages?: number[] | null; maxRows?: number; queryVariants?: string | string[] | null } = {}
+) {
+  const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
+  const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
+  const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
+  const { table } = ftsConfig(matchMode);
+  const hits = buildHitQuery(table, queries, matchMode, [sourceRelPath]);
+
+  const result = await getTursoClient().execute({
+    sql: `WITH hits AS (${hits.sql}),
             unique_hits AS (
               SELECT page_id
               FROM hits
@@ -249,7 +390,63 @@ export async function loadSearchMatchPages(
           JOIN ocr_pages p ON p.id = unique_hits.page_id
           ORDER BY p.page_number ASC
           LIMIT ?`,
-    args: [...hitArgs, boundedLimit + 1],
+    args: [...hits.args, MAX_MATCH_PAGE_PREVIEW + 1],
+  });
+
+  const lines: SearchMatchLine[] = [];
+  const matchedPages = new Set<number>();
+  let truncated = result.rows.length > MAX_MATCH_PAGE_PREVIEW;
+
+  for (const row of result.rows.slice(0, MAX_MATCH_PAGE_PREVIEW)) {
+    const pageNumber = toInt(row.page_number);
+    if (pageNumber <= 0) continue;
+    if (pageFilter && !pageFilter.has(pageNumber)) continue;
+
+    const pageLines = findMatchLinesInPageContent(String(row.content ?? ""), queries, matchMode);
+    if (pageLines.length === 0) continue;
+    matchedPages.add(pageNumber);
+
+    for (const line of pageLines) {
+      if (lines.length >= maxRows) {
+        truncated = true;
+        break;
+      }
+      lines.push({ page_number: pageNumber, ...line });
+    }
+    if (truncated) break;
+  }
+
+  return { lines, matched_pages: [...matchedPages].sort((a, b) => a - b), truncated, queries };
+}
+
+export async function loadSearchMatchPages(
+  sourceRelPath: string,
+  query: string | string[],
+  matchMode: OCRSearchMode,
+  limit = MAX_MATCH_PAGE_PREVIEW,
+  queryVariants?: string | string[] | null
+) {
+  const queries = validateSearchDownloadQueries(query, queryVariants, matchMode);
+  const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_MATCH_PAGE_PREVIEW));
+  const { table } = ftsConfig(matchMode);
+  const client = getTursoClient();
+  const hits = buildHitQuery(table, queries, matchMode, [sourceRelPath]);
+
+  const result = await client.execute({
+    sql: `WITH hits AS (${hits.sql}),
+            unique_hits AS (
+              SELECT page_id
+              FROM hits
+              GROUP BY page_id
+            )
+          SELECT
+            p.page_number,
+            p.content
+          FROM unique_hits
+          JOIN ocr_pages p ON p.id = unique_hits.page_id
+          ORDER BY p.page_number ASC
+          LIMIT ?`,
+    args: [...hits.args, boundedLimit + 1],
   });
 
   const byPage = new Map<number, SearchMatchPage>();

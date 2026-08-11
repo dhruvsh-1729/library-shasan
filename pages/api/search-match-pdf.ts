@@ -2,15 +2,21 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { createReadStream } from "node:fs";
 import { rm } from "node:fs/promises";
 import { parseOCRSearchMode } from "@/lib/ocr-search";
-import { buildHighlightedSearchPdf } from "@/lib/pdf-highlight-builder";
+import {
+  type CombinedPdfSource,
+  buildCombinedSearchPdf,
+  buildHighlightedSearchPdf,
+} from "@/lib/pdf-highlight-builder";
 import { expandPagesWithContext, normalizeContextPageRadius } from "@/lib/page-context";
 import { setNoStore } from "@/lib/api-cache";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
 import {
+  MAX_COMBINED_PDF_GRANTHS,
   MAX_MATCH_PAGE_DOWNLOAD,
   SearchMatchError,
   loadSearchMatchPages,
   resolveSearchPdfSource,
+  resolveSearchPdfSources,
   validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
 
@@ -18,6 +24,12 @@ export const config = {
   api: {
     responseLimit: false,
   },
+};
+
+type GranthSelection = {
+  customId?: string | null;
+  sourceRelPath?: string | null;
+  pages?: unknown;
 };
 
 type DownloadBody = {
@@ -31,7 +43,16 @@ type DownloadBody = {
   delivery?: string | null;
   email?: string | null;
   title?: string | null;
+  granths?: unknown;
+  maxPagesPerGranth?: unknown;
 };
+
+/** 0 (or absent) keeps every matched page of every selected granth. */
+function parseMaxPagesPerGranth(value: unknown) {
+  const parsed = Math.floor(Number(value ?? 0));
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.min(parsed, MAX_MATCH_PAGE_DOWNLOAD);
+}
 
 function safeFileName(value: string, fallback = "matched_pages") {
   const cleaned = String(value || "")
@@ -62,6 +83,26 @@ function parseSelectedPages(value: unknown) {
   )].sort((a, b) => a - b);
 }
 
+function parseGranthSelections(value: unknown): GranthSelection[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const selections: GranthSelection[] = [];
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as GranthSelection;
+    const customId = String(candidate.customId || "").trim();
+    const sourceRelPath = String(candidate.sourceRelPath || "").trim();
+    if (!customId) continue;
+    const key = `${customId}\n${sourceRelPath}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selections.push({ customId, sourceRelPath, pages: candidate.pages });
+  }
+
+  return selections;
+}
+
 function streamFile(res: NextApiResponse, filePath: string, filename: string, cleanupDir: string) {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", contentDisposition(filename));
@@ -85,42 +126,125 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const body = (req.body || {}) as DownloadBody;
     const delivery = body.delivery === "email" ? "email" : "download";
-    const customId = String(body.customId || "").trim();
-    const sourceRelPath = String(body.sourceRelPath || "").trim();
     const matchMode = parseOCRSearchMode(body.matchMode);
     const queries = validateSearchDownloadQueries(String(body.q || "").trim(), parseQueryVariants(body.queryVariants), matchMode);
-    const requestedPages = parseSelectedPages(body.pages);
     const contextPages = normalizeContextPageRadius(body.contextPages);
-
-    const source = await resolveSearchPdfSource(customId, sourceRelPath);
-    const { pages: matchingPages } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, queries, matchMode);
-    const matchingPageSet = new Set(matchingPages.map((page) => page.page_number));
-    const requested = requestedPages ?? matchingPages.map((page) => page.page_number);
-    const selectedPages = requested.filter((page) => matchingPageSet.has(page));
-
-    if (selectedPages.length === 0) {
-      throw new SearchMatchError(400, "Select at least one matching page before downloading.");
-    }
-
-    const expandedPages = expandPagesWithContext(selectedPages, contextPages);
-    const orderedPages = [1, ...expandedPages.filter((page) => page !== 1)];
-
-    if (orderedPages.length > MAX_MATCH_PAGE_DOWNLOAD) {
-      throw new SearchMatchError(
-        413,
-        `Selection contains ${orderedPages.length} pages after nearby pages are added. Keep it at ${MAX_MATCH_PAGE_DOWNLOAD} pages or fewer.`
-      );
-    }
-
-    const built = await buildHighlightedSearchPdf({
-      pdfUrl: source.pdfUrl,
-      pages: orderedPages,
-      queries,
-      matchMode,
-    });
-    const title = safeFileName(String(body.title || source.pdfName || customId), "matched_pages");
+    const granthSelections = parseGranthSelections(body.granths);
     const queryLabel = safeFileName(queries.join("_"), "search");
-    const filename = `${title}_${queryLabel}_matched_pages.pdf`;
+
+    let built: { filePath: string; cleanupDir: string };
+    let filename: string;
+    let emailTitle: string;
+
+    if (granthSelections.length > 0) {
+      if (granthSelections.length > MAX_COMBINED_PDF_GRANTHS) {
+        throw new SearchMatchError(
+          413,
+          `Select up to ${MAX_COMBINED_PDF_GRANTHS} granths for one combined PDF. ${granthSelections.length} were selected.`
+        );
+      }
+
+      const sources = await resolveSearchPdfSources(
+        granthSelections.map((selection) => ({
+          customId: String(selection.customId || ""),
+          sourceRelPath: String(selection.sourceRelPath || ""),
+        }))
+      );
+
+      const maxPagesPerGranth = parseMaxPagesPerGranth(body.maxPagesPerGranth);
+      const combinedSources: CombinedPdfSource[] = [];
+      const skipped: Array<{ granth: string; reason: string }> = [];
+      let totalPages = 0;
+
+      for (const [index, selection] of granthSelections.entries()) {
+        const resolved = sources[index];
+        if (!resolved.ok) {
+          skipped.push({ granth: String(selection.customId || ""), reason: resolved.error });
+          continue;
+        }
+
+        const source = resolved.source;
+        const requestedPages = parseSelectedPages(selection.pages);
+        const { pages: matchingPages } = await loadSearchMatchPages(
+          String(selection.sourceRelPath || "") || source.sourceRelPath,
+          queries,
+          matchMode
+        );
+
+        if (matchingPages.length === 0) {
+          skipped.push({ granth: source.pdfName, reason: "No matching pages found." });
+          continue;
+        }
+
+        const matchingPageSet = new Set(matchingPages.map((page) => page.page_number));
+        const matchedSelection = (requestedPages ?? matchingPages.map((page) => page.page_number)).filter((page) =>
+          matchingPageSet.has(page)
+        );
+        const selectedPages = maxPagesPerGranth > 0 ? matchedSelection.slice(0, maxPagesPerGranth) : matchedSelection;
+        if (selectedPages.length === 0) {
+          skipped.push({ granth: source.pdfName, reason: "No matching pages selected." });
+          continue;
+        }
+
+        const expandedPages = expandPagesWithContext(selectedPages, contextPages);
+        const orderedPages = [1, ...expandedPages.filter((page) => page !== 1)];
+        totalPages += orderedPages.length;
+
+        if (totalPages > MAX_MATCH_PAGE_DOWNLOAD) {
+          throw new SearchMatchError(
+            413,
+            `This selection needs more than ${MAX_MATCH_PAGE_DOWNLOAD} PDF pages once nearby pages and covers are added. Deselect some granths or reduce the nearby-page count.`
+          );
+        }
+
+        combinedSources.push({ pdfUrl: source.pdfUrl, pages: orderedPages, label: source.pdfName });
+      }
+
+      if (combinedSources.length === 0) {
+        const detail = skipped.length > 0 ? ` ${skipped[0].reason}` : "";
+        throw new SearchMatchError(404, `None of the selected granths could be exported.${detail}`);
+      }
+
+      const combined = await buildCombinedSearchPdf({ sources: combinedSources });
+      built = { filePath: combined.filePath, cleanupDir: combined.cleanupDir };
+      const granthLabel = combinedSources.length === 1 ? safeFileName(combinedSources[0].label, "granth") : `${combinedSources.length}_granths`;
+      filename = `granth_search_${queryLabel}_${granthLabel}_matched_pages.pdf`;
+      emailTitle = `${queries.join(", ")} matched pages from ${combinedSources.length} granth(s)`;
+    } else {
+      const customId = String(body.customId || "").trim();
+      const sourceRelPath = String(body.sourceRelPath || "").trim();
+      const requestedPages = parseSelectedPages(body.pages);
+
+      const source = await resolveSearchPdfSource(customId, sourceRelPath);
+      const { pages: matchingPages } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, queries, matchMode);
+      const matchingPageSet = new Set(matchingPages.map((page) => page.page_number));
+      const requested = requestedPages ?? matchingPages.map((page) => page.page_number);
+      const selectedPages = requested.filter((page) => matchingPageSet.has(page));
+
+      if (selectedPages.length === 0) {
+        throw new SearchMatchError(400, "Select at least one matching page before downloading.");
+      }
+
+      const expandedPages = expandPagesWithContext(selectedPages, contextPages);
+      const orderedPages = [1, ...expandedPages.filter((page) => page !== 1)];
+
+      if (orderedPages.length > MAX_MATCH_PAGE_DOWNLOAD) {
+        throw new SearchMatchError(
+          413,
+          `Selection contains ${orderedPages.length} pages after nearby pages are added. Keep it at ${MAX_MATCH_PAGE_DOWNLOAD} pages or fewer.`
+        );
+      }
+
+      built = await buildHighlightedSearchPdf({
+        pdfUrl: source.pdfUrl,
+        pages: orderedPages,
+        queries,
+        matchMode,
+      });
+      const title = safeFileName(String(body.title || source.pdfName || customId), "matched_pages");
+      filename = `${title}_${queryLabel}_matched_pages.pdf`;
+      emailTitle = `${title} matched pages`;
+    }
 
     if (delivery === "email") {
       try {
@@ -130,7 +254,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           filePath: built.filePath,
           filename,
           contentType: "application/pdf",
-          title: `${title} matched pages`,
+          title: emailTitle,
           recipientClientKey,
         });
         await rm(built.cleanupDir, { recursive: true, force: true });

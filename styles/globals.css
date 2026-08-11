@@ -2214,6 +2214,121 @@ button {
   font-weight: 800;
 }
 
+.searchExportBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  border: 1px solid #d4d9e2;
+  border-radius: 12px;
+  background: #fffefb;
+  padding: 12px 14px;
+  box-shadow: 0 5px 14px rgba(35, 42, 51, 0.05);
+}
+
+.searchExportBar strong {
+  display: block;
+  font-size: 15px;
+}
+
+.searchExportBar span {
+  display: block;
+  margin-top: 3px;
+  max-width: 720px;
+  color: #52605d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.searchExportBar button {
+  min-height: 38px;
+  border: 1px solid #1f2120;
+  border-radius: 10px;
+  background: #1f2120;
+  color: #fff;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* The export dialog shows a variable number of banners, so it lays itself out
+   as a column with only the granth list absorbing the leftover height. */
+.searchExportPanel {
+  display: flex;
+  flex-direction: column;
+}
+
+.searchExportPanel .searchDownloadPageList {
+  flex: 1 1 auto;
+  min-height: 120px;
+}
+
+.searchExportPanel .searchDownloadHeader,
+.searchExportPanel .searchDownloadSummary,
+.searchExportPanel .searchDownloadToolbar,
+.searchExportPanel .searchDownloadFooter,
+.searchExportPanel .searchExportHint {
+  flex: 0 0 auto;
+}
+
+.searchExportGranthRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 7px;
+  border: 1px solid #d5dae2;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.searchExportGranthName {
+  min-width: 0;
+  color: #26312f;
+  font-size: 15px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.searchExportGranthName em {
+  display: block;
+  margin-top: 3px;
+  color: #5b6764;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.searchExportGranthMeta {
+  color: #26312f;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.searchExportGranthMeta em {
+  display: block;
+  margin-top: 3px;
+  color: #8a5a00;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.searchExportHint {
+  padding: 10px 12px;
+  border-top: 1px solid #e0e4eb;
+  background: #f5f8fb;
+  color: #43504d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .downloadDeliveryOverlay {
   position: fixed;
   inset: 0;
@@ -2392,6 +2507,24 @@ button {
 
   .searchDownloadPageRow {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .searchExportGranthRow {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .searchExportGranthMeta {
+    grid-column: 2;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .searchExportBar button {
+    width: 100%;
+  }
+
+  .searchDownloadFooter button {
+    width: 100%;
   }
 
   .searchDownloadContextInput {
