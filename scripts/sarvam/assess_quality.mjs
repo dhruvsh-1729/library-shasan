@@ -37,6 +37,10 @@ export function scoreGranth(pages) {
   const charRuns = (joined.match(/([^\s\d])\1\1+/gu) ?? []).length;
   const blankPages = texts.filter((t) => t.trim().length < 40).length;
   const replacement = (joined.match(/[�-]/gu) ?? []).length;
+  // How WIDESPREAD the damage is matters far more than how dense it is. One
+  // lost glyph on a page is a scratch; a lost glyph on three pages in five
+  // means the book cannot be read or searched reliably anywhere.
+  const replacementPages = texts.filter((t) => /[\uFFFD\uE000-\uF8FF]/u.test(t)).length;
 
   const m = {
     pages: pages.length,
@@ -48,6 +52,7 @@ export function scoreGranth(pages) {
     charRunsPer1k: (1000 * charRuns) / tokenCount,
     blankPageRatio: blankPages / Math.max(1, pages.length),
     replacementPer10k: (10000 * replacement) / Math.max(1, joined.length),
+    replacementPageRatio: replacementPages / Math.max(1, pages.length),
   };
 
   const penalties = {
@@ -56,7 +61,8 @@ export function scoreGranth(pages) {
     latin: Math.min(15, m.latinRatio * 800),
     charRuns: Math.min(10, m.charRunsPer1k * 1.5),
     blankPages: Math.min(20, m.blankPageRatio * 180),
-    replacement: Math.min(10, m.replacementPer10k * 5),
+    replacement: Math.min(6, m.replacementPer10k * 5),
+    replacementSpread: Math.min(32, m.replacementPageRatio * 55),
   };
   const deduction = Object.values(penalties).reduce((a, b) => a + b, 0);
   const score = Math.max(0, Math.round((100 - deduction) * 10) / 10);
@@ -69,7 +75,11 @@ export function scoreGranth(pages) {
   if (penalties.latin > 5) reasons.push(`stray Latin (${(100 * m.latinRatio).toFixed(2)}% of letters)`);
   if (penalties.blankPages > 5) reasons.push(`${(100 * m.blankPageRatio).toFixed(1)}% near-empty pages`);
   if (penalties.charRuns > 3) reasons.push(`repeated-character noise (${m.charRunsPer1k.toFixed(1)}/1k)`);
-  if (penalties.replacement > 3) reasons.push("replacement/private-use characters");
+  if (penalties.replacementSpread > 5) {
+    reasons.push(`unreadable characters on ${(100 * m.replacementPageRatio).toFixed(0)}% of pages`);
+  } else if (penalties.replacement > 3) {
+    reasons.push("replacement/private-use characters");
+  }
 
   return { metrics: m, penalties, score, verdict, reasons };
 }
