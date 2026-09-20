@@ -194,6 +194,7 @@ export default function HomePage() {
           </div>
           <nav className="libraryNav" aria-label="Library tools">
             <Link href="/search">Search pages</Link>
+            <Link href="/ask">Ask the library</Link>
             <Link href="/granth-extractor">Extractor</Link>
             <Link href="/scannable-documents">Scan status</Link>
           </nav>

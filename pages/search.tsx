@@ -661,6 +661,7 @@ export default function SearchPage() {
           <h1 style={{ margin: 0, fontSize: 30, letterSpacing: "0.01em" }}>Granth Search</h1>
           <div className="appPillNav" style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 12 }}>
             <Link href="/">Back to library</Link>
+            <Link href="/ask">Ask the library</Link>
             <Link href="/scannable-documents">Scan status</Link>
             {documentStats ? (
               <span style={{ fontWeight: 700 }}>
