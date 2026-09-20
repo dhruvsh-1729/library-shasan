@@ -5,7 +5,8 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { UTApi } from "uploadthing/server";
 
-const files = process.argv.slice(2);
+const outFlag = process.argv.find((a) => a.startsWith("--out="));
+const files = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 if (!files.length) {
   console.error("usage: upload_assets.mjs <file> [file...]");
   process.exit(1);
@@ -33,5 +34,9 @@ for (const filePath of files) {
   results.push({ file: name, key: d.key, url: d.ufsUrl ?? d.url, size: d.size });
 }
 
+if (outFlag) {
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(outFlag.split("=")[1], JSON.stringify(results, null, 2));
+}
 console.log("\nJSON:");
 console.log(JSON.stringify(results, null, 2));

@@ -51,3 +51,6 @@ next-env.d.ts
 
 # railway
 /.railway
+
+# sarvam pipeline state and logs
+/.sarvam
