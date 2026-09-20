@@ -170,13 +170,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         .join(" UNION ALL ");
       const hitArgs = queries.flatMap((query) => [ftsMatchQueryFor(query, matchMode), ...selectedRelPaths]);
 
-      const countResult = await client.execute({
-        sql: `WITH hits AS (${hitSql})
-              SELECT COUNT(DISTINCT page_id) AS total
-              FROM hits`,
-        args: hitArgs,
-      });
-
       // The FTS tables are only a prefilter; the boundary rules for each match
       // mode live in findOCRSearchMatches. Counting straight off the index
       // therefore reports pages that hold no real match for the chosen mode.
@@ -184,15 +177,48 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       // screen are the same ones the result tiles are built from.
       // Capped so a broad query cannot pull the whole corpus into memory.
       const OCCURRENCE_SCAN_CAP = 4000;
-      const occurrenceResult = await client.execute({
-        sql: `WITH hits AS (${hitSql}),
-              unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
-              SELECT p.content
-              FROM unique_hits
-              JOIN ocr_pages p ON p.id = unique_hits.page_id
-              LIMIT ?`,
-        args: [...hitArgs, OCCURRENCE_SCAN_CAP + 1],
-      });
+
+      // These three read the same hit set and do not depend on each other, so
+      // they go out together; run in series they made a broad search wait for
+      // three full-text passes end to end.
+      const [countResult, occurrenceResult, listResult] = await Promise.all([
+        client.execute({
+          sql: `WITH hits AS (${hitSql})
+                SELECT COUNT(DISTINCT page_id) AS total
+                FROM hits`,
+          args: hitArgs,
+        }),
+        client.execute({
+          sql: `WITH hits AS (${hitSql}),
+                unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
+                SELECT p.content
+                FROM unique_hits
+                JOIN ocr_pages p ON p.id = unique_hits.page_id
+                LIMIT ?`,
+          args: [...hitArgs, OCCURRENCE_SCAN_CAP + 1],
+        }),
+        client.execute({
+          sql: `WITH hits AS (${hitSql}),
+                unique_hits AS (
+                  SELECT page_id, MIN(page_id) AS sort_id
+                  FROM hits
+                  GROUP BY page_id
+                )
+                SELECT
+                  p.granth_key,
+                  g.source_rel_path,
+                  g.granth_name AS pdf_name,
+                  p.page_number,
+                  p.content,
+                  0 AS rank
+                FROM unique_hits
+                JOIN ocr_pages p ON p.id = unique_hits.page_id
+                JOIN ocr_granths g ON g.granth_key = p.granth_key
+                ORDER BY unique_hits.sort_id ASC
+                LIMIT ? OFFSET ?`,
+          args: [...hitArgs, limit, offset],
+        }),
+      ]);
       const countsExact = occurrenceResult.rows.length <= OCCURRENCE_SCAN_CAP;
       let totalOccurrences = 0;
       let verifiedPages = 0;
@@ -204,28 +230,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         }
       }
       const occurrencesExact = countsExact;
-
-      const listResult = await client.execute({
-        sql: `WITH hits AS (${hitSql}),
-              unique_hits AS (
-                SELECT page_id, MIN(page_id) AS sort_id
-                FROM hits
-                GROUP BY page_id
-              )
-              SELECT
-                p.granth_key,
-                g.source_rel_path,
-                g.granth_name AS pdf_name,
-                p.page_number,
-                p.content,
-                0 AS rank
-              FROM unique_hits
-              JOIN ocr_pages p ON p.id = unique_hits.page_id
-              JOIN ocr_granths g ON g.granth_key = p.granth_key
-              ORDER BY unique_hits.sort_id ASC
-              LIMIT ? OFFSET ?`,
-        args: [...hitArgs, limit, offset],
-      });
 
       const rows = listResult.rows.map((row) => ({
         granth_key: toStr(row.granth_key),
