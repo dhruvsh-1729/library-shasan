@@ -113,10 +113,24 @@ log(`${meta.granthName} — ${meta.declaredPages} pages declared`);
 const srcPdf = path.join(work, "source.pdf");
 await step("download", async () => {
   if (!meta.oldPdfUrl) throw new Error("no pdf_url to download");
-  const res = await fetch(meta.oldPdfUrl);
-  if (!res.ok) throw new Error(`pdf download ${res.status}`);
-  await writeFile(srcPdf, Buffer.from(await res.arrayBuffer()));
-  return { bytes: (await stat(srcPdf)).size };
+  // These are 80 MB files; a dropped socket part way through is routine and
+  // should cost a retry, not the whole granth.
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const res = await fetch(meta.oldPdfUrl);
+      if (!res.ok) throw new Error(`pdf download ${res.status}`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (bytes.length < 1024) throw new Error(`pdf download too small (${bytes.length} bytes)`);
+      await writeFile(srcPdf, bytes);
+      return { bytes: bytes.length, attempts: attempt };
+    } catch (e) {
+      lastError = e;
+      log(`  download attempt ${attempt} failed: ${e.message}`);
+      await new Promise((r) => setTimeout(r, 4000 * attempt));
+    }
+  }
+  throw lastError;
 });
 
 // ---------------------------------------------------------------- 3. split
