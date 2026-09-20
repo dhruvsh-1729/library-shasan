@@ -177,8 +177,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         args: hitArgs,
       });
 
-      // Occurrences are what readers actually count, so total them across every
-      // matching page rather than only the page of results being returned.
+      // The FTS tables are only a prefilter; the boundary rules for each match
+      // mode live in findOCRSearchMatches. Counting straight off the index
+      // therefore reports pages that hold no real match for the chosen mode.
+      // Both totals are taken from the verified scan instead, so the numbers on
+      // screen are the same ones the result tiles are built from.
       // Capped so a broad query cannot pull the whole corpus into memory.
       const OCCURRENCE_SCAN_CAP = 4000;
       const occurrenceResult = await client.execute({
@@ -190,15 +193,17 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
               LIMIT ?`,
         args: [...hitArgs, OCCURRENCE_SCAN_CAP + 1],
       });
-      const scannedPages = occurrenceResult.rows.length;
-      const occurrencesExact = scannedPages <= OCCURRENCE_SCAN_CAP;
-      const totalOccurrences = occurrenceResult.rows
-        .slice(0, OCCURRENCE_SCAN_CAP)
-        .reduce(
-          (sum, row) =>
-            sum + findOCRSearchMatchesForQueries(toStr(row.content), queries, matchMode).length,
-          0
-        );
+      const countsExact = occurrenceResult.rows.length <= OCCURRENCE_SCAN_CAP;
+      let totalOccurrences = 0;
+      let verifiedPages = 0;
+      for (const row of occurrenceResult.rows.slice(0, OCCURRENCE_SCAN_CAP)) {
+        const hits = findOCRSearchMatchesForQueries(toStr(row.content), queries, matchMode).length;
+        if (hits > 0) {
+          verifiedPages += 1;
+          totalOccurrences += hits;
+        }
+      }
+      const occurrencesExact = countsExact;
 
       const listResult = await client.execute({
         sql: `WITH hits AS (${hitSql}),
@@ -268,7 +273,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         };
       });
 
-      const total = toInt(countResult.rows[0]?.total);
+      // Fall back to the raw index count only when the scan hit its cap.
+      const total = countsExact ? verifiedPages : toInt(countResult.rows[0]?.total);
       return {
         results,
         total,

@@ -55,8 +55,11 @@ function isBoundaryChar(char: string | undefined) {
 }
 
 export function findOCRSearchMatches(content: string, query: string, mode: OCRSearchMode): SearchMatch[] {
-  const source = String(content ?? "");
-  const needle = String(query ?? "").trim();
+  // Both sides are canonicalised: the corpus holds the same glyph written more
+  // than one way (nukta before vs after virama), and a typed query only ever
+  // carries one of them.
+  const source = String(content ?? "").normalize("NFC");
+  const needle = String(query ?? "").normalize("NFC").trim();
   if (!source || !needle) return [];
 
   const pattern = new RegExp(escapeRegExp(needle), "giu");
@@ -106,7 +109,7 @@ export function normalizeOCRSearchQueries(
   const queries: string[] = [];
 
   for (const value of [...queryValues(primary), ...queryValues(variants)]) {
-    const query = String(value || "").replace(/\s+/g, " ").trim();
+    const query = String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
     if (!query) continue;
     const key = query.toLocaleLowerCase();
     if (seen.has(key)) continue;

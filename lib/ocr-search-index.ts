@@ -4,24 +4,34 @@ const WORD_TOKEN_PATTERN = /[\p{L}\p{N}\p{M}_]+/gu;
 type SearchIndexExecutor = Pick<Client, "execute">;
 let ensureSchemaPromise: Promise<void> | null = null;
 
-const graphemeSegmenter =
-  typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : null;
-
-function reverseGraphemes(input: string) {
+/**
+ * Reverses by CODE POINT, not by grapheme cluster.
+ *
+ * Grapheme reversal looks right but silently breaks "ends with": a virama
+ * welds a consonant to the next one into one cluster, so in अर्हिंसा the ह
+ * that starts a search for हिंसा sits *inside* the cluster र्हिं. The reversed
+ * token then never begins with the reversed query, the page is never
+ * returned, and the match disappears with no error. Code-point reversal
+ * matches how findOCRSearchMatches scans the text, so the two agree.
+ */
+function reverseCodePoints(input: string) {
   if (!input) return "";
-  if (!graphemeSegmenter) return Array.from(input).reverse().join("");
-  return Array.from(graphemeSegmenter.segment(input), (segment) => segment.segment).reverse().join("");
+  return Array.from(input).reverse().join("");
+}
+
+/** Canonical form for both stored text and queries, so the same glyph written
+ *  two ways (e.g. nukta before vs after virama) compares equal. */
+export function normalizeOCRText(input: string) {
+  return String(input ?? "").normalize("NFC");
 }
 
 export function buildOCRSuffixIndexContent(content: string) {
-  const tokens = String(content ?? "").match(WORD_TOKEN_PATTERN) ?? [];
-  return tokens.map(reverseGraphemes).join(" ");
+  const tokens = normalizeOCRText(content).match(WORD_TOKEN_PATTERN) ?? [];
+  return tokens.map(reverseCodePoints).join(" ");
 }
 
 export function buildOCRSuffixQuery(query: string) {
-  return `${escapeFtsToken(reverseGraphemes(String(query ?? "").trim()))}*`;
+  return `${escapeFtsToken(reverseCodePoints(normalizeOCRText(query).trim()))}*`;
 }
 
 export function escapeFtsPhrase(input: string) {
