@@ -13,6 +13,8 @@ import {
   validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
 import { resolveGranthPdfTargets, resolveRelPathsForCustomIds } from "@/lib/search-pdf-resolver";
+import { protectApi } from "@/lib/auth-guard";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 
 function firstQueryValue(raw: string | string[] | undefined) {
   return Array.isArray(raw) ? raw[0] : raw;
@@ -24,7 +26,7 @@ function parseGranthIds(raw: string | string[] | undefined) {
   return values.map((value) => String(value).trim()).filter(Boolean);
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ error: "Method not allowed" });
@@ -114,3 +116,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 }
+
+export default protectApi(handler, PERMISSIONS.libraryRead);

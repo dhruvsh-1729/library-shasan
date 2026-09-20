@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getTursoClient } from "@/lib/turso";
 import { ensureReplacementSchema } from "@/lib/ocr-replacements";
+import { protectApi } from "@/lib/auth-guard";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 
 function toInt(value: unknown, fallback = 0) {
   const n = Number(value);
@@ -19,7 +21,7 @@ function parseLimit(raw: unknown) {
   return Math.min(Math.floor(value), 500);
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ error: "Method not allowed" });
@@ -95,3 +97,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 }
+
+export default protectApi(handler, PERMISSIONS.libraryRead);

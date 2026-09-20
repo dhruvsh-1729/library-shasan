@@ -1,0 +1,20 @@
+# Local build + dependency artifacts (Railway installs/builds these itself)
+node_modules
+.next
+out
+build
+*.tsbuildinfo
+
+# Local pipeline scratch data (~5.6 GB, never needed by the web app)
+.library_pipeline_output
+.library_pipeline_state
+.tmp
+.tmp_benchmark
+.tmp_library_pipeline
+.tmp_ocr500
+results.json
+
+# Local-only tooling
+test.py
+.git
+.vercel

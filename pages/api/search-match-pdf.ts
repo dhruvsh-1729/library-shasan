@@ -19,6 +19,8 @@ import {
   resolveSearchPdfSources,
   validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
+import { protectApi } from "@/lib/auth-guard";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 
 export const config = {
   api: {
@@ -117,7 +119,7 @@ function streamFile(res: NextApiResponse, filePath: string, filename: string, cl
   createReadStream(filePath).pipe(res);
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
@@ -282,3 +284,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 }
+
+export default protectApi(handler, PERMISSIONS.pdfBuild);

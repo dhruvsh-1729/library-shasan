@@ -2,6 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getTursoClient } from "@/lib/turso";
 import { ensureReplacementSchema, hasWhitespaceWordBoundary } from "@/lib/ocr-replacements";
 import { ensureOCRSearchSchema, upsertOCRPageSuffixIndex } from "@/lib/ocr-search-index";
+import { protectApi } from "@/lib/auth-guard";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 
 type RevertBody = {
   change_id?: number;
@@ -18,7 +20,7 @@ function toStr(value: unknown, fallback = "") {
   return String(value);
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
@@ -155,3 +157,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 }
+
+export default protectApi(handler, PERMISSIONS.ocrWrite);

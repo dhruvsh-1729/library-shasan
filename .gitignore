@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local pipeline scratch output
+/.library_pipeline_output
+/.library_pipeline_state
+/.tmp
+/.tmp_benchmark
+/.tmp_library_pipeline
+/.tmp_ocr500
+/results.json
+
+# railway
+/.railway

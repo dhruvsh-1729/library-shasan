@@ -1,0 +1,326 @@
+/*
+ * Styling for the authentication pages: /auth/signin, /auth/signup, /auth/pending.
+ *
+ * This is a global stylesheet, so Next.js (Pages Router) only allows it to be
+ * imported from pages/_app.tsx. Add `import "@/styles/auth.css";` there next to
+ * the globals.css import; importing it from a page file fails the build.
+ */
+
+.authShell {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f7f8fb 0%, #eef5f1 55%, #f8f5ee 100%);
+  color: #17211f;
+  padding: 32px 16px;
+  font-family: "Noto Sans Gujarati", "Noto Serif Devanagari", "Segoe UI", sans-serif;
+}
+
+.authCard {
+  width: 100%;
+  max-width: 420px;
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+  border: 1px solid #d7dfdc;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(24, 35, 32, 0.08);
+  padding: 24px 22px;
+}
+
+.authHeader {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.authTitle {
+  margin: 0;
+  color: #17211f;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.authSubtitle {
+  margin: 0;
+  color: #5c6b67;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+/* ---------- Form ---------- */
+
+.authForm {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.authFieldLabel {
+  display: grid;
+  gap: 6px;
+  color: #34413e;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.authInput {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid #bdc9c6;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 9px 11px;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+
+.authInput::placeholder {
+  color: #93a29e;
+  font-weight: 600;
+}
+
+.authInput:focus {
+  border-color: #2f5f50;
+  box-shadow: 0 0 0 3px rgba(47, 95, 80, 0.14);
+}
+
+.authInput:disabled {
+  background: #f6f8f7;
+  color: #5c6b67;
+  cursor: default;
+}
+
+.authHint {
+  margin: 0;
+  color: #5c6b67;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---------- Buttons ---------- */
+
+.authPrimaryButton {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #17211f;
+  border-radius: 8px;
+  background: #17211f;
+  color: #fff;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* The class is also used on a <Link>, which would otherwise keep link colours. */
+.authPrimaryButton:hover {
+  color: #fff;
+  text-decoration: none;
+}
+
+.authPrimaryButton:hover:not(:disabled) {
+  border-color: #23312d;
+  background: #23312d;
+}
+
+.authPrimaryButton:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.authGoogleButton {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #d7dfdc;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.authGoogleButton:hover:not(:disabled) {
+  border-color: #bdc9c6;
+  background: #f8faf9;
+}
+
+.authGoogleButton:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.authGoogleIcon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+
+.authPrimaryButton:focus-visible,
+.authGoogleButton:focus-visible,
+.authFootLink:focus-visible,
+.authTextButton:focus-visible {
+  outline: 2px solid #2f5f50;
+  outline-offset: 2px;
+}
+
+.authTextButton {
+  border: 0;
+  background: none;
+  color: #2d665b;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.authTextButton:hover {
+  color: #17211f;
+}
+
+/* ---------- Divider ---------- */
+
+.authDivider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: #5c6b67;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.authDivider::before,
+.authDivider::after {
+  content: "";
+  height: 1px;
+  background: #e3e9e6;
+}
+
+/* ---------- Messages ---------- */
+
+.authError {
+  border: 1px solid #efb4b4;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #8a1c1c;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: pre-wrap;
+}
+
+.authNotice {
+  border: 1px solid #b9d8c9;
+  border-radius: 8px;
+  background: #f1fbf6;
+  color: #245543;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.authBody {
+  margin: 0;
+  color: #34413e;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* ---------- Footer ---------- */
+
+.authFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-top: 1px solid #e3e9e6;
+  padding-top: 14px;
+  color: #5c6b67;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.authFootLink {
+  color: #2d665b;
+  font-weight: 900;
+  text-decoration: underline;
+}
+
+.authFootLink:hover {
+  color: #17211f;
+}
+
+.authActions {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* ---------- Phone ---------- */
+
+@media (max-width: 760px) {
+  .authShell {
+    align-items: flex-start;
+    padding: 20px 12px;
+  }
+
+  .authCard {
+    gap: 14px;
+    padding: 20px 16px;
+  }
+
+  .authTitle {
+    font-size: 24px;
+  }
+
+  .authSubtitle,
+  .authBody {
+    font-size: 15px;
+  }
+
+  .authFieldLabel {
+    font-size: 14px;
+  }
+
+  /* 16px keeps iOS Safari from zooming when a field takes focus. */
+  .authInput {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .authPrimaryButton,
+  .authGoogleButton {
+    min-height: 46px;
+    font-size: 16px;
+  }
+}

@@ -8,6 +8,7 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import { PDFDocument } from "pdf-lib";
 import type { OCRSearchMode } from "@/lib/ocr-search";
+import { availableMemoryMB } from "@/lib/available-memory";
 
 type HighlightBuildOptions = {
   pdfUrl: string;
@@ -41,17 +42,6 @@ function hashText(value: string) {
 
 function uniqueSortedPages(pages: number[]) {
   return [...new Set(pages.map((page) => Math.floor(Number(page))).filter((page) => page > 0))].sort((a, b) => a - b);
-}
-
-async function availableMemoryMB() {
-  try {
-    const meminfo = await readFile("/proc/meminfo", "utf8");
-    const match = meminfo.match(/^MemAvailable:\s+(\d+)\s+kB/m);
-    if (!match) return null;
-    return Number(match[1]) / 1024;
-  } catch {
-    return null;
-  }
 }
 
 export async function ensureFreeMemory(label: string) {

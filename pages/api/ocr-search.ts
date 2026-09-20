@@ -2,6 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getTursoClient } from "@/lib/turso";
 import { buildOCRSearchExcerpt, findOCRSearchMatches, parseOCRSearchMode } from "@/lib/ocr-search";
 import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
+import { protectApi } from "@/lib/auth-guard";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 
 function parseLimit(raw: unknown) {
   const value = Number(raw ?? 48);
@@ -40,7 +42,7 @@ function toStr(value: unknown, fallback = "") {
   return String(value);
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ error: "Method not allowed" });
@@ -157,3 +159,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 }
+
+export default protectApi(handler, PERMISSIONS.libraryRead);

@@ -13,6 +13,9 @@ import { GranthResolveError, resolveGranthSelection } from "@/lib/granth-resolve
 import type { MappingRange, MappingSegment } from "@/lib/granth-mapping";
 import { expandPagesWithContext, normalizeContextPageRadius } from "@/lib/page-context";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
+import { availableMemoryMB } from "@/lib/available-memory";
+import { protectApi } from "@/lib/auth-guard";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 
 export const config = {
   api: {
@@ -72,17 +75,6 @@ function contentDisposition(filename: string) {
 
 function hashText(value: string) {
   return createHash("sha256").update(value).digest("hex");
-}
-
-async function availableMemoryMB() {
-  try {
-    const meminfo = await readFile("/proc/meminfo", "utf8");
-    const match = meminfo.match(/^MemAvailable:\s+(\d+)\s+kB/m);
-    if (!match) return null;
-    return Number(match[1]) / 1024;
-  } catch {
-    return null;
-  }
 }
 
 async function ensureFreeMemory(label: string) {
@@ -372,7 +364,7 @@ function streamFile(res: NextApiResponse, filePath: string, contentType: string,
   createReadStream(filePath).pipe(res);
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
@@ -478,3 +470,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 }
+
+export default protectApi(handler, PERMISSIONS.pdfBuild);

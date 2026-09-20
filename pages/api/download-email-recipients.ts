@@ -6,12 +6,14 @@ import {
   rememberDownloadRecipient,
 } from "@/lib/download-email";
 import { setNoStore } from "@/lib/api-cache";
+import { protectApi } from "@/lib/auth-guard";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 
 type RecipientBody = {
   email?: unknown;
 };
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoStore(res);
 
   try {
@@ -37,3 +39,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 }
+
+export default protectApi(handler, PERMISSIONS.pdfBuild);

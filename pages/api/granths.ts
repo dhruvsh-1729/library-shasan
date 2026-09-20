@@ -2,6 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
 import { type DocumentScanState, getDocumentScanState } from "@/lib/document-scan-state";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { protectApi } from "@/lib/auth-guard";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 
 type GranthItem = {
   id: number;
@@ -52,7 +54,7 @@ function isMissingMappingTables(message: string) {
   return /granth_library_files|schema cache/i.test(message);
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ error: "Method not allowed" });
@@ -226,3 +228,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 }
+
+export default protectApi(handler, PERMISSIONS.libraryRead);

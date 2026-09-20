@@ -1,0 +1,686 @@
+/* Admin console styles (signup approvals + role management).
+   This project styles JSX with semantic class names, not utility classes,
+   so every rule the admin pages need lives here. */
+
+.adminShell {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f7f8fb 0%, #eef5f1 55%, #f8f5ee 100%);
+  color: #17211f;
+  padding: 16px;
+  font-family: "Noto Sans Gujarati", "Noto Serif Devanagari", "Segoe UI", sans-serif;
+}
+
+.adminFrame {
+  width: 100%;
+  max-width: 1180px;
+  min-width: 0;
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.adminHeader {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.adminHeaderText {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.adminTitle {
+  margin: 0;
+  color: #14201d;
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.adminSubtitle {
+  margin: 0;
+  color: #5c6b67;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.adminIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.adminIdentityEmail {
+  color: #34413e;
+}
+
+.adminIdentityRole {
+  border: 1px solid #bfdcc6;
+  border-radius: 999px;
+  background: #eef7f0;
+  color: #1d6b33;
+  padding: 3px 9px;
+}
+
+.adminNav {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.adminNav a,
+.adminNavButton {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(21, 94, 117, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #155e75;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.adminNav a:hover,
+.adminNavButton:hover {
+  text-decoration: underline;
+}
+
+/* ----------------------------------------------------------------- panel */
+
+.adminPanel {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d7dfdc;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(24, 35, 32, 0.08);
+  padding: 14px;
+}
+
+.adminPanelHeader {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #43504d;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.adminPanelHeader strong {
+  border-radius: 999px;
+  background: #e8f0ed;
+  color: #2f5f50;
+  padding: 3px 8px;
+  font-size: 12px;
+  text-transform: none;
+}
+
+.adminPanelTitle {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.adminPanelTitle h2 {
+  margin: 0;
+  color: #17211f;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+/* ------------------------------------------------------------ status tabs */
+
+.adminTabs {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.adminTab {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #bdc9c6;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 8px 11px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+.adminTab.isActive {
+  border-color: #17211f;
+  background: #17211f;
+  color: #fff;
+}
+
+.adminTabCount {
+  border-radius: 999px;
+  background: #eef2f0;
+  color: #34413e;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.adminTab.isActive .adminTabCount {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+/* ----------------------------------------------------------------- table */
+
+.adminTableWrap {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.adminTable {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.adminTable th {
+  border-bottom: 1px solid #d7dfdc;
+  color: #5c6b67;
+  padding: 9px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.adminTable td {
+  border-bottom: 1px solid #e8eeec;
+  color: #34413e;
+  padding: 11px 10px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.adminTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.adminTable tr.isBusy td {
+  opacity: 0.55;
+}
+
+.adminUserCell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.adminAvatar,
+.adminAvatarFallback {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border: 1px solid #d7dfdc;
+  border-radius: 999px;
+  background: #eef2f0;
+  object-fit: cover;
+}
+
+.adminAvatarFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #2f5f50;
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.adminUserText {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.adminUserName {
+  color: #17211f;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.adminUserEmail {
+  color: #5c6b67;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.adminRoleText {
+  color: #17211f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.adminWhen {
+  color: #5c6b67;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.adminRowActions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+/* ---------------------------------------------------------------- badges */
+
+.adminBadge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d7dfdc;
+  border-radius: 999px;
+  background: #f4f7f6;
+  color: #34413e;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.adminBadge.isPending {
+  border-color: #eddfae;
+  background: #fff8e6;
+  color: #8a6100;
+}
+
+.adminBadge.isApproved {
+  border-color: #bfdcc6;
+  background: #eef7f0;
+  color: #1d6b33;
+}
+
+.adminBadge.isRejected {
+  border-color: #efb4b4;
+  background: #fff5f5;
+  color: #8a1c1c;
+}
+
+.adminBadge.isSystem {
+  border-color: #c7d3e6;
+  background: #eef2fb;
+  color: #2d4a7a;
+}
+
+/* --------------------------------------------------------------- buttons */
+
+.adminPrimaryButton,
+.adminGhostButton,
+.adminDangerButton {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.15;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.adminPrimaryButton {
+  border: 1px solid #17211f;
+  background: #17211f;
+  color: #fff;
+}
+
+.adminGhostButton {
+  border: 1px solid #bdc9c6;
+  background: #fff;
+  color: #17211f;
+}
+
+.adminDangerButton {
+  border: 1px solid #efb4b4;
+  background: #fff5f5;
+  color: #8a1c1c;
+}
+
+.adminPrimaryButton:disabled,
+.adminGhostButton:disabled,
+.adminDangerButton:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+/* --------------------------------------------------------------- inputs */
+
+.adminInput,
+.adminSelect,
+.adminTextarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid #bdc9c6;
+  border-radius: 8px;
+  background: #fff;
+  color: #17211f;
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.adminTextarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.adminInput:focus,
+.adminSelect:focus,
+.adminTextarea:focus {
+  border-color: #2f5f50;
+  box-shadow: 0 0 0 3px rgba(47, 95, 80, 0.14);
+}
+
+.adminInput:disabled,
+.adminSelect:disabled,
+.adminTextarea:disabled {
+  cursor: default;
+  background: #f4f7f6;
+  opacity: 0.7;
+}
+
+.adminSelect {
+  max-width: 220px;
+  font-weight: 800;
+}
+
+.adminField {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: #34413e;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.adminFieldHint {
+  color: #5c6b67;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.adminFieldGrid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.adminCheckGrid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.adminCheck {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #dde4e2;
+  border-radius: 8px;
+  background: #fbfcfc;
+  color: #34413e;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.adminCheck input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  accent-color: #17211f;
+}
+
+.adminFormActions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- roles */
+
+.adminRoleList {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.adminRoleHead {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.adminRoleHeadText {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.adminRoleName {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.adminRoleName h3 {
+  margin: 0;
+  color: #17211f;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.adminMono {
+  border: 1px solid #e2e8e6;
+  border-radius: 6px;
+  background: #f4f7f6;
+  color: #5c6b67;
+  padding: 2px 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.adminRoleDescription {
+  margin: 0;
+  color: #34413e;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.adminRoleActions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.adminChips {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.adminChip {
+  border: 1px solid #d7dfdc;
+  border-radius: 999px;
+  background: #f4f7f6;
+  color: #34413e;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.adminEditGrid {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #e8eeec;
+  padding-top: 12px;
+}
+
+/* --------------------------------------------------------------- notices */
+
+.adminError {
+  border: 1px solid #efb4b4;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #8a1c1c;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: pre-wrap;
+}
+
+.adminEmpty {
+  border: 1px dashed #cdd8d5;
+  border-radius: 8px;
+  background: #fbfcfc;
+  color: #5c6b67;
+  padding: 22px 14px;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.adminLoading {
+  color: #5c6b67;
+  padding: 22px 14px;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.adminMuted {
+  color: #5c6b67;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------ responsive */
+
+@media (max-width: 760px) {
+  .adminShell {
+    padding: 12px;
+  }
+
+  .adminTitle {
+    font-size: 25px;
+  }
+
+  .adminHeader {
+    align-items: stretch;
+  }
+
+  .adminNav {
+    justify-content: flex-start;
+  }
+
+  .adminSelect {
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .adminPanel {
+    padding: 12px;
+  }
+
+  .adminTabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adminTab {
+    justify-content: space-between;
+  }
+
+  .adminRoleActions,
+  .adminFormActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adminCheckGrid,
+  .adminFieldGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
