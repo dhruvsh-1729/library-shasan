@@ -5,6 +5,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { createClient } from "@libsql/client";
+import { scoreGranth, THRESHOLDS } from "./assess_quality.mjs";
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const ROOT = path.resolve(HERE, "../..");
@@ -27,6 +29,22 @@ const logDir = arg("log-dir", path.join(ROOT, ".sarvam/logs"));
 await mkdir(logDir, { recursive: true });
 const resultsPath = path.join(logDir, "batch_results.json");
 const results = existsSync(resultsPath) ? JSON.parse(await readFile(resultsPath, "utf8")) : {};
+
+const turso = createClient({ url: process.env.TURSO_URL, authToken: process.env.TURSO_AUTH_TOKEN });
+
+/**
+ * The report is a snapshot. A granth may already have been redone since - by an
+ * earlier run, or by hand - so re-score the text that is actually stored before
+ * paying to OCR it again.
+ */
+async function currentScore(key) {
+  const pages = await turso.execute({
+    sql: "SELECT content FROM ocr_pages WHERE granth_key = ? ORDER BY page_number",
+    args: [key],
+  });
+  if (!pages.rows.length) return null;
+  return scoreGranth(pages.rows.map((r) => ({ content: r.content }))).score;
+}
 
 const report = JSON.parse(await readFile(reportPath, "utf8"));
 const queue = report.report
@@ -72,6 +90,14 @@ async function worker(slot) {
       console.log(`skip ${entry.granth_key} (${pages} pages would exceed budget)`);
       continue;
     }
+    const current = await currentScore(entry.granth_key);
+    if (current != null && current >= THRESHOLDS.review) {
+      console.log(`skip ${entry.granth_key}: already scores ${current}`);
+      results[entry.granth_key] = { status: "ok", score_before: entry.score, score_now: current, pages, skipped: true, finishedAt: new Date().toISOString() };
+      await writeFile(resultsPath, JSON.stringify(results, null, 2));
+      continue;
+    }
+
     pagesSpent += pages; // reserve up front so parallel workers cannot overspend
 
     console.log(`\n=== [w${slot}] ${entry.granth_key}  score ${entry.score}  ${pages} pages  (${entry.reasons.slice(0,2).join("; ")}) ===`);
