@@ -135,6 +135,7 @@ export default function SearchPage() {
   const [total, setTotal] = useState(0);
   const [totalOccurrences, setTotalOccurrences] = useState(0);
   const [occurrencesExact, setOccurrencesExact] = useState(true);
+  const [occurrenceScannedPages, setOccurrenceScannedPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalIsExact, setTotalIsExact] = useState(true);
   const [hasSearched, setHasSearched] = useState(false);
@@ -452,6 +453,7 @@ export default function SearchPage() {
         total?: number;
         total_occurrences?: number;
         total_occurrences_exact?: boolean;
+        occurrence_scanned_pages?: number;
         page?: number;
         total_is_exact?: boolean;
         match_mode?: string;
@@ -465,6 +467,7 @@ export default function SearchPage() {
       setTotal(Number(json.total ?? (json.results?.length ?? 0)));
       setTotalOccurrences(Number(json.total_occurrences ?? 0));
       setOccurrencesExact(json.total_occurrences_exact !== false);
+      setOccurrenceScannedPages(Number(json.occurrence_scanned_pages ?? 0));
       setCurrentPage(Number(json.page ?? page));
       setTotalIsExact(json.total_is_exact !== false);
       setSearchMode(parseOCRSearchMode(json.match_mode));
@@ -931,6 +934,11 @@ export default function SearchPage() {
               <span className="searchCountPrimary">
                 <strong>{occurrencesExact ? totalOccurrences : `${totalOccurrences}+`}</strong> total occurrence
                 {totalOccurrences === 1 ? "" : "s"}
+                {occurrencesExact ? null : (
+                  <span className="searchCountNote">
+                    {" "}counted in the first {occurrenceScannedPages.toLocaleString()} pages
+                  </span>
+                )}
               </span>
               <span className="searchCountDivider" aria-hidden="true">
                 /

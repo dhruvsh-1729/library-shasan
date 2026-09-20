@@ -281,6 +281,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         total_pages_with_matches: total,
         total_occurrences: totalOccurrences,
         total_occurrences_exact: occurrencesExact,
+        occurrence_scan_cap: OCCURRENCE_SCAN_CAP,
+        occurrence_scanned_pages: Math.min(occurrenceResult.rows.length, OCCURRENCE_SCAN_CAP),
         selected_granth_count: selectedGranths.length,
         page,
         per_page: limit,
