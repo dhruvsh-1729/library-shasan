@@ -25,6 +25,7 @@ type Turn = {
   scopeLine?: string;
   sources?: SourcePassage[];
   truncated?: boolean;
+  ambiguousAdhikars?: number;
   error?: boolean;
 };
 
@@ -120,6 +121,7 @@ export default function AskPage() {
           scopeLine: json.context?.summaryLine,
           sources: json.context?.passages ?? [],
           truncated: Boolean(json.context?.truncated),
+          ambiguousAdhikars: Number(json.context?.ambiguousAdhikars ?? 0),
         }]);
       }
     } catch (err) {
@@ -244,6 +246,11 @@ export default function AskPage() {
                 <article key={i} className={`askTurn ${t.role === "user" ? "isUser" : "isAssistant"} ${t.error ? "isError" : ""}`}>
                   {t.role === "user" && t.scopeLine ? <div className="askTurnScope">{t.scopeLine}</div> : null}
                   <div className="askTurnBody">{t.content}</div>
+                  {t.ambiguousAdhikars ? (
+                    <div className="askTruncated">
+                      That gatha number appears in {t.ambiguousAdhikars} different adhikars. Set an adhikar to read just one verse.
+                    </div>
+                  ) : null}
                   {t.truncated ? <div className="askTruncated">Only part of that scope fitted — narrow it for a fuller answer.</div> : null}
                   {t.sources?.length ? (
                     <details className="askSources">

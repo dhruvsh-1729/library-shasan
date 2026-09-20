@@ -100,6 +100,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       context: {
         summaryLine: context.summaryLine,
         truncated: context.truncated,
+        ambiguousAdhikars: context.ambiguousAdhikars ?? 0,
         totalChars: context.totalChars,
         passages: context.passages.map((p, i) => ({
           index: i + 1,

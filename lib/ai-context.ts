@@ -32,6 +32,8 @@ export type ResolvedContext = {
   totalChars: number;
   truncated: boolean;
   summaryLine: string;
+  /** >0 when a gatha number matched several adhikars and none was chosen. */
+  ambiguousAdhikars?: number;
 };
 
 /** Roughly 3 chars per token for Indic scripts; keeps the prompt inside the window. */
@@ -67,7 +69,14 @@ async function fetchPages(granthKey: string, lo: number, hi: number) {
   return res.rows.map((r) => ({ pageNumber: Number(r.page_number), text: String(r.content ?? "") }));
 }
 
-/** Gatha ranges come from granth_gatha_map, which stores the page span per verse. */
+/**
+ * Gatha ranges come from granth_gatha_map, which stores a page span per verse.
+ *
+ * The spans are collected as a SET of pages, never as min..max. Most granths
+ * number gathas from 1 within each adhikar, so "gatha 6" with no adhikar given
+ * matches once per adhikar — taking the outer bounds of those would sweep in
+ * most of the book and bury the verse actually asked about.
+ */
 async function resolveGathaPages(scope: Extract<ContextScope, { kind: "gatha" }>) {
   const sb = getSupabaseAdmin();
   let q = sb
@@ -83,30 +92,52 @@ async function resolveGathaPages(scope: Extract<ContextScope, { kind: "gatha" }>
   if (error) throw new Error(`gatha lookup failed: ${error.message}`);
   if (!data?.length) return null;
 
-  const from = Math.min(...data.map((d) => Number(d.page_start)));
-  const to = Math.max(...data.map((d) => Number(d.page_end ?? d.page_start)));
-  return { from, to, entries: data };
+  const pageSet = new Set<number>();
+  for (const d of data) {
+    const start = Number(d.page_start);
+    const end = Number(d.page_end ?? d.page_start);
+    if (!Number.isFinite(start)) continue;
+    // A verse spanning a page turn is normal; a span of dozens is bad data.
+    const last = Number.isFinite(end) && end >= start ? Math.min(end, start + 4) : start;
+    for (let p = start; p <= last; p += 1) pageSet.add(p);
+  }
+
+  const adhikars = [...new Set(data.map((d) => d.adhikar).filter((a) => a != null))];
+  return { pages: [...pageSet].sort((a, b) => a - b), entries: data, adhikars };
 }
 
 export async function resolveContext(scope: ContextScope): Promise<ResolvedContext> {
   const passages: Passage[] = [];
   let truncated = false;
   let summaryLine = "";
+  let ambiguousAdhikars = 0;
 
   if (scope.kind === "gatha") {
     const hit = await resolveGathaPages(scope);
     if (!hit) {
       return { passages: [], totalChars: 0, truncated: false, summaryLine: "No such gatha in the mapping." };
     }
-    const { lo, hi } = clampPages(hit.from, hit.to);
-    if (hi < hit.to) truncated = true;
     const names = await granthNames([scope.granthKey]);
     const name = names.get(scope.granthKey) ?? scope.granthKey;
-    for (const p of await fetchPages(scope.granthKey, lo, hi)) {
-      passages.push({ granthKey: scope.granthKey, granthName: name, pageNumber: p.pageNumber, label: `page ${p.pageNumber}`, text: p.text });
+
+    const wanted = hit.pages.slice(0, MAX_PAGES_PER_REQUEST);
+    if (wanted.length < hit.pages.length) truncated = true;
+
+    for (const pageNumber of wanted) {
+      const [page] = await fetchPages(scope.granthKey, pageNumber, pageNumber);
+      if (page) {
+        passages.push({ granthKey: scope.granthKey, granthName: name, pageNumber, label: `page ${pageNumber}`, text: page.text });
+      }
     }
+
     const range = scope.gathaTo && scope.gathaTo !== scope.gathaFrom ? `${scope.gathaFrom}–${scope.gathaTo}` : `${scope.gathaFrom}`;
-    summaryLine = `${name}, gatha ${range}${scope.adhikar != null ? ` (adhikar ${scope.adhikar})` : ""} — pages ${lo}–${hi}`;
+    const where = scope.adhikar != null
+      ? ` (adhikar ${scope.adhikar})`
+      : hit.adhikars.length > 1
+        ? ` — matches ${hit.adhikars.length} adhikars; set one to narrow it`
+        : "";
+    summaryLine = `${name}, gatha ${range}${where} — page${wanted.length === 1 ? "" : "s"} ${wanted.join(", ")}`;
+    ambiguousAdhikars = scope.adhikar == null && hit.adhikars.length > 1 ? hit.adhikars.length : 0;
   }
 
   if (scope.kind === "pages") {
@@ -161,7 +192,7 @@ export async function resolveContext(scope: ContextScope): Promise<ResolvedConte
     kept.push(p);
   }
 
-  return { passages: kept, totalChars: total, truncated, summaryLine };
+  return { passages: kept, totalChars: total, truncated, summaryLine, ambiguousAdhikars };
 }
 
 export const LANGUAGES = [
@@ -197,6 +228,9 @@ export function buildPrompt(opts: {
   const user = [
     `SCOPE: ${opts.context.summaryLine}`,
     opts.context.truncated ? "NOTE: the scope was larger than the limit, so only part of it is shown." : "",
+    opts.context.ambiguousAdhikars
+      ? `NOTE: this gatha number appears in ${opts.context.ambiguousAdhikars} different adhikars and no adhikar was chosen, so the passages below are several different verses that share a number. Say so, and treat them separately.`
+      : "",
     "",
     "PASSAGES:",
     sources || "(no text found for this scope)",
