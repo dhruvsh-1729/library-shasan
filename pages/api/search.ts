@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
 import {
+  buildOCRSearchOccurrences,
   buildOCRSearchExcerptForQueries,
   findOCRSearchMatchesForQueries,
   normalizeOCRSearchQueries,
@@ -176,6 +177,29 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         args: hitArgs,
       });
 
+      // Occurrences are what readers actually count, so total them across every
+      // matching page rather than only the page of results being returned.
+      // Capped so a broad query cannot pull the whole corpus into memory.
+      const OCCURRENCE_SCAN_CAP = 4000;
+      const occurrenceResult = await client.execute({
+        sql: `WITH hits AS (${hitSql}),
+              unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
+              SELECT p.content
+              FROM unique_hits
+              JOIN ocr_pages p ON p.id = unique_hits.page_id
+              LIMIT ?`,
+        args: [...hitArgs, OCCURRENCE_SCAN_CAP + 1],
+      });
+      const scannedPages = occurrenceResult.rows.length;
+      const occurrencesExact = scannedPages <= OCCURRENCE_SCAN_CAP;
+      const totalOccurrences = occurrenceResult.rows
+        .slice(0, OCCURRENCE_SCAN_CAP)
+        .reduce(
+          (sum, row) =>
+            sum + findOCRSearchMatchesForQueries(toStr(row.content), queries, matchMode).length,
+          0
+        );
+
       const listResult = await client.execute({
         sql: `WITH hits AS (${hitSql}),
               unique_hits AS (
@@ -235,6 +259,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           source_page_number: row.page_number,
           source_rel_path: row.source_rel_path,
           snippet: buildOCRSearchExcerptForQueries(row.content, queries, matchMode, 520),
+          occurrences: buildOCRSearchOccurrences(row.content, queries, matchMode, 320),
           score: row.rank,
           occurrence_count: findOCRSearchMatchesForQueries(row.content, queries, matchMode).length,
           csv_url: target.csv_url,
@@ -247,6 +272,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       return {
         results,
         total,
+        total_pages_with_matches: total,
+        total_occurrences: totalOccurrences,
+        total_occurrences_exact: occurrencesExact,
         selected_granth_count: selectedGranths.length,
         page,
         per_page: limit,

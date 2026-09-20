@@ -159,6 +159,51 @@ export function hasOCRSearchMatch(content: string, query: string, mode: OCRSearc
   return findOCRSearchMatches(content, query, mode).length > 0;
 }
 
+/**
+ * One excerpt per match, so a page with five hits can be shown as five
+ * separate results instead of a single row the reader has to scan.
+ * `matchStart`/`matchEnd` are offsets into the returned excerpt.
+ */
+export type OCRSearchOccurrence = {
+  snippet: string;
+  matchStart: number;
+  matchEnd: number;
+  text: string;
+};
+
+export function buildOCRSearchOccurrences(
+  content: string,
+  queries: string | string[],
+  mode: OCRSearchMode,
+  maxChars = 240
+): OCRSearchOccurrence[] {
+  const clean = String(content ?? "").replace(/\s+/g, " ").trim();
+  if (!clean) return [];
+
+  return findOCRSearchMatchesForQueries(clean, queries, mode).map((match) => {
+    const matchLength = Math.max(1, match.end - match.start);
+    const sidePadding = Math.max(45, Math.floor((maxChars - matchLength) / 2));
+    const start = Math.max(0, match.start - sidePadding);
+    const end = Math.min(clean.length, match.end + sidePadding);
+
+    const leadingEllipsis = start > 0 ? "…" : "";
+    const trailingEllipsis = end < clean.length ? "…" : "";
+    const body = clean.slice(start, end);
+    // Offsets shift by the leading ellipsis and by whatever trimStart removes.
+    const trimmed = body.trimStart();
+    const trimShift = body.length - trimmed.length;
+    const snippet = `${leadingEllipsis}${trimmed.trimEnd()}${trailingEllipsis}`;
+    const matchStart = leadingEllipsis.length + (match.start - start) - trimShift;
+
+    return {
+      snippet,
+      matchStart: Math.max(0, matchStart),
+      matchEnd: Math.max(0, matchStart) + matchLength,
+      text: clean.slice(match.start, match.end),
+    };
+  });
+}
+
 export function buildOCRSearchExcerpt(content: string, query: string, mode: OCRSearchMode, maxChars = 180) {
   return buildOCRSearchExcerptForQueries(content, [query], mode, maxChars);
 }

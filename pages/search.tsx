@@ -23,12 +23,20 @@ import { useRouter } from "next/router";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+type SearchOccurrence = {
+  snippet: string;
+  matchStart: number;
+  matchEnd: number;
+  text: string;
+};
+
 type SearchResult = {
   custom_id: string;
   pdf_name: string;
   pdf_url: string;
   page_number: number;
   snippet: string;
+  occurrences?: SearchOccurrence[];
   score?: number;
   occurrence_count?: number;
   open_pdf_url: string;
@@ -125,6 +133,8 @@ export default function SearchPage() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalOccurrences, setTotalOccurrences] = useState(0);
+  const [occurrencesExact, setOccurrencesExact] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalIsExact, setTotalIsExact] = useState(true);
   const [hasSearched, setHasSearched] = useState(false);
@@ -355,6 +365,59 @@ export default function SearchPage() {
     return parts.map((part, idx) => <span key={idx}>{part}</span>);
   }
 
+  /** Highlights exactly one match, so each tile marks its own occurrence only. */
+  // One tile per occurrence: a page with five hits becomes five results, each
+  // marking its own hit, rather than one row the reader has to re-scan.
+  type OccurrenceTile = {
+    result: SearchResult;
+    resultIndex: number;
+    occurrence: SearchOccurrence | null;
+    indexOnPage: number;
+    countOnPage: number;
+  };
+
+  const occurrenceTiles = useMemo<OccurrenceTile[]>(
+    () =>
+      results.flatMap((result, resultIndex): OccurrenceTile[] => {
+        const list = result.occurrences?.length ? result.occurrences : null;
+        if (!list) {
+          return [{ result, resultIndex, occurrence: null, indexOnPage: 0, countOnPage: 1 }];
+        }
+        return list.map((occurrence, indexOnPage) => ({
+          result,
+          resultIndex,
+          occurrence,
+          indexOnPage,
+          countOnPage: list.length,
+        }));
+      }),
+    [results]
+  );
+
+  function renderSingleOccurrence(text: string, start: number, end: number) {
+    if (!text) return text;
+    const a = Math.max(0, Math.min(start, text.length));
+    const b = Math.max(a, Math.min(end, text.length));
+    if (b <= a) return text;
+    return (
+      <>
+        {text.slice(0, a)}
+        <mark
+          style={{
+            background: "#fff100",
+            color: "#111",
+            padding: "0 2px",
+            borderRadius: 2,
+            fontWeight: 700,
+          }}
+        >
+          {text.slice(a, b)}
+        </mark>
+        {text.slice(b)}
+      </>
+    );
+  }
+
   function renderHighlightedSnippet(text: string, queries?: string[]) {
     return renderHighlightedText(text, queries?.length ? queries : lastSearchQueries, searchMode);
   }
@@ -387,6 +450,8 @@ export default function SearchPage() {
       const json = (await res.json()) as {
         results?: SearchResult[];
         total?: number;
+        total_occurrences?: number;
+        total_occurrences_exact?: boolean;
         page?: number;
         total_is_exact?: boolean;
         match_mode?: string;
@@ -398,6 +463,8 @@ export default function SearchPage() {
       }
       setResults(json.results ?? []);
       setTotal(Number(json.total ?? (json.results?.length ?? 0)));
+      setTotalOccurrences(Number(json.total_occurrences ?? 0));
+      setOccurrencesExact(json.total_occurrences_exact !== false);
       setCurrentPage(Number(json.page ?? page));
       setTotalIsExact(json.total_is_exact !== false);
       setSearchMode(parseOCRSearchMode(json.match_mode));
@@ -860,9 +927,21 @@ export default function SearchPage() {
 
         <section style={{ marginTop: 18 }} aria-busy={loading}>
           {hasSearched ? (
-            <div style={{ marginBottom: 12, fontWeight: 700, fontSize: 16 }}>
-              Showing page {currentPage} of {totalPages} ({results.length} result(s) on this page, total{" "}
-              {totalIsExact ? total : `at least ${total}`}). Match: <strong>{getOCRSearchModeLabel(searchMode)}</strong>.
+            <div className="searchCountsRow">
+              <span className="searchCountPrimary">
+                <strong>{occurrencesExact ? totalOccurrences : `${totalOccurrences}+`}</strong> total occurrence
+                {totalOccurrences === 1 ? "" : "s"}
+              </span>
+              <span className="searchCountDivider" aria-hidden="true">
+                /
+              </span>
+              <span className="searchCountSecondary">
+                across <strong>{totalIsExact ? total : `${total}+`}</strong> page{total === 1 ? "" : "s"}
+              </span>
+              <span className="searchCountMeta">
+                showing page {currentPage} of {totalPages} · match:{" "}
+                <strong>{getOCRSearchModeLabel(searchMode)}</strong>
+              </span>
             </div>
           ) : null}
 
@@ -901,7 +980,8 @@ export default function SearchPage() {
                 gap: 10,
               }}
             >
-              {results.map((r, i) => {
+              {occurrenceTiles.map((tile, i) => {
+                const r = tile.result;
                 const rowQueries = r.matched_queries?.length ? r.matched_queries : lastSearchQueries;
                 const csvViewerHref = r.csv_url
                   ? `/csv-viewer?csvUrl=${encodeURIComponent(r.csv_url)}&customId=${encodeURIComponent(
@@ -911,7 +991,7 @@ export default function SearchPage() {
                 const canOpenPdf = isValidHttpUrl(r.pdf_url);
                 return (
                   <article
-                    key={`${r.custom_id}_${r.page_number}_${i}`}
+                    key={`${r.custom_id}_${r.page_number}_${tile.indexOnPage}_${i}`}
                     style={{
                       padding: 12,
                       border: "1px solid #d4d9e2",
@@ -930,7 +1010,11 @@ export default function SearchPage() {
                       </div>
                       <div style={{ fontSize: 13, opacity: 0.76 }}>
                         Page {r.page_number}
-                        {typeof r.occurrence_count === "number" ? ` | ${r.occurrence_count} match(es)` : ""}
+                        {tile.occurrence
+                          ? ` | occurrence ${tile.indexOnPage + 1} of ${tile.countOnPage} on this page`
+                          : typeof r.occurrence_count === "number"
+                            ? ` | ${r.occurrence_count} match(es)`
+                            : ""}
                       </div>
                     </div>
 
@@ -945,7 +1029,13 @@ export default function SearchPage() {
                         paddingRight: 2,
                       }}
                     >
-                      {renderHighlightedSnippet(r.snippet, rowQueries)}
+                      {tile.occurrence
+                        ? renderSingleOccurrence(
+                            tile.occurrence.snippet,
+                            tile.occurrence.matchStart,
+                            tile.occurrence.matchEnd
+                          )
+                        : renderHighlightedSnippet(r.snippet, rowQueries)}
                     </div>
 
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
