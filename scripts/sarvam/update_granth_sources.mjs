@@ -56,13 +56,37 @@ if (dryRun) {
   console.log(`${label} ocr_pages_suffix: would rewrite the matching rows`);
   console.log(`${label} ocr_granths: would repoint xlsx_url -> ${cfg.newCsvUrl}`);
 } else {
+  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+
+  // The old pipeline did not always store every page, so a re-OCR can carry
+  // pages the table has never seen. Create those rows before rewriting, rather
+  // than dropping text on the floor.
+  const existing = await turso.execute({
+    sql: "SELECT id, page_number FROM ocr_pages WHERE granth_key = ? ORDER BY page_number",
+    args: [cfg.granthKey],
+  });
+  const have = new Set(existing.rows.map((r) => Number(r.page_number)));
+  const missing = rows.map((r) => Number(r.page_number)).filter((n) => !have.has(n));
+  if (missing.length) {
+    console.log(`${label} ocr_pages: inserting ${missing.length} page(s) the table was missing`);
+    for (let i = 0; i < missing.length; i += 50) {
+      await turso.batch(
+        missing.slice(i, i + 50).map((n) => ({
+          sql: `INSERT INTO ocr_pages (granth_key, page_number, content, created_at, updated_at)
+                VALUES (?, ?, '', ?, ?)
+                ON CONFLICT (granth_key, page_number) DO NOTHING`,
+          args: [cfg.granthKey, n, now, now],
+        })),
+        "write"
+      );
+    }
+  }
+
   const ids = await turso.execute({
     sql: "SELECT id, page_number FROM ocr_pages WHERE granth_key = ? ORDER BY page_number",
     args: [cfg.granthKey],
   });
   const idByPage = new Map(ids.rows.map((r) => [Number(r.page_number), Number(r.id)]));
-
-  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
   let updated = 0;
   const BATCH = 25;
   for (let i = 0; i < rows.length; i += BATCH) {
