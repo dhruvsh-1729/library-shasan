@@ -4,9 +4,15 @@ import { SEARCHABLE_DOCUMENT_STATUSES } from "@/lib/document-scan-state";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
+import { fetchTextOnlyGranths } from "@/lib/text-only-granths";
+import { assignShortKeys } from "@/lib/granth-short-keys";
 
 type GranthOption = {
   custom_id: string;
+  /** Short id used in /search URLs, e.g. "215". */
+  key: string;
+  /** "pdf": has an uploaded PDF; "text": OCR text only. */
+  kind: "pdf" | "text";
   pdf_name: string | null;
   display_name: string;
 };
@@ -26,10 +32,6 @@ function parseIntQuery(raw: string | string[] | undefined, fallback: number, min
   return Math.max(min, Math.min(max, parsed));
 }
 
-function escapeIlikeTerm(value: string) {
-  return value.replace(/[\\%_]/g, "\\$&").replace(/[(),]/g, " ");
-}
-
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -44,38 +46,58 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
     const cacheKey = buildCacheKey(req, "search-granths");
     const { value: payload, status } = await getCachedJson(cacheKey, 300, async () => {
+      // The whole searchable catalog is small (a few hundred granths), so it is
+      // loaded in full: short keys are assigned over all of it, and the name
+      // filter and paging are applied afterwards.
       const supabase = getSupabaseAdmin();
-      let query = supabase
-        .from("documents")
-        .select("custom_id,pdf_name,status", { count: "exact" })
-        .not("custom_id", "is", null)
-        .in("status", [...SEARCHABLE_DOCUMENT_STATUSES])
-        .order("pdf_name", { ascending: true, nullsFirst: false })
-        .range(offset, offset + limit - 1);
-
-      if (q) {
-        const pattern = `%${escapeIlikeTerm(q)}%`;
-        query = query.or(`custom_id.ilike.${pattern},pdf_name.ilike.${pattern}`);
+      const docs: { custom_id: string | null; pdf_name: string | null; original_relative_path: string | null }[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase
+          .from("documents")
+          .select("custom_id,pdf_name,original_relative_path")
+          .not("custom_id", "is", null)
+          .in("status", [...SEARCHABLE_DOCUMENT_STATUSES])
+          .order("pdf_name", { ascending: true, nullsFirst: false })
+          .range(from, from + 999);
+        if (error) throw new Error(error.message);
+        docs.push(...(data ?? []));
+        if (!data || data.length < 1000) break;
       }
 
-      const { data, error, count } = await query;
-      if (error) throw new Error(error.message);
-
       const seen = new Set<string>();
-      const items: GranthOption[] = [];
-
-      for (const row of data ?? []) {
+      const all: (GranthOption & { source: string })[] = [];
+      for (const row of docs) {
         const customId = String(row.custom_id ?? "").trim();
         if (!customId || seen.has(customId)) continue;
         seen.add(customId);
-        items.push({
+        all.push({
           custom_id: customId,
+          key: "",
+          kind: "pdf",
           pdf_name: row.pdf_name ?? null,
           display_name: displayName(row.pdf_name ?? null, customId),
+          source: row.original_relative_path || row.pdf_name || customId,
         });
       }
+      // Granths with OCR text but no uploaded PDF are searchable too.
+      for (const row of await fetchTextOnlyGranths()) {
+        all.push({
+          custom_id: row.customId,
+          key: "",
+          kind: "text",
+          pdf_name: null,
+          display_name: row.name,
+          source: row.granthKey,
+        });
+      }
+      const keys = assignShortKeys(all.map((row) => ({ id: row.custom_id, source: row.source })));
 
-      const total = count ?? items.length;
+      const term = q.toLowerCase();
+      const matching = all
+        .filter((row) => !term || `${keys.get(row.custom_id)} ${row.display_name} ${row.source}`.toLowerCase().includes(term))
+        .map(({ source, ...row }) => ({ ...row, key: keys.get(row.custom_id) ?? source }));
+      const items = matching.slice(offset, offset + limit);
+      const total = matching.length;
       return {
         items,
         total,

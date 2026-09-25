@@ -292,6 +292,13 @@ export default function HomePage() {
                       >
                         Open PDF
                       </button>
+                    ) : row.custom_id?.startsWith("text:") ? (
+                      <Link
+                        href={`/ocr-text-viewer?granthKey=${encodeURIComponent(row.custom_id.slice("text:".length))}`}
+                        title="No PDF has been uploaded for this granth; its OCR text is searchable."
+                      >
+                        Open text
+                      </Link>
                     ) : null}
                     {searchHref ? (
                       <Link href={searchHref}>Perform word search</Link>

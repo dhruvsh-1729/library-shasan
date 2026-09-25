@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { fetchTextOnlyGranths, isTextOnlyId } from "@/lib/text-only-granths";
 import { getTursoClient } from "@/lib/turso";
 
 export type GranthPdfRow = {
@@ -459,11 +460,18 @@ export async function fetchDocumentMetaByCustomIds(customIds: string[]) {
 
 /** Maps selected granth custom ids to the OCR index rel paths they cover. */
 export async function resolveRelPathsForCustomIds(customIds: string[]) {
-  const docs = await fetchDocumentMetaByCustomIds(customIds);
+  const docs = await fetchDocumentMetaByCustomIds(customIds.filter((id) => !isTextOnlyId(id)));
+  // Text-only granths have no documents row; their Turso path is the scope.
+  const textOnlyIds = new Set(customIds.filter(isTextOnlyId));
+  const textOnlyRelPaths = textOnlyIds.size
+    ? (await fetchTextOnlyGranths()).filter((row) => textOnlyIds.has(row.customId)).map((row) => row.sourceRelPath)
+    : [];
   return {
     docs,
     relPaths: Array.from(
-      new Set(docs.map((row) => String(row.original_relative_path ?? "").trim()).filter(Boolean))
+      new Set(
+        [...docs.map((row) => String(row.original_relative_path ?? "").trim()), ...textOnlyRelPaths].filter(Boolean)
+      )
     ),
   };
 }

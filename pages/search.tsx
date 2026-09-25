@@ -8,6 +8,14 @@ import {
 } from "@/lib/ocr-search";
 import { buildIndicQueryOptions } from "@/lib/phonetic-transliteration";
 import {
+  type SearchRequest,
+  type SearchScope,
+  buildSearchUrl,
+  parseSearchUrl,
+  resolveGranthValues,
+  sameIds,
+} from "@/lib/search-url";
+import {
   DEFAULT_CONTEXT_PAGE_RADIUS,
   MAX_CONTEXT_PAGE_RADIUS,
   expandPagesWithContext,
@@ -20,7 +28,7 @@ import { SearchExportDialog, type ExportFormat } from "@/components/SearchExport
 import { downloadBlob, fileSafe, filenameFromResponse } from "@/lib/download-file";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type SearchOccurrence = {
@@ -31,6 +39,7 @@ type SearchOccurrence = {
 };
 
 type SearchResult = {
+  granth_key?: string;
   custom_id: string;
   pdf_name: string;
   pdf_url: string;
@@ -82,17 +91,64 @@ type DownloadPreviewState = {
 
 type GranthOption = {
   custom_id: string;
+  /** Short id used in the URL (?in=215,296). */
+  key: string;
+  kind: "pdf" | "text";
   pdf_name: string | null;
   display_name: string;
 };
 
-type GranthGroup = {
-  name: string;
-  customIds: string[];
-  pdfNames: string[];
+const chipRowStyle: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 };
+const chipStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  maxWidth: "100%",
+  padding: "3px 4px 3px 8px",
+  borderRadius: 999,
+  border: "1px solid #c7cfd9",
+  background: "#fff",
+  fontSize: 13,
 };
+const chipKeyStyle: CSSProperties = {
+  fontVariantNumeric: "tabular-nums",
+  fontWeight: 700,
+  color: "#4a5561",
+  flexShrink: 0,
+};
+const chipNameStyle: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 };
+const chipRemoveStyle: CSSProperties = {
+  border: "none",
+  background: "#eef1f5",
+  borderRadius: 999,
+  width: 22,
+  height: 22,
+  cursor: "pointer",
+  lineHeight: 1,
+};
+const optionRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "8px 10px",
+  borderRadius: 10,
+  cursor: "pointer",
+  textAlign: "left",
+};
+const textOnlyTagStyle: CSSProperties = {
+  marginLeft: "auto",
+  fontSize: 11,
+  fontWeight: 700,
+  padding: "2px 8px",
+  borderRadius: 999,
+  background: "#f3ecd9",
+  color: "#6b5316",
+  flexShrink: 0,
+};
+const staleNoteStyle: CSSProperties = { flexBasis: "100%", color: "#8a5a00", fontWeight: 600, fontSize: 13 };
 
-type SelectionMode = "all" | "single" | "multi";
+// The API caps a scoped search at this many granths.
+const MAX_SELECTED_GRANTHS = 250;
 
 type DocumentStats = {
   total_documents: number;
@@ -149,19 +205,28 @@ export default function SearchPage() {
   const [lastSearchGranthIds, setLastSearchGranthIds] = useState<string[]>([]);
   const [lastSearchScopeLabel, setLastSearchScopeLabel] = useState("All granths");
   const [lastSearchMode, setLastSearchMode] = useState<OCRSearchMode>("exact_word");
+  // The request behind the results on screen, to tell when the form has moved on.
+  const [lastRequest, setLastRequest] = useState<SearchRequest | null>(null);
 
   const [granthOptions, setGranthOptions] = useState<GranthOption[]>([]);
   const [loadingGranths, setLoadingGranths] = useState(true);
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>("all");
+  const [granthLoadError, setGranthLoadError] = useState<string | null>(null);
+  const [scope, setScope] = useState<SearchScope>("all");
   const [nameFilter, setNameFilter] = useState("");
-  const [selectedNames, setSelectedNames] = useState<string[]>([]);
+  // Kept while switching to "All granths" and back, so a selection is never lost.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [linkWarning, setLinkWarning] = useState<string | null>(null);
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
   const [downloadPreview, setDownloadPreview] = useState<DownloadPreviewState | null>(null);
   const [deliveryFormat, setDeliveryFormat] = useState<ExportFormat | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const previewCacheRef = useRef(new Map<string, SearchMatchPreview>());
-  const [routePrefillApplied, setRoutePrefillApplied] = useState(false);
+  // Language options to restore for the next typed query (from a URL), instead of
+  // the default of all of them.
+  const pendingLangsRef = useRef<string[] | null>(null);
+  // Guards against an older search response overwriting a newer one.
+  const searchSeqRef = useRef(0);
 
   const queryOptions = useMemo(() => buildIndicQueryOptions(q), [q]);
   const activeQueries = useMemo(() => {
@@ -173,7 +238,10 @@ export default function SearchPage() {
   }, [q, queryOptions, selectedQueryOptionIds]);
 
   useEffect(() => {
-    setSelectedQueryOptionIds(buildIndicQueryOptions(q).map((option) => option.id));
+    const ids = buildIndicQueryOptions(q).map((option) => option.id);
+    const pending = pendingLangsRef.current;
+    pendingLangsRef.current = null;
+    setSelectedQueryOptionIds(pending ? ids.filter((id) => pending.includes(id)) : ids);
   }, [q]);
 
   useEffect(() => {
@@ -190,6 +258,7 @@ export default function SearchPage() {
         }
         if (!active) return;
         setGranthOptions(granthsJson.items ?? []);
+        setGranthLoadError(null);
 
         try {
           const statsRes = await fetch("/api/document-stats");
@@ -205,6 +274,7 @@ export default function SearchPage() {
       } catch (e) {
         if (!active) return;
         console.error(e);
+        setGranthLoadError(e instanceof Error ? e.message : String(e));
       } finally {
         if (active) setLoadingGranths(false);
       }
@@ -216,69 +286,79 @@ export default function SearchPage() {
     };
   }, []);
 
-  const groups = useMemo<GranthGroup[]>(() => {
-    const byName = new Map<string, GranthGroup>();
+  const optionById = useMemo(() => new Map(granthOptions.map((row) => [row.custom_id, row])), [granthOptions]);
+  const keyById = useMemo(() => new Map(granthOptions.map((row) => [row.custom_id, row.key])), [granthOptions]);
 
-    for (const row of granthOptions) {
-      const name = row.display_name || row.pdf_name || row.custom_id;
-      const existing = byName.get(name);
-      if (existing) {
-        if (!existing.customIds.includes(row.custom_id)) existing.customIds.push(row.custom_id);
-        if (row.pdf_name && !existing.pdfNames.includes(row.pdf_name)) existing.pdfNames.push(row.pdf_name);
-      } else {
-        byName.set(name, {
-          name,
-          customIds: [row.custom_id],
-          pdfNames: row.pdf_name ? [row.pdf_name] : [],
-        });
-      }
-    }
+  const sortedOptions = useMemo(
+    () =>
+      [...granthOptions].sort((a, b) =>
+        a.key.localeCompare(b.key, "en", { numeric: true, sensitivity: "base" })
+      ),
+    [granthOptions]
+  );
 
-    return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
-  }, [granthOptions]);
-
-  const filteredGroups = useMemo(() => {
+  const filteredOptions = useMemo(() => {
     const keyword = nameFilter.trim().toLowerCase();
-    if (!keyword) return groups;
-    return groups.filter((g) => g.name.toLowerCase().includes(keyword));
-  }, [groups, nameFilter]);
+    if (!keyword) return sortedOptions;
+    return sortedOptions.filter((row) => `${row.key} ${row.display_name}`.toLowerCase().includes(keyword));
+  }, [sortedOptions, nameFilter]);
 
-  const selectedCustomIds = useMemo(() => {
-    if (selectionMode === "all") return [];
-    const selectedSet = new Set(selectedNames);
-    const ids: string[] = [];
+  const searchIds = scope === "all" ? [] : selectedIds;
+  const selectedLabel =
+    scope === "all" ? "All granths" : `${selectedIds.length} selected granth${selectedIds.length === 1 ? "" : "s"}`;
 
-    for (const group of groups) {
-      if (!selectedSet.has(group.name)) continue;
-      ids.push(...group.customIds);
-    }
-
-    return Array.from(new Set(ids));
-  }, [groups, selectedNames, selectionMode]);
-
-  const selectedLabel = useMemo(() => {
-    if (selectionMode === "all") return "All granths";
-    return `${selectedNames.length} granth name(s), ${selectedCustomIds.length} PDF(s)`;
-  }, [selectedCustomIds.length, selectedNames.length, selectionMode]);
-
+  // The URL is the source of truth: on load, and on back/forward, the form is set
+  // from it and the search it describes is run.
+  const appliedUrlRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!router.isReady || routePrefillApplied || groups.length === 0) return;
+    if (!router.isReady || loadingGranths) return;
+    if (appliedUrlRef.current === router.asPath) return;
+    appliedUrlRef.current = router.asPath;
 
-    const customId = readSingleQuery(router.query.customId).trim();
-    const initialQuery = readSingleQuery(router.query.q).trim();
-    if (initialQuery) setQ(initialQuery);
+    const { q: text, langs, matchMode, page: pageNumber, granthValues: values } = parseSearchUrl(router.query);
+    const { ids, missing } = granthOptions.length
+      ? resolveGranthValues(values, granthOptions)
+      : { ids: values, missing: [] as string[] };
+    const nextScope: SearchScope = values.length ? "selected" : "all";
 
-    if (customId) {
-      const match = groups.find((group) => group.customIds.includes(customId));
-      if (match) {
-        setSelectionMode("single");
-        setSelectedNames([match.name]);
-        setNameFilter(match.name);
-      }
+    setLinkWarning(
+      missing.length
+        ? `${missing.length} granth${missing.length === 1 ? "" : "s"} in this link could not be found (${missing
+            .slice(0, 5)
+            .join(", ")}).`
+        : null
+    );
+    if (text !== q) {
+      pendingLangsRef.current = langs;
+      setQ(text);
+    } else {
+      const ids = buildIndicQueryOptions(text).map((o) => o.id);
+      setSelectedQueryOptionIds(langs ? ids.filter((id) => langs.includes(id)) : ids);
     }
+    setSearchMode(matchMode);
+    setScope(nextScope);
+    if (values.length) setSelectedIds(ids);
+    setNameFilter("");
 
-    setRoutePrefillApplied(true);
-  }, [groups, routePrefillApplied, router.isReady, router.query.customId, router.query.q]);
+    const request: SearchRequest = { q: text, langs, matchMode, scope: nextScope, granthIds: ids, page: pageNumber };
+    // Old links (?customId=...) are rewritten to the current form, once the
+    // granth list is there to turn ids into short keys.
+    const canonical = buildSearchUrl(request, keyById);
+    if (granthOptions.length && canonical !== router.asPath) {
+      appliedUrlRef.current = canonical;
+      void router.replace(canonical, undefined, { shallow: true });
+    }
+    if (text && !(nextScope === "selected" && ids.length === 0)) {
+      void executeSearch(request);
+    } else {
+      setResults([]);
+      setHasSearched(false);
+      setLastRequest(null);
+    }
+    // Runs when the URL changes or the granth list arrives; the form state it
+    // writes is intentionally not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, router.asPath, loadingGranths, granthOptions]);
 
   const totalPages = useMemo(() => {
     if (total <= 0) return 1;
@@ -290,44 +370,23 @@ export default function SearchPage() {
     documentStats?.remaining_documents ??
     (documentStats ? Math.max(0, documentStats.total_documents - searchableDocuments) : 0);
 
-  function setMode(mode: SelectionMode) {
-    setSelectionMode(mode);
+  function toggleGranth(id: string) {
     setError(null);
-
-    if (mode === "all") {
-      setSelectedNames([]);
-      return;
-    }
-    if (mode === "single" && selectedNames.length > 1) {
-      setSelectedNames(selectedNames.slice(0, 1));
-    }
-  }
-
-  function toggleGroup(name: string) {
-    if (selectionMode === "all") return;
-
-    if (selectionMode === "single") {
-      setSelectedNames((prev) => (prev[0] === name ? [] : [name]));
-      return;
-    }
-
-    setSelectedNames((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   function clearSelection() {
-    setSelectedNames([]);
+    setSelectedIds([]);
     setError(null);
   }
 
-  function selectAllFiltered() {
-    if (selectionMode !== "multi") return;
-    const all = filteredGroups.map((g) => g.name);
-    setSelectedNames(all);
+  function selectAllShown() {
+    setSelectedIds((prev) => Array.from(new Set([...prev, ...filteredOptions.map((row) => row.custom_id)])));
   }
 
   function onSearchInputKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !loading && searchReady) {
-      void run(1);
+      run(1);
     }
   }
 
@@ -420,32 +479,74 @@ export default function SearchPage() {
   }
 
   function renderHighlightedSnippet(text: string, queries?: string[]) {
-    return renderHighlightedText(text, queries?.length ? queries : lastSearchQueries, searchMode);
+    return renderHighlightedText(text, queries?.length ? queries : lastSearchQueries, lastSearchMode);
   }
 
-  async function run(page: number) {
+  /** Starts a search from the form: validates it, records it in the URL, runs it. */
+  function run(page: number) {
     setError(null);
-    const queriesForSearch = activeQueries;
-    if (queriesForSearch.length === 0) {
+    if (activeQueries.length === 0) {
       setError("Enter a search word or select at least one generated language option.");
       return;
     }
-    if (selectionMode !== "all" && selectedCustomIds.length === 0) {
-      setError("Select at least one granth name before searching.");
+    if (scope === "selected" && selectedIds.length === 0) {
+      setError("Tick at least one granth, or choose All granths.");
+      return;
+    }
+    if (scope === "selected" && selectedIds.length > MAX_SELECTED_GRANTHS) {
+      setError(`Select at most ${MAX_SELECTED_GRANTHS} granths, or choose All granths.`);
       return;
     }
 
+    const allLangs = queryOptions.map((option) => option.id);
+    const langs =
+      queryOptions.length > 1 && !sameIds(allLangs, selectedQueryOptionIds)
+        ? allLangs.filter((id) => selectedQueryOptionIds.includes(id))
+        : null;
+    const request: SearchRequest = { q: q.trim(), langs, matchMode: searchMode, scope, granthIds: [...searchIds], page };
+    const url = buildSearchUrl(request, keyById);
+    if (url !== router.asPath) {
+      // Each new search adds a history entry, so Back returns to the previous one.
+      appliedUrlRef.current = url;
+      void router.push(url, undefined, { shallow: true, scroll: false });
+    }
+    void executeSearch(request, activeQueries);
+  }
+
+  /** Another page of the results on screen, even if the form has been edited since. */
+  function goToResultPage(page: number) {
+    if (!lastRequest) return;
+    const request = { ...lastRequest, page };
+    const url = buildSearchUrl(request, keyById);
+    if (url !== router.asPath) {
+      appliedUrlRef.current = url;
+      void router.replace(url, undefined, { shallow: true, scroll: false });
+    }
+    void executeSearch(request, lastSearchQueries);
+  }
+
+  async function executeSearch(request: SearchRequest, queriesOverride?: string[]) {
+    const options = buildIndicQueryOptions(request.q);
+    const queriesForSearch =
+      queriesOverride ??
+      normalizeOCRSearchQueries(
+        options.length
+          ? options.filter((option) => !request.langs || request.langs.includes(option.id)).map((option) => option.value)
+          : request.q
+      );
+    if (queriesForSearch.length === 0) return;
+    const seq = ++searchSeqRef.current;
+
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       params.set("q", queriesForSearch[0]);
       for (const queryVariant of queriesForSearch.slice(1)) params.append("queryVariant", queryVariant);
       params.set("limit", String(RESULTS_PER_PAGE));
-      params.set("page", String(page));
-      params.set("matchMode", searchMode);
-      if (selectionMode !== "all" && selectedCustomIds.length > 0) {
-        params.set("granths", selectedCustomIds.join(","));
-      }
+      params.set("page", String(request.page));
+      params.set("matchMode", request.matchMode);
+      if (request.scope === "selected") params.set("granths", request.granthIds.join(","));
 
       const res = await fetch(`/api/search?${params.toString()}`);
       const json = (await res.json()) as {
@@ -460,28 +561,42 @@ export default function SearchPage() {
         queries?: string[];
         error?: string;
       };
+      if (seq !== searchSeqRef.current) return;
       if (!res.ok) {
         throw new Error(json.error || `Search failed (${res.status})`);
       }
+      const scopeLabel =
+        request.scope === "all"
+          ? "All granths"
+          : `${request.granthIds.length} selected granth${request.granthIds.length === 1 ? "" : "s"}`;
       setResults(json.results ?? []);
       setTotal(Number(json.total ?? (json.results?.length ?? 0)));
       setTotalOccurrences(Number(json.total_occurrences ?? 0));
       setOccurrencesExact(json.total_occurrences_exact !== false);
       setOccurrenceScannedPages(Number(json.occurrence_scanned_pages ?? 0));
-      setCurrentPage(Number(json.page ?? page));
+      setCurrentPage(Number(json.page ?? request.page));
       setTotalIsExact(json.total_is_exact !== false);
-      setSearchMode(parseOCRSearchMode(json.match_mode));
       setLastSearchQueries(json.queries?.length ? json.queries : queriesForSearch);
-      setLastSearchGranthIds(selectionMode === "all" ? [] : selectedCustomIds);
-      setLastSearchScopeLabel(selectedLabel);
-      setLastSearchMode(parseOCRSearchMode(json.match_mode));
+      setLastSearchGranthIds(request.scope === "all" ? [] : request.granthIds);
+      setLastSearchScopeLabel(scopeLabel);
+      setLastSearchMode(parseOCRSearchMode(json.match_mode ?? request.matchMode));
+      setLastRequest(request);
       setHasSearched(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (seq === searchSeqRef.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (seq === searchSeqRef.current) setLoading(false);
     }
   }
+
+  // True once the form no longer describes the results on screen.
+  const resultsStale = Boolean(
+    lastRequest &&
+      (lastRequest.q !== q.trim() ||
+        lastRequest.matchMode !== searchMode ||
+        lastRequest.scope !== scope ||
+        (scope === "selected" && !sameIds(lastRequest.granthIds, selectedIds)))
+  );
 
   async function openDownloadPreview(result: SearchResult) {
     const queries = result.matched_queries?.length ? result.matched_queries : lastSearchQueries;
@@ -490,12 +605,12 @@ export default function SearchPage() {
       return;
     }
 
-    const cacheKey = `${result.custom_id}\n${result.source_rel_path || ""}\n${queries.join("\n")}\n${searchMode}`;
+    const cacheKey = `${result.custom_id}\n${result.source_rel_path || ""}\n${queries.join("\n")}\n${lastSearchMode}`;
     setDownloadPreview({
       result,
       query: queries[0],
       queries,
-      matchMode: searchMode,
+      matchMode: lastSearchMode,
       loading: true,
       downloading: false,
       error: null,
@@ -512,7 +627,7 @@ export default function SearchPage() {
         params.set("customId", result.custom_id);
         params.set("q", queries[0]);
         for (const queryVariant of queries.slice(1)) params.append("queryVariant", queryVariant);
-        params.set("matchMode", searchMode);
+        params.set("matchMode", lastSearchMode);
         if (result.source_rel_path) params.set("sourceRelPath", result.source_rel_path);
 
         const res = await fetch(`/api/search-match-pages?${params.toString()}`);
@@ -702,7 +817,7 @@ export default function SearchPage() {
                 }}
               />
               <button
-                onClick={() => void run(1)}
+                onClick={() => run(1)}
                 disabled={loading || !searchReady}
                 aria-busy={loading}
                 style={{
@@ -783,61 +898,66 @@ export default function SearchPage() {
 
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <strong>Filter mode:</strong>
-                <button
-                  type="button"
-                  onClick={() => setMode("all")}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #bcc4ce",
-                    background: selectionMode === "all" ? "#1f2120" : "#fff",
-                    color: selectionMode === "all" ? "#fff" : "#222",
-                    cursor: "pointer",
-                  }}
-                >
-                  All granths
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("single")}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #bcc4ce",
-                    background: selectionMode === "single" ? "#1f2120" : "#fff",
-                    color: selectionMode === "single" ? "#fff" : "#222",
-                    cursor: "pointer",
-                  }}
-                >
-                  Single granth
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("multi")}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #bcc4ce",
-                    background: selectionMode === "multi" ? "#1f2120" : "#fff",
-                    color: selectionMode === "multi" ? "#fff" : "#222",
-                    cursor: "pointer",
-                  }}
-                >
-                  Multi granth
-                </button>
+                <strong>Search in:</strong>
+                {(["all", "selected"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={scope === value}
+                    onClick={() => {
+                      setScope(value);
+                      setError(null);
+                    }}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: "1px solid #bcc4ce",
+                      background: scope === value ? "#1f2120" : "#fff",
+                      color: scope === value ? "#fff" : "#222",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {value === "all"
+                      ? "All granths"
+                      : `Selected granths${selectedIds.length ? ` (${selectedIds.length})` : ""}`}
+                  </button>
+                ))}
               </div>
 
-              <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>{selectedLabel}</div>
+              {scope === "selected" && selectedIds.length > 0 ? (
+                <div style={chipRowStyle} aria-label="Selected granths">
+                  {selectedIds.map((id) => {
+                    const row = optionById.get(id);
+                    return (
+                      <span key={id} style={chipStyle}>
+                        <span style={chipKeyStyle}>{row?.key ?? "?"}</span>
+                        <span style={chipNameStyle} title={row?.display_name ?? id}>{row?.display_name ?? id}</span>
+                        <button type="button" style={chipRemoveStyle} onClick={() => toggleGranth(id)} aria-label={`Remove ${row?.display_name ?? id}`}>
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                  <button type="button" style={{ ...chipStyle, padding: "3px 10px", cursor: "pointer" }} onClick={clearSelection}>
+                    Clear all
+                  </button>
+                </div>
+              ) : null}
+              {linkWarning ? (
+                <div role="status" style={{ marginTop: 8, fontSize: 13, color: "#8a5a00" }}>
+                  {linkWarning}
+                </div>
+              ) : null}
             </div>
 
-            {selectionMode !== "all" ? (
+            {scope === "selected" ? (
               <div style={{ border: "1px solid #d5dae2", borderRadius: 12, padding: 12, background: "#fafbfc" }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <input
                     value={nameFilter}
                     onChange={(e) => setNameFilter(e.target.value)}
-                    placeholder="Filter granth names..."
+                    placeholder="Find a granth by name or number..."
+                    aria-label="Find a granth"
                     style={{
                       flex: 1,
                       minWidth: 220,
@@ -848,31 +968,14 @@ export default function SearchPage() {
                       background: "#fff",
                     }}
                   />
-
                   <button
                     type="button"
-                    onClick={clearSelection}
-                    disabled={selectedNames.length === 0}
+                    onClick={selectAllShown}
+                    disabled={filteredOptions.length === 0}
                     style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #c7cfd9", background: "#fff" }}
                   >
-                    Clear
+                    Tick all shown ({filteredOptions.length})
                   </button>
-
-                  {selectionMode === "multi" ? (
-                    <button
-                      type="button"
-                      onClick={selectAllFiltered}
-                      disabled={filteredGroups.length === 0}
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        border: "1px solid #c7cfd9",
-                        background: "#fff",
-                      }}
-                    >
-                      Select all shown
-                    </button>
-                  ) : null}
                 </div>
 
                 <div
@@ -881,39 +984,38 @@ export default function SearchPage() {
                     maxHeight: 280,
                     overflow: "auto",
                     display: "grid",
-                    gap: 8,
+                    gap: 6,
                     paddingRight: 4,
                   }}
                 >
                   {loadingGranths ? (
                     <div className="buttonSpinnerLabel" style={{ opacity: 0.75 }} role="status">
                       <span className="loadingSpinner" aria-hidden="true" />
-                      Loading granth names
+                      Loading granths
                     </div>
-                  ) : filteredGroups.length === 0 ? (
-                    <div style={{ opacity: 0.75 }}>No matching names.</div>
+                  ) : granthLoadError ? (
+                    <div role="alert" style={{ color: "#9f1f1f" }}>
+                      Could not load the granth list: {granthLoadError}
+                    </div>
+                  ) : filteredOptions.length === 0 ? (
+                    <div style={{ opacity: 0.75 }}>No granth matches “{nameFilter}”.</div>
                   ) : (
-                    filteredGroups.map((g) => {
-                      const isSelected = selectedNames.includes(g.name);
+                    filteredOptions.map((row) => {
+                      const checked = selectedIds.includes(row.custom_id);
                       return (
-                        <button
-                          key={g.name}
-                          type="button"
-                          onClick={() => toggleGroup(g.name)}
+                        <label
+                          key={row.custom_id}
                           style={{
-                            textAlign: "left",
-                            padding: "10px 12px",
-                            borderRadius: 10,
-                            border: isSelected ? "1px solid #1f2120" : "1px solid #ced4df",
-                            background: isSelected ? "#edf0f5" : "#fff",
-                            cursor: "pointer",
+                            ...optionRowStyle,
+                            border: checked ? "1px solid #1f2120" : "1px solid #ced4df",
+                            background: checked ? "#edf0f5" : "#fff",
                           }}
                         >
-                          <div style={{ fontWeight: 700 }}>{g.name}</div>
-                          <div style={{ fontSize: 12, opacity: 0.72 }}>
-                            Includes {g.customIds.length} PDF{g.customIds.length > 1 ? "s" : ""}
-                          </div>
-                        </button>
+                          <input type="checkbox" checked={checked} onChange={() => toggleGranth(row.custom_id)} />
+                          <span style={chipKeyStyle}>{row.key}</span>
+                          <span style={{ fontWeight: 600 }}>{row.display_name}</span>
+                          {row.kind === "text" ? <span style={textOnlyTagStyle}>text only</span> : null}
+                        </label>
                       );
                     })
                   )}
@@ -948,9 +1050,14 @@ export default function SearchPage() {
                 across <strong>{totalIsExact ? total : `${total}+`}</strong> page{total === 1 ? "" : "s"}
               </span>
               <span className="searchCountMeta">
-                showing page {currentPage} of {totalPages} · match:{" "}
-                <strong>{getOCRSearchModeLabel(searchMode)}</strong>
+                in <strong>{lastSearchScopeLabel.toLowerCase()}</strong> · showing page {currentPage} of {totalPages} ·
+                match: <strong>{getOCRSearchModeLabel(lastSearchMode)}</strong>
               </span>
+              {resultsStale ? (
+                <span style={staleNoteStyle} role="status">
+                  The search settings above have changed. Press Search to update these results.
+                </span>
+              ) : null}
             </div>
           ) : null}
 
@@ -976,7 +1083,7 @@ export default function SearchPage() {
                 totalPages={totalPages}
                 loading={loading}
                 ariaLabel="Search result pages"
-                onPageChange={(page) => void run(page)}
+                onPageChange={(page) => goToResultPage(page)}
               />
             </div>
           ) : null}
@@ -1059,12 +1166,21 @@ export default function SearchPage() {
                               title: r.pdf_name,
                               searchTerm: rowQueries[0] || q,
                               searchTerms: rowQueries,
-                              searchMode,
+                              searchMode: lastSearchMode,
                             })
                           }
                         >
                           Open PDF
                         </button>
+                      ) : r.granth_key ? (
+                        <Link
+                          href={`/ocr-text-viewer?granthKey=${encodeURIComponent(r.granth_key)}&page=${encodeURIComponent(
+                            String(r.source_page_number ?? r.page_number)
+                          )}&q=${encodeURIComponent(rowQueries[0] || q)}&matchMode=${encodeURIComponent(lastSearchMode)}`}
+                          title="This granth has no uploaded PDF; open its OCR text on this page."
+                        >
+                          Open text page
+                        </Link>
                       ) : (
                         <span style={{ color: "#7b8784", fontWeight: 700 }} title="No uploaded PDF URL is linked for this result.">
                           PDF unavailable

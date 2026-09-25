@@ -11,8 +11,8 @@ import {
 import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
 import {
   type DocumentMeta,
-  fetchDocumentMetaByCustomIds,
   resolveGranthPdfTargets,
+  resolveRelPathsForCustomIds,
 } from "@/lib/search-pdf-resolver";
 import { getTursoClient } from "@/lib/turso";
 import { protectApi } from "@/lib/auth-guard";
@@ -129,10 +129,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
     const cacheKey = buildCacheKey(req, "pdf-search-turso");
     const { value: payload, status } = await getCachedJson(cacheKey, 60, async () => {
-      const selectedDocs = await fetchDocumentMetaByCustomIds(selectedGranths);
-      const selectedRelPaths = selectedDocs
-        .map((row) => String(row.original_relative_path ?? "").trim())
-        .filter(Boolean);
+      const { docs: selectedDocs, relPaths: selectedRelPaths } = await resolveRelPathsForCustomIds(selectedGranths);
 
       if (selectedGranths.length > 0 && selectedRelPaths.length === 0) {
         return {
@@ -261,6 +258,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           ? `/pdf-viewer?pdf=${encodeURIComponent(target.pdf_url)}&page=${encodeURIComponent(String(target.page_number))}`
           : "";
         return {
+          granth_key: row.granth_key,
           custom_id: target.custom_id,
           pdf_name: target.pdf_name,
           pdf_url: target.pdf_url,

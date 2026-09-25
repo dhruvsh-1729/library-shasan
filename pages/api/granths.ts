@@ -4,6 +4,7 @@ import { type DocumentScanState, getDocumentScanState } from "@/lib/document-sca
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
+import { TEXT_ONLY_COLLECTION, fetchTextOnlyGranths, filterTextOnlyGranths } from "@/lib/text-only-granths";
 
 type GranthItem = {
   id: number;
@@ -75,12 +76,12 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         "id,file_name,ufs_url,file_size,custom_id,collection,subcollection,original_rel_path";
       const withCoverSelect = `${baseSelect},cover_image_url,cover_image_key`;
 
-      const buildQuery = (selectCols: string) => {
+      const buildQuery = (selectCols: string, countOnly = false) => {
         let query = supabase
           .from("granth_ocr_files")
-          .select(selectCols, { count: "exact" })
-          .order("id", { ascending: true })
-          .range(offset, offset + limit - 1);
+          .select(selectCols, { count: "exact", head: countOnly })
+          .order("id", { ascending: true });
+        if (!countOnly) query = query.range(offset, offset + limit - 1);
 
         if (collection) query = query.eq("collection", collection);
         if (q) {
@@ -98,11 +99,23 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         return query;
       };
 
+      // Granths with OCR text but no uploaded PDF are listed after the PDF ones.
+      const textOnly =
+        collection && collection !== TEXT_ONLY_COLLECTION ? [] : filterTextOnlyGranths(await fetchTextOnlyGranths(), q);
+      let pdfTotal = 0;
+      if (collection !== TEXT_ONLY_COLLECTION) {
+        const { count, error } = await buildQuery("id", true);
+        if (error) throw new Error(error.message);
+        pdfTotal = count ?? 0;
+      }
+
       let coverColumnAvailable = true;
       let data: Record<string, unknown>[] | null = null;
       let total = 0;
 
-      {
+      if (offset >= pdfTotal) {
+        data = [];
+      } else {
         const response = await buildQuery(withCoverSelect);
         if (response.error && isMissingCoverColumns(response.error.message)) {
           coverColumnAvailable = false;
@@ -114,7 +127,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      if (!coverColumnAvailable) {
+      if (!coverColumnAvailable && offset < pdfTotal) {
         const response = await buildQuery(baseSelect);
         if (response.error) throw new Error(response.error.message);
         data = (response.data as unknown as Record<string, unknown>[] | null) ?? [];
@@ -198,6 +211,27 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           mapping_book_code: mapping?.book_code ?? null,
         };
       });
+
+      const textStart = Math.max(0, offset - pdfTotal);
+      for (const [index, row] of textOnly.slice(textStart, textStart + limit - items.length).entries()) {
+        items.push({
+          id: -(textStart + index + 1),
+          file_name: row.name,
+          ufs_url: null,
+          file_size: null,
+          custom_id: row.customId,
+          collection: TEXT_ONLY_COLLECTION,
+          subcollection: `${row.pageCount} pages, no PDF`,
+          original_rel_path: row.sourceRelPath,
+          cover_image_url: null,
+          cover_image_key: null,
+          document_status: "text_only_no_pdf",
+          scan_state: "review",
+          mapping_book_id: null,
+          mapping_book_code: null,
+        });
+      }
+      total = pdfTotal + textOnly.length;
 
       const normalizedPage = Math.floor(offset / limit) + 1;
       const totalPages = Math.max(1, Math.ceil(total / limit));
