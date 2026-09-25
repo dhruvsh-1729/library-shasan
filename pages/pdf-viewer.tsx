@@ -1,4 +1,5 @@
 import Head from "next/head";
+import { openPdf } from "@/lib/pdf-range-source";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { FormEvent } from "react";
@@ -122,19 +123,24 @@ export default function PdfViewerPage() {
 
     void (async () => {
       try {
-        loadingTask = pdfModule.getDocument({
-          url: pdfUrl,
-          useSystemFonts: true,
-          disableFontFace: false,
-          disableStream: true,
-          disableAutoFetch: true,
-          rangeChunkSize: 65536,
-          cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/cmaps/`,
-          cMapPacked: true,
-          standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/standard_fonts/`,
-        });
+        const opened = await openPdf(
+          pdfModule,
+          pdfUrl,
+          {
+            useSystemFonts: true,
+            disableFontFace: false,
+            cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/cmaps/`,
+            cMapPacked: true,
+            standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/standard_fonts/`,
+          },
+          (task) => {
+            loadingTask = task;
+          },
+          () => !active
+        );
+        if (!opened) return;
 
-        const doc = await loadingTask.promise;
+        const doc = await opened.task.promise;
         if (!active) {
           void doc.destroy();
           return;

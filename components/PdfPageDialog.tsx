@@ -6,6 +6,7 @@ import {
   parseOCRSearchMode,
   type OCRSearchMode,
 } from "@/lib/ocr-search";
+import { openPdf } from "@/lib/pdf-range-source";
 
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 type PDFDocumentLoadingTask = import("pdfjs-dist").PDFDocumentLoadingTask;
@@ -108,6 +109,9 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   const renderTaskRef = useRef<RenderTask | null>(null);
   const textLayerRef = useRef<TextLayer | null>(null);
   const renderTokenRef = useRef(0);
+  // The open document and the URL it came from: moving to another page of the
+  // same PDF (e.g. a second search result) reuses it instead of re-downloading.
+  const loadedDocRef = useRef<{ url: string; doc: PDFDocumentProxy } | null>(null);
 
   const pdfUrl = useMemo(() => normalizePdfUrl(target?.pdfUrl), [target?.pdfUrl]);
   const requestedPage = useMemo(() => parsePage(target?.page), [target?.page]);
@@ -132,6 +136,9 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   const [showTextLayer, setShowTextLayer] = useState(true);
   const [textDivCount, setTextDivCount] = useState(0);
   const [highlightCount, setHighlightCount] = useState(0);
+  const requestedPageRef = useRef(requestedPage);
+  requestedPageRef.current = requestedPage;
+  const isOpen = Boolean(target);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -171,9 +178,11 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   }, [pdfModule, target]);
 
   useEffect(() => {
-    setCurrentPage(requestedPage);
-    setPageEntry(String(requestedPage));
-    setPageCount(pageCountHint);
+    const loaded = loadedDocRef.current && loadedDocRef.current.url === pdfUrl ? loadedDocRef.current.doc : null;
+    const page = loaded ? clamp(requestedPage, 1, loaded.numPages) : requestedPage;
+    setCurrentPage(page);
+    setPageEntry(String(page));
+    setPageCount(loaded ? loaded.numPages : pageCountHint);
     setTextDivCount(0);
     setHighlightCount(0);
     setError(pdfUrl || !target ? null : "Invalid PDF URL.");
@@ -181,6 +190,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
 
   useEffect(() => {
     if (!target) {
+      loadedDocRef.current = null;
       setPdfDoc((prev) => {
         if (prev) void prev.destroy();
         return null;
@@ -198,7 +208,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   }, [pdfDoc]);
 
   useEffect(() => {
-    if (!pdfModule || !pdfUrl || !target) return;
+    if (!pdfModule || !pdfUrl || !isOpen) return;
 
     let active = true;
     let loadingTask: PDFDocumentLoadingTask | null = null;
@@ -208,6 +218,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
     setPageLoading(false);
     setPageCount(pageCountHint);
 
+    loadedDocRef.current = null;
     setPdfDoc((prev) => {
       if (prev) void prev.destroy();
       return null;
@@ -215,27 +226,33 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
 
     void (async () => {
       try {
-        loadingTask = pdfModule.getDocument({
-          url: pdfUrl,
-          useSystemFonts: true,
-          disableFontFace: false,
-          disableStream: true,
-          disableAutoFetch: true,
-          rangeChunkSize: 65536,
-          cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/cmaps/`,
-          cMapPacked: true,
-          standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/standard_fonts/`,
-        });
+        const opened = await openPdf(
+          pdfModule,
+          pdfUrl,
+          {
+            useSystemFonts: true,
+            disableFontFace: false,
+            cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/cmaps/`,
+            cMapPacked: true,
+            standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfModule.version}/standard_fonts/`,
+          },
+          (task) => {
+            loadingTask = task;
+          },
+          () => !active
+        );
+        if (!opened) return;
 
-        const doc = await loadingTask.promise;
+        const doc = await opened.task.promise;
         if (!active) {
           void doc.destroy();
           return;
         }
 
+        loadedDocRef.current = { url: pdfUrl, doc };
         setPdfDoc(doc);
         setPageCount(doc.numPages);
-        setCurrentPage(clamp(requestedPage, 1, doc.numPages));
+        setCurrentPage(clamp(requestedPageRef.current, 1, doc.numPages));
       } catch (err) {
         if (!active) return;
         setError(`Failed to open PDF: ${renderErrorMessage(err)}`);
@@ -248,7 +265,10 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
       active = false;
       if (loadingTask) loadingTask.destroy();
     };
-  }, [pageCountHint, pdfModule, pdfUrl, requestedPage, target]);
+    // Re-open only for a different PDF (or after the dialog was closed); a new
+    // page of the same PDF is handled by the effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, pdfModule, pdfUrl]);
 
   useEffect(() => {
     setPageEntry(String(currentPage));
