@@ -87,8 +87,10 @@ if (dryRun) {
     args: [cfg.granthKey],
   });
   const idByPage = new Map(ids.rows.map((r) => [Number(r.page_number), Number(r.id)]));
+  const printed = cfg.printedPath ? JSON.parse(await readFile(cfg.printedPath, "utf8")) : null;
   let updated = 0;
-  const BATCH = 25;
+  // 50 pages per round trip: fewer trips than 25, shorter write locks than 100.
+  const BATCH = 50;
   for (let i = 0; i < rows.length; i += BATCH) {
     const stmts = [];
     for (const row of rows.slice(i, i + BATCH)) {
@@ -96,10 +98,12 @@ if (dryRun) {
       const content = row.content;
       const pageId = idByPage.get(page);
       if (!pageId) throw new Error(`no ocr_pages row for page ${page}`);
-      stmts.push({
-        sql: "UPDATE ocr_pages SET content = ?, updated_at = ? WHERE id = ?",
-        args: [content, now, pageId],
-      });
+      // Printed page numbers (Google runs) go in the same UPDATE: every UPDATE
+      // on ocr_pages re-indexes the page for full-text search, so a second
+      // pass just for printed_page would double the indexing work.
+      stmts.push(printed
+        ? { sql: "UPDATE ocr_pages SET content = ?, printed_page = ?, updated_at = ? WHERE id = ?", args: [content, printed[page] ?? null, now, pageId] }
+        : { sql: "UPDATE ocr_pages SET content = ?, updated_at = ? WHERE id = ?", args: [content, now, pageId] });
       stmts.push({
         sql: `INSERT INTO ocr_pages_suffix (page_id, granth_key, page_number, reversed_content, updated_at)
               VALUES (?, ?, ?, ?, ?)
