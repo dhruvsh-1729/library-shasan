@@ -462,7 +462,7 @@ export default function PdfViewerPage() {
             </div>
           </header>
 
-          {!pdfUrl ? (
+          {router.isReady && !pdfUrl ? (
             <div style={{ marginTop: 14, color: "#9f1f1f", fontWeight: 700 }}>
               Invalid or missing <code>pdf</code> query parameter.
             </div>
@@ -480,7 +480,7 @@ export default function PdfViewerPage() {
             </div>
           ) : null}
 
-          {!docLoading && !pageLoading && !error && showTextLayer && textDivCount === 0 ? (
+          {pdfDoc && !docLoading && !pageLoading && !error && showTextLayer && textDivCount === 0 ? (
             <div style={{ marginTop: 14, color: "#8a4b00", fontWeight: 700 }}>
               This page has no embedded text layer, so direct select/copy is not available here.
             </div>

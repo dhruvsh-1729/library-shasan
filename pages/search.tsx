@@ -259,6 +259,8 @@ export default function SearchPage() {
         if (!active) return;
         setGranthOptions(granthsJson.items ?? []);
         setGranthLoadError(null);
+        // The search can start now; the header stats below must not hold it up.
+        setLoadingGranths(false);
 
         try {
           const statsRes = await fetch("/api/document-stats");

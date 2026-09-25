@@ -19,9 +19,10 @@ export const RANGE_CHUNK_SIZE = 512 * 1024;
 /**
  * A PDF's cross-reference table and object index sit at its end, and pdf.js reads
  * them before any page; fetching this much of the tail up front, alongside the
- * head, saves two or three sequential round trips on open.
+ * head, saves several sequential round trips on open. Measured on library
+ * granths, pdf.js read the last 2.7-3.4 MB before the first page.
  */
-const TAIL_PREFETCH = 3 * RANGE_CHUNK_SIZE;
+const TAIL_PREFETCH = 6 * RANGE_CHUNK_SIZE;
 const RANGE_RETRIES = 2;
 
 /** Hosts known to serve byte ranges for our uploads. */

@@ -190,11 +190,9 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
 
   useEffect(() => {
     if (!target) {
-      loadedDocRef.current = null;
-      setPdfDoc((prev) => {
-        if (prev) void prev.destroy();
-        return null;
-      });
+      // The last PDF stays open after the dialog closes, so opening another
+      // result from the same granth needs no new download; it is released when
+      // a different PDF is opened or the page is left.
       setEngineLoading(false);
       setDocLoading(false);
       setPageLoading(false);
@@ -209,6 +207,15 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
 
   useEffect(() => {
     if (!pdfModule || !pdfUrl || !isOpen) return;
+
+    const kept = loadedDocRef.current;
+    if (kept && kept.url === pdfUrl) {
+      setError(null);
+      setDocLoading(false);
+      setPageCount(kept.doc.numPages);
+      setCurrentPage(clamp(requestedPageRef.current, 1, kept.doc.numPages));
+      return;
+    }
 
     let active = true;
     let loadingTask: PDFDocumentLoadingTask | null = null;
@@ -263,7 +270,8 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
 
     return () => {
       active = false;
-      if (loadingTask) loadingTask.destroy();
+      // An opened document is kept (see above); only an unfinished load is cancelled.
+      if (loadingTask && loadedDocRef.current?.url !== pdfUrl) loadingTask.destroy();
     };
     // Re-open only for a different PDF (or after the dialog was closed); a new
     // page of the same PDF is handled by the effect above.
