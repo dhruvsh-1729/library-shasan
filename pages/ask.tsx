@@ -10,6 +10,15 @@ import { OCR_SEARCH_MODE_OPTIONS, type OCRSearchMode } from "@/lib/ocr-search";
 type GranthOption = { granth_key: string; granth_name: string; page_count: number };
 type ScopeKind = "gatha" | "pages" | "search";
 
+type Chapter = { adhikar: number; gathaFrom: number; gathaTo: number; pageStart: number; pageEnd: number };
+
+type ScopePreview = {
+  pages: number[];
+  verses: Array<{ adhikar: number | null; gatha: number; pageStart: number; pageEnd: number }>;
+  needsAdhikar: Chapter[] | null;
+  summaryLine: string;
+};
+
 type SourcePassage = {
   index: number;
   granthKey: string;
@@ -25,9 +34,22 @@ type Turn = {
   scopeLine?: string;
   sources?: SourcePassage[];
   truncated?: boolean;
-  ambiguousAdhikars?: number;
+  droppedGathas?: number[];
+  needsAdhikar?: Chapter[] | null;
   error?: boolean;
 };
+
+/** Reads like "57–68" but keeps a gap visible, e.g. "57–62, 64–68". */
+function describePages(pages: number[]) {
+  if (!pages.length) return "no pages";
+  const runs: Array<[number, number]> = [];
+  for (const page of pages) {
+    const last = runs[runs.length - 1];
+    if (last && page === last[1] + 1) last[1] = page;
+    else runs.push([page, page]);
+  }
+  return runs.map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(", ");
+}
 
 export default function AskPage() {
   const [granths, setGranths] = useState<GranthOption[]>([]);
@@ -41,6 +63,9 @@ export default function AskPage() {
   const [pageTo, setPageTo] = useState("");
   const [query, setQuery] = useState("");
   const [matchMode, setMatchMode] = useState<OCRSearchMode>("exact_word");
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [preview, setPreview] = useState<ScopePreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [language, setLanguage] = useState<string>("gujarati");
   const [deepMode, setDeepMode] = useState(false);
 
@@ -65,6 +90,33 @@ export default function AskPage() {
   }, []);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
+
+  // Resolve the scope as the form is filled in, so a wrong chapter is visible
+  // before the question is asked rather than after the answer comes back.
+  useEffect(() => {
+    if (scopeKind === "search" || !granthKey) { setPreview(null); setChapters([]); return; }
+    let cancelled = false;
+    setPreviewing(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/ai/scope", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ granthKey: scopeKind === "gatha" ? granthKey : "", scope: buildScope() }),
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        setChapters(Array.isArray(json.chapters) ? json.chapters : []);
+        setPreview(json.resolved ?? null);
+      } catch {
+        if (!cancelled) setPreview(null);
+      } finally {
+        if (!cancelled) setPreviewing(false);
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); setPreviewing(false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKind, granthKey, adhikar, gathaFrom, gathaTo, pageFrom, pageTo]);
 
   const filteredGranths = useMemo(() => {
     const q = granthFilter.trim().toLowerCase();
@@ -113,7 +165,12 @@ export default function AskPage() {
       });
       const json = await res.json();
       if (!res.ok || json.error) {
-        setTurns((prev) => [...prev, { role: "assistant", content: json.error || "Something went wrong.", error: true }]);
+        setTurns((prev) => [...prev, {
+          role: "assistant",
+          content: json.error || "Something went wrong.",
+          needsAdhikar: Array.isArray(json.needsAdhikar) ? json.needsAdhikar : null,
+          error: true,
+        }]);
       } else {
         setTurns((prev) => [...prev, {
           role: "assistant",
@@ -121,7 +178,7 @@ export default function AskPage() {
           scopeLine: json.context?.summaryLine,
           sources: json.context?.passages ?? [],
           truncated: Boolean(json.context?.truncated),
-          ambiguousAdhikars: Number(json.context?.ambiguousAdhikars ?? 0),
+          droppedGathas: Array.isArray(json.context?.droppedGathas) ? json.context.droppedGathas : [],
         }]);
       }
     } catch (err) {
@@ -170,7 +227,8 @@ export default function AskPage() {
               <span className="askLabel">Granth {scopeKind === "search" ? <em>(optional)</em> : null}</span>
               <input className="askInput" placeholder="Filter by name or number…"
                 value={granthFilter} onChange={(e) => setGranthFilter(e.target.value)} />
-              <select className="askSelect" value={granthKey} onChange={(e) => setGranthKey(e.target.value)}>
+              <select className="askSelect" value={granthKey}
+                onChange={(e) => { setGranthKey(e.target.value); setAdhikar(""); setChapters([]); setPreview(null); }}>
                 <option value="">{scopeKind === "search" ? "Whole library" : "Choose a granth…"}</option>
                 {filteredGranths.map((g) => (
                   <option key={g.granth_key} value={g.granth_key}>
@@ -182,14 +240,36 @@ export default function AskPage() {
 
             {scopeKind === "gatha" ? (
               <>
+                <label className="askField">
+                  <span className="askLabel">
+                    Chapter <em>(adhikar)</em>
+                  </span>
+                  {chapters.length ? (
+                    <select className="askSelect" value={adhikar} onChange={(e) => setAdhikar(e.target.value)}>
+                      <option value="">{chapters.length > 1 ? "Choose a chapter…" : "Whole granth"}</option>
+                      {chapters.map((c) => (
+                        <option key={c.adhikar} value={String(c.adhikar)}>
+                          {c.adhikar} — gathas {c.gathaFrom}–{c.gathaTo} (pages {c.pageStart}–{c.pageEnd})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input className="askInput" inputMode="numeric" value={adhikar}
+                      onChange={(e) => setAdhikar(e.target.value)} placeholder="1" />
+                  )}
+                </label>
+                {chapters.length > 1 && !adhikar ? (
+                  <p className="askHint">
+                    This granth numbers its gathas from 1 inside every chapter, so a gatha number on its own
+                    points at {chapters.length} different verses. Pick the chapter first.
+                  </p>
+                ) : null}
                 <div className="askRow">
                   <label className="askField"><span className="askLabel">Gatha from</span>
                     <input className="askInput" inputMode="numeric" value={gathaFrom} onChange={(e) => setGathaFrom(e.target.value)} placeholder="1" /></label>
                   <label className="askField"><span className="askLabel">to <em>(optional)</em></span>
                     <input className="askInput" inputMode="numeric" value={gathaTo} onChange={(e) => setGathaTo(e.target.value)} placeholder="8" /></label>
                 </div>
-                <label className="askField"><span className="askLabel">Adhikar <em>(optional)</em></span>
-                  <input className="askInput" inputMode="numeric" value={adhikar} onChange={(e) => setAdhikar(e.target.value)} placeholder="1" /></label>
               </>
             ) : null}
 
@@ -226,6 +306,17 @@ export default function AskPage() {
             <div className="askScopeBox">
               <span className="askLabel">Reading</span>
               <strong>{scopeSummary}</strong>
+              {scopeKind === "search" ? null : previewing ? (
+                <span className="askScopePages">Working out which pages…</span>
+              ) : preview?.needsAdhikar?.length ? (
+                <span className="askScopeWarn">{preview.summaryLine} Pick a chapter above.</span>
+              ) : preview?.pages.length ? (
+                <span className="askScopePages">
+                  {preview.pages.length} page{preview.pages.length === 1 ? "" : "s"} · {describePages(preview.pages)}
+                </span>
+              ) : preview ? (
+                <span className="askScopeWarn">{preview.summaryLine}</span>
+              ) : null}
             </div>
           </aside>
 
@@ -246,12 +337,26 @@ export default function AskPage() {
                 <article key={i} className={`askTurn ${t.role === "user" ? "isUser" : "isAssistant"} ${t.error ? "isError" : ""}`}>
                   {t.role === "user" && t.scopeLine ? <div className="askTurnScope">{t.scopeLine}</div> : null}
                   <div className="askTurnBody">{t.content}</div>
-                  {t.ambiguousAdhikars ? (
-                    <div className="askTruncated">
-                      That gatha number appears in {t.ambiguousAdhikars} different adhikars. Set an adhikar to read just one verse.
+                  {t.needsAdhikar?.length ? (
+                    <div className="askChapterPick">
+                      <span>Which chapter?</span>
+                      <div className="askChapterRow">
+                        {t.needsAdhikar.map((c) => (
+                          <button key={c.adhikar} type="button" onClick={() => setAdhikar(String(c.adhikar))}
+                            title={`gathas ${c.gathaFrom}–${c.gathaTo}, pages ${c.pageStart}–${c.pageEnd}`}>
+                            {c.adhikar}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
-                  {t.truncated ? <div className="askTruncated">Only part of that scope fitted — narrow it for a fuller answer.</div> : null}
+                  {t.droppedGathas?.length ? (
+                    <div className="askTruncated">
+                      Gatha {[...new Set(t.droppedGathas)].join(", ")} did not fit and was not read. Ask about those separately.
+                    </div>
+                  ) : t.truncated ? (
+                    <div className="askTruncated">Only part of that scope fitted — narrow it for a fuller answer.</div>
+                  ) : null}
                   {t.sources?.length ? (
                     <details className="askSources">
                       <summary>{t.sources.length} source page{t.sources.length === 1 ? "" : "s"}</summary>

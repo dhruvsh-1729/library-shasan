@@ -4,6 +4,10 @@
  * sarvam-105b is a reasoning model: it spends its budget in `reasoning_content`
  * and only then fills `content`, so a short max_tokens returns an empty answer.
  * sarvam-105b-conversations replies directly and is the default here.
+ *
+ * sarvam-105b-conversations holds 32,000 tokens including the answer, and the
+ * API rejects the whole request rather than truncating, so callers must budget
+ * the passages they send. See MAX_CONTEXT_CHARS in lib/ai-context.
  */
 const ENDPOINT = "https://api.sarvam.ai/v1/chat/completions";
 
@@ -34,7 +38,7 @@ export async function chat(opts: {
   const model = opts.model ?? CHAT_MODELS.fast;
   // The reasoning model needs headroom for its chain of thought before it
   // writes anything the user will see.
-  const maxTokens = opts.maxTokens ?? (model === CHAT_MODELS.reasoning ? 4000 : 1200);
+  const maxTokens = opts.maxTokens ?? (model === CHAT_MODELS.reasoning ? 4000 : 2000);
 
   const res = await fetch(ENDPOINT, {
     method: "POST",
@@ -62,7 +66,7 @@ export async function chat(opts: {
   if (!content) {
     throw new SarvamChatError(
       choice?.finish_reason === "length"
-        ? "The model ran out of tokens before answering. Try a smaller scope."
+        ? "The model ran out of room before answering. Ask about fewer gathas at a time."
         : "The model returned an empty answer.",
       502,
       body

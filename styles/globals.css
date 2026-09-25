@@ -2741,6 +2741,15 @@ button {
   display: grid; gap: 4px; padding: 9px 10px; border: 1px solid #d7dfdc;
   border-radius: 8px; background: #f7faf8; font-size: 13px;
 }
+.askScopePages { display: block; margin-top: 4px; color: #5c6b67; font-size: 12px; font-weight: 800; }
+.askScopeWarn { display: block; margin-top: 4px; color: #8a4a1c; font-size: 12px; font-weight: 800; }
+.askChapterPick { margin-top: 9px; font-size: 13px; font-weight: 800; color: #34413e; }
+.askChapterRow { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.askChapterRow button {
+  border: 1px solid #d3ddda; background: #fff; color: #17211f;
+  border-radius: 7px; padding: 3px 9px; font-weight: 900; font-size: 13px; cursor: pointer;
+}
+.askChapterRow button:hover { background: #17211f; border-color: #17211f; color: #fff; }
 .askChat {
   display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 10px;
   min-height: calc(100dvh - 130px);
