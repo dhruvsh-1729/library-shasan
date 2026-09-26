@@ -260,10 +260,11 @@ function transliterateWord(word: string, script: ScriptName) {
       if (vowel) {
         output += `${glyphs.consonants[consonant.key]}${glyphs.vowelMarks[vowel.key]}`;
         index += vowel.raw.length;
-      } else if (matchConsonant(word, index)) {
-        output += `${glyphs.consonants[consonant.key]}${glyphs.virama}`;
       } else {
-        output += glyphs.consonants[consonant.key];
+        // Sanskrit rule: a consonant with no vowel after it takes a virama,
+        // before another consonant and at the end of a word alike
+        // ("parshad" -> पर्षद्; type "deva" for देव). No Hindi schwa deletion.
+        output += `${glyphs.consonants[consonant.key]}${glyphs.virama}`;
       }
       continue;
     }

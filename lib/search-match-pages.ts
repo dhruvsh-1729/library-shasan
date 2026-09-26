@@ -4,7 +4,7 @@ import {
   normalizeOCRSearchQueries,
   type OCRSearchMode,
 } from "@/lib/ocr-search";
-import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
+import { buildOCRPrefilter } from "@/lib/ocr-search-index";
 import {
   type LibraryFileMeta,
   type SourceMeta,
@@ -256,45 +256,23 @@ export function validateSearchDownloadQueries(
   return queries;
 }
 
-function ftsConfig(matchMode: OCRSearchMode) {
-  if (matchMode === "contains") {
-    return { table: "ocr_pages_trigram_fts" };
-  }
-  if (matchMode === "ends_with") {
-    return { table: "ocr_pages_suffix_fts" };
-  }
-  return { table: "ocr_pages_search_fts" };
-}
-
-function ftsMatchQuery(query: string, matchMode: OCRSearchMode) {
-  if (matchMode === "begins_with") return `${escapeFtsToken(query)}*`;
-  if (matchMode === "ends_with") return buildOCRSuffixQuery(query);
-  return escapeFtsPhrase(query);
-}
-
 /**
  * Builds the FTS hit sub-query. `relPaths` scopes it to specific granths;
  * `null` searches every indexed granth (the "All granths" filter mode).
  */
-function buildHitQuery(table: string, queries: string[], matchMode: OCRSearchMode, relPaths: string[] | null) {
+function buildHitQuery(queries: string[], matchMode: OCRSearchMode, relPaths: string[] | null) {
   const scopedPaths = relPaths ?? [];
   const relFilterSql = scopedPaths.length
     ? ` AND g.source_rel_path IN (${scopedPaths.map(() => "?").join(",")})`
     : "";
-  const sql = queries
-    .map(
-      () => `SELECT p.id AS page_id
+  const { table, match } = buildOCRPrefilter(queries, matchMode);
+  const sql = `SELECT p.id AS page_id
              FROM ${table}
              JOIN ocr_pages p ON p.id = ${table}.rowid
              JOIN ocr_granths g ON g.granth_key = p.granth_key
-             WHERE ${table} MATCH ?${relFilterSql}`
-    )
-    .join(" UNION ALL ");
+             WHERE ${table} MATCH ?${relFilterSql}`;
 
-  return {
-    sql,
-    args: queries.flatMap((searchQuery) => [ftsMatchQuery(searchQuery, matchMode), ...scopedPaths]),
-  };
+  return { sql, args: [match, ...scopedPaths] };
 }
 
 function normalizeLineBreaks(value: string) {
@@ -363,8 +341,7 @@ export async function loadSearchMatchGranths(
 ) {
   const queries = validateSearchDownloadQueries(query, queryVariants, matchMode);
   const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_EXPORT_GRANTH_PREVIEW));
-  const { table } = ftsConfig(matchMode);
-  const hits = buildHitQuery(table, queries, matchMode, relPaths);
+  const hits = buildHitQuery(queries, matchMode, relPaths);
 
   const result = await getTursoClient().execute({
     sql: `WITH hits AS (${hits.sql}),
@@ -415,8 +392,7 @@ export async function loadSearchMatchLines(
   const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
   const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
   const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
-  const { table } = ftsConfig(matchMode);
-  const hits = buildHitQuery(table, queries, matchMode, [sourceRelPath]);
+  const hits = buildHitQuery(queries, matchMode, [sourceRelPath]);
 
   const result = await getTursoClient().execute({
     sql: `WITH hits AS (${hits.sql}),
@@ -470,9 +446,8 @@ export async function loadSearchMatchPages(
 ) {
   const queries = validateSearchDownloadQueries(query, queryVariants, matchMode);
   const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_MATCH_PAGE_PREVIEW));
-  const { table } = ftsConfig(matchMode);
   const client = getTursoClient();
-  const hits = buildHitQuery(table, queries, matchMode, [sourceRelPath]);
+  const hits = buildHitQuery(queries, matchMode, [sourceRelPath]);
 
   const result = await client.execute({
     sql: `WITH hits AS (${hits.sql}),

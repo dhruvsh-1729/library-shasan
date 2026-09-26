@@ -70,6 +70,26 @@ function sanitise(font, text) {
   return out;
 }
 
+/**
+ * Table blocks arrive as HTML (<table><tr><td>…); the layer must carry the
+ * cell text, not the markup, or a search/extract returns "<td>" soup.
+ */
+export function blockPlainText(text) {
+  return String(text ?? "")
+    .replace(/<\/(td|th)>/gi, " | ")
+    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h[1-6])>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/(\s*\|\s*)+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function addTextLayer({ srcPdf, metaByPage, outPdf, onPage }) {
   const doc = await PDFDocument.load(await readFile(srcPdf), { ignoreEncryption: true });
   doc.registerFontkit(fontkit);
@@ -103,7 +123,7 @@ export async function addTextLayer({ srcPdf, metaByPage, outPdf, onPage }) {
       // layer omits them too rather than making captions findable.
       if (block.layout_tag === "image") { blocksSkipped += 1; continue; }
 
-      const logical = String(block.text ?? "").replace(/\s+/g, " ").trim();
+      const logical = blockPlainText(block.text);
       const c = block.coordinates;
       if (!logical || !c) { blocksSkipped += 1; continue; }
 

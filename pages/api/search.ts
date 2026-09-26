@@ -8,7 +8,8 @@ import {
   parseOCRSearchMode,
   type OCRSearchMode,
 } from "@/lib/ocr-search";
-import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
+import { buildOCRPrefilter } from "@/lib/ocr-search-index";
+import { foldSanskrit } from "@/lib/sanskrit-fold.mjs";
 import {
   type DocumentMeta,
   resolveGranthPdfTargets,
@@ -73,12 +74,6 @@ function toInt(value: unknown, fallback = 0) {
 function toStr(value: unknown, fallback = "") {
   if (value == null) return fallback;
   return String(value);
-}
-
-function ftsMatchQueryFor(query: string, matchMode: OCRSearchMode) {
-  if (matchMode === "begins_with") return `${escapeFtsToken(query)}*`;
-  if (matchMode === "ends_with") return buildOCRSuffixQuery(query);
-  return escapeFtsPhrase(query);
 }
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -150,22 +145,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const relFilterSql = selectedRelPaths.length
         ? ` AND g.source_rel_path IN (${selectedRelPaths.map(() => "?").join(",")})`
         : "";
-      const ftsTable =
-        matchMode === "contains"
-          ? "ocr_pages_trigram_fts"
-          : matchMode === "ends_with"
-            ? "ocr_pages_suffix_fts"
-            : "ocr_pages_search_fts";
-      const hitSql = queries
-        .map(
-          () => `SELECT p.id AS page_id
+      const prefilter = buildOCRPrefilter(queries, matchMode);
+      const ftsTable = prefilter.table;
+      const hitSql = `SELECT p.id AS page_id
                 FROM ${ftsTable}
                 JOIN ocr_pages p ON p.id = ${ftsTable}.rowid
                 JOIN ocr_granths g ON g.granth_key = p.granth_key
-                WHERE ${ftsTable} MATCH ?${relFilterSql}`
-        )
-        .join(" UNION ALL ");
-      const hitArgs = queries.flatMap((query) => [ftsMatchQueryFor(query, matchMode), ...selectedRelPaths]);
+                WHERE ${ftsTable} MATCH ?${relFilterSql}`;
+      const hitArgs = [prefilter.match, ...selectedRelPaths];
 
       // The FTS tables are only a prefilter; the boundary rules for each match
       // mode live in findOCRSearchMatches. Counting straight off the index
@@ -219,11 +206,20 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const countsExact = occurrenceResult.rows.length <= OCCURRENCE_SCAN_CAP;
       let totalOccurrences = 0;
       let verifiedPages = 0;
+      // How often each written form was matched, so a count can be checked
+      // (पर्षद् 2, परिषद् 17 ...). Keyed by folded form, shown as first seen.
+      const formCounts = new Map<string, { form: string; count: number }>();
       for (const row of occurrenceResult.rows.slice(0, OCCURRENCE_SCAN_CAP)) {
-        const hits = findOCRSearchMatchesForQueries(toStr(row.content), queries, matchMode).length;
-        if (hits > 0) {
+        const matches = findOCRSearchMatchesForQueries(toStr(row.content), queries, matchMode);
+        if (matches.length > 0) {
           verifiedPages += 1;
-          totalOccurrences += hits;
+          totalOccurrences += matches.length;
+          for (const match of matches) {
+            const key = foldSanskrit(match.text);
+            const entry = formCounts.get(key);
+            if (entry) entry.count += 1;
+            else formCounts.set(key, { form: match.text.replace(/[\u200b-\u200d\ufeff]/g, ""), count: 1 });
+          }
         }
       }
       const occurrencesExact = countsExact;
@@ -282,6 +278,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         total,
         total_pages_with_matches: total,
         total_occurrences: totalOccurrences,
+        form_counts: [...formCounts.values()].sort((a, b) => b.count - a.count).slice(0, 60),
         total_occurrences_exact: occurrencesExact,
         occurrence_scan_cap: OCCURRENCE_SCAN_CAP,
         occurrence_scanned_pages: Math.min(occurrenceResult.rows.length, OCCURRENCE_SCAN_CAP),

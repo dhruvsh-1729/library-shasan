@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getTursoClient } from "@/lib/turso";
 import { buildOCRSearchExcerpt, findOCRSearchMatches, parseOCRSearchMode } from "@/lib/ocr-search";
-import { buildOCRSuffixQuery, escapeFtsPhrase, escapeFtsToken } from "@/lib/ocr-search-index";
+import { buildOCRPrefilter } from "@/lib/ocr-search-index";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 
@@ -86,19 +86,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       xlsx_url: string | null;
     }> = [];
 
-    const ftsTable =
-      matchMode === "contains"
-        ? "ocr_pages_trigram_fts"
-        : matchMode === "ends_with"
-          ? "ocr_pages_suffix_fts"
-          : "ocr_pages_search_fts";
-    const ftsColumn = matchMode === "ends_with" ? "reversed_content" : "content";
-    const matchQuery =
-      matchMode === "begins_with"
-        ? `${escapeFtsToken(q)}*`
-        : matchMode === "ends_with"
-          ? buildOCRSuffixQuery(q)
-          : escapeFtsPhrase(q);
+    const prefilter = buildOCRPrefilter([q], matchMode);
+    const ftsTable = prefilter.table;
+    const ftsColumn = matchMode === "ends_with" ? "reversed_content" : "folded_content";
+    const matchQuery = prefilter.match;
 
     const countResult = await client.execute({
       sql: `SELECT COUNT(*) AS total

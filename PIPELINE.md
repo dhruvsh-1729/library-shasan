@@ -74,6 +74,27 @@ to omit hints.
 - Supabase `documents`: searchable status, PDF URL, CSV URL, processing summary.
 - Supabase `document_pages`: extracted page text for the existing search path.
 - Turso `ocr_granths`, `ocr_pages`, `ocr_pages_fts`: spreadsheet URL and searchable page text.
+- Turso folded search index (`ocr_pages_folded_state` + `ocr_pages_folded_fts`,
+  `_trigram_fts`, `_suffix_fts`): what `/search` actually queries.
+
+## Folded search index
+
+Search runs on page text folded by `lib/sanskrit-fold.mjs`: Gujarati script to
+Devanagari, anusvara = class nasal (व्यंतर = व्यन्तर), final म् = ं, र्ऋ = ऋ,
+joiners removed. The "Sanskrit forms" match mode adds the regular declension of
+the word (देव → देवः देवम् देवस्य …, पर्षदा → पर्षद् पर्षत् …, with ṇatva) and skips
+grammar labels such as `(स्त्री.)`. Every hit is re-checked against
+`ocr_pages.content`.
+
+The pipeline scripts re-fold the pages they write. A trigger marks a page stale
+when its text changes some other way; refresh anything stale or missing with
+
+```bash
+node scripts/ensure_folded_search_index.mjs            # whole library (resumable)
+node scripts/ensure_folded_search_index.mjs 375 380    # specific granth keys
+```
+
+Changing the fold rules means bumping `SANSKRIT_FOLD_VERSION` and re-running it.
 
 Existing Turso granths with enough pages and an XLSX URL are skipped unless
 `--reprocess` is passed.

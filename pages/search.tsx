@@ -190,6 +190,7 @@ export default function SearchPage() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [totalOccurrences, setTotalOccurrences] = useState(0);
+  const [formCounts, setFormCounts] = useState<Array<{ form: string; count: number }>>([]);
   const [occurrencesExact, setOccurrencesExact] = useState(true);
   const [occurrenceScannedPages, setOccurrenceScannedPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -197,14 +198,14 @@ export default function SearchPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchMode, setSearchMode] = useState<OCRSearchMode>("exact_word");
+  const [searchMode, setSearchMode] = useState<OCRSearchMode>("sanskrit_forms");
   const [selectedQueryOptionIds, setSelectedQueryOptionIds] = useState<string[]>([]);
   const [lastSearchQueries, setLastSearchQueries] = useState<string[]>([]);
   // The export dialog covers the search that produced the results on screen,
   // even if the granth filter is edited afterwards.
   const [lastSearchGranthIds, setLastSearchGranthIds] = useState<string[]>([]);
   const [lastSearchScopeLabel, setLastSearchScopeLabel] = useState("All granths");
-  const [lastSearchMode, setLastSearchMode] = useState<OCRSearchMode>("exact_word");
+  const [lastSearchMode, setLastSearchMode] = useState<OCRSearchMode>("sanskrit_forms");
   // The request behind the results on screen, to tell when the form has moved on.
   const [lastRequest, setLastRequest] = useState<SearchRequest | null>(null);
 
@@ -556,6 +557,7 @@ export default function SearchPage() {
         total?: number;
         total_occurrences?: number;
         total_occurrences_exact?: boolean;
+        form_counts?: Array<{ form: string; count: number }>;
         occurrence_scanned_pages?: number;
         page?: number;
         total_is_exact?: boolean;
@@ -574,6 +576,7 @@ export default function SearchPage() {
       setResults(json.results ?? []);
       setTotal(Number(json.total ?? (json.results?.length ?? 0)));
       setTotalOccurrences(Number(json.total_occurrences ?? 0));
+      setFormCounts(Array.isArray(json.form_counts) ? json.form_counts : []);
       setOccurrencesExact(json.total_occurrences_exact !== false);
       setOccurrenceScannedPages(Number(json.occurrence_scanned_pages ?? 0));
       setCurrentPage(Number(json.page ?? request.page));
@@ -1055,6 +1058,17 @@ export default function SearchPage() {
                 in <strong>{lastSearchScopeLabel.toLowerCase()}</strong> · showing page {currentPage} of {totalPages} ·
                 match: <strong>{getOCRSearchModeLabel(lastSearchMode)}</strong>
               </span>
+              {formCounts.length > 1 ? (
+                <span className="searchCountMeta" style={{ flexBasis: "100%" }}>
+                  Matched forms{occurrencesExact ? "" : " (in the pages counted)"}:{" "}
+                  {formCounts.map((entry, index) => (
+                    <span key={entry.form}>
+                      {index ? " · " : ""}
+                      <strong>{entry.form}</strong> ×{entry.count}
+                    </span>
+                  ))}
+                </span>
+              ) : null}
               {resultsStale ? (
                 <span style={staleNoteStyle} role="status">
                   The search settings above have changed. Press Search to update these results.

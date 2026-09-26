@@ -17,6 +17,7 @@ import "regenerator-runtime/runtime.js";
 import { PDFDocument, PDFName, PDFArray, PDFRawStream, PDFHexString, PDFOperator, PDFDict, decodePDFRawStream } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { createClient } from "@libsql/client";
+import { syncFoldedIndex } from "../../lib/ocr-folded-index.mjs";
 import { createClient as createSupabase } from "@supabase/supabase-js";
 import { UTApi } from "uploadthing/server";
 import { scriptRuns } from "../sarvam/add_text_layer.mjs";
@@ -360,6 +361,8 @@ async function fixBook(fixFile) {
       }
       await turso.batch(stmts, "write");
     }
+    // Search reads the folded index; re-fold what this wrote.
+    await syncFoldedIndex(turso, { granthKey: fx.key });
     await turso.execute({
       sql: "UPDATE ocr_granths SET xlsx_url = ?, xlsx_key = ?, updated_at = ? WHERE granth_key = ?",
       args: [up.csv.url, up.csv.key, now, fx.key],

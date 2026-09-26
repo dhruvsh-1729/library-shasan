@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { createClient as createTursoClient } from "@libsql/client";
+import { syncFoldedIndex } from "../lib/ocr-folded-index.mjs";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { UTApi, UTFile } from "uploadthing/server";
 import XLSX from "xlsx";
@@ -1898,6 +1899,8 @@ async function upsertTursoPageCheckpoint(db, meta, totalPages, row) {
       args: [meta.granthKey, meta.granthKey],
     });
     await tx.commit();
+    // Search reads the folded index; re-fold what this wrote.
+    await syncFoldedIndex(db, { granthKey: meta.granthKey });
   } catch (error) {
     try {
       if (!tx.closed) await tx.rollback();
@@ -2040,6 +2043,8 @@ async function upsertTursoGranthAndPages(db, payload) {
     }
 
     await tx.commit();
+    // Search reads the folded index; re-fold what this wrote.
+    await syncFoldedIndex(db, { granthKey: payload.granthKey });
   } catch (error) {
     try {
       if (!tx.closed) await tx.rollback();

@@ -21,6 +21,8 @@ function htmlToText(html) {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    // Table cells keep a separator instead of running into each other.
+    .replace(/<\/(td|th)>/gi, " | ")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, "\n")
     .replace(/<[^>]+>/g, "")

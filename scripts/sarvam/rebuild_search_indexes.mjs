@@ -11,6 +11,7 @@
 // indexes rebuild themselves. The suffix table is app-maintained and is
 // rewritten here explicitly.
 import { createClient } from "@libsql/client";
+import { syncFoldedIndex } from "../../lib/ocr-folded-index.mjs";
 import { buildOCRSuffixIndexContent } from "../../lib/ocr-search-index.ts";
 
 const dryRun = process.argv.includes("--dry-run");
@@ -69,3 +70,7 @@ for (;;) {
 console.log(`\nscanned ${scanned.toLocaleString()} pages`);
 console.log(`  content normalised to NFC : ${contentRewritten.toLocaleString()}`);
 console.log(`  suffix rows rebuilt       : ${suffixRewritten.toLocaleString()}`);
+if (!dryRun) {
+  // NFC rewrites mark folded rows stale; re-fold them so search sees the new text.
+  console.log(`  folded rows re-folded     : ${(await syncFoldedIndex(client)).toLocaleString()}`);
+}

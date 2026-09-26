@@ -3,6 +3,7 @@
 // only after this has run and been verified.
 import { readFile } from "node:fs/promises";
 import { createClient } from "@libsql/client";
+import { syncFoldedIndex } from "../../lib/ocr-folded-index.mjs";
 import { createClient as createSupabase } from "@supabase/supabase-js";
 import { parse } from "csv-parse/sync";
 
@@ -116,6 +117,8 @@ if (dryRun) {
     if ((i / BATCH) % 4 === 0) process.stdout.write(`  ${Math.min(i + BATCH, rows.length)}/${rows.length}\r`);
   }
   console.log(`${label} ocr_pages + ocr_pages_suffix: rewrote ${updated} page(s)          `);
+  // Search reads the folded index; re-fold what this wrote.
+  console.log(`${label} folded search index: re-folded ${await syncFoldedIndex(turso, { granthKey: cfg.granthKey })} page(s)`);
 
   await turso.execute({
     sql: `UPDATE ocr_granths

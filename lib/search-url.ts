@@ -46,7 +46,8 @@ export function parseSearchUrl(query: Record<string, QueryValue>): ParsedSearchU
   return {
     q: first(query.q).trim(),
     langs: langsRaw ? splitList(langsRaw) : null,
-    matchMode: parseOCRSearchMode(first(query.match) || first(query.matchMode)),
+    // No match param means the default Sanskrit forms search.
+    matchMode: parseOCRSearchMode(first(query.match) || first(query.matchMode) || "sanskrit_forms"),
     page: Number.isFinite(page) && page > 1 ? page : 1,
     granthValues: legacyCustomId ? [legacyCustomId] : inRaw ? splitList(inRaw) : [],
   };
@@ -57,7 +58,7 @@ export function buildSearchUrl(request: SearchRequest, keyById: ReadonlyMap<stri
   const params = new URLSearchParams();
   if (request.q) params.set("q", request.q);
   if (request.langs) params.set("langs", request.langs.join(","));
-  if (request.matchMode !== "exact_word") params.set("match", request.matchMode);
+  if (request.matchMode !== "sanskrit_forms") params.set("match", request.matchMode);
   if (request.scope === "selected") {
     params.set("in", request.granthIds.map((id) => keyById.get(id) ?? id).join(","));
   }

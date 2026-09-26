@@ -3,6 +3,7 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createClient as createTursoClient } from "@libsql/client";
+import { syncFoldedIndex } from "../lib/ocr-folded-index.mjs";
 import { UTApi, UTFile } from "uploadthing/server";
 import XLSX from "xlsx";
 
@@ -703,6 +704,8 @@ async function upsertGranthAndPages(db, payload) {
     }
 
     await tx.commit();
+    // Search reads the folded index; re-fold what this wrote.
+    await syncFoldedIndex(db, { granthKey: payload.granthKey });
   } catch (error) {
     try {
       if (!tx.closed) {

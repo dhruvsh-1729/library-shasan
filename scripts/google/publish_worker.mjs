@@ -23,6 +23,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createClient } from "@libsql/client";
+import { syncFoldedIndex } from "../../lib/ocr-folded-index.mjs";
 import { createClient as createSupabase } from "@supabase/supabase-js";
 import { UTApi } from "uploadthing/server";
 import { stripTextLayer } from "../sarvam/strip_text_layer.mjs";
@@ -35,6 +36,9 @@ const [booksPath, ocrDir, pubDir] = process.argv.slice(2).filter((a) => !a.start
 const once = process.argv.includes("--once");
 const noDelete = process.argv.includes("--no-delete");
 const only = process.argv.find((a) => a.startsWith("--only="))?.split("=")[1];
+// --accept-gate=380,381: publish these books even though the quality gate
+// flagged them (a human looked and decided), and retry them if quarantined.
+const acceptGate = new Set((process.argv.find((a) => a.startsWith("--accept-gate="))?.split("=")[1] ?? "").split(",").filter(Boolean));
 // --shard=k/n: this worker handles every n-th book starting at k, so several
 // workers can run side by side without ever touching the same granth.
 const [shardK, shardN] = (process.argv.find((a) => a.startsWith("--shard="))?.split("=")[1] ?? "0/1").split("/").map(Number);
@@ -307,6 +311,10 @@ async function publish(book) {
     const oldQ = quality(live.rows.map((r) => String(r.content ?? "")));
     const newQ = quality(pages.map((p) => p.clean));
     const why = gate(oldQ, newQ);
+    if (why.length && acceptGate.has(book.id)) {
+      log(`quality gate overridden by --accept-gate: ${why.join("; ")}`);
+      return { oldQ, newQ, gateOverridden: why };
+    }
     if (why.length) {
       const err = new Error(`quality gate: ${why.join("; ")}`); err.quarantine = true; err.detail = { oldQ, newQ }; throw err;
     }
@@ -382,6 +390,8 @@ async function publish(book) {
     // Pages beyond the new count would be stale leftovers from an older run.
     await turso.execute({ sql: "DELETE FROM ocr_pages_suffix WHERE granth_key = ? AND page_number > ?", args: [meta.granthKey, pages.length] });
     await turso.execute({ sql: "DELETE FROM ocr_pages WHERE granth_key = ? AND page_number > ?", args: [meta.granthKey, pages.length] });
+    // Search reads the folded index; re-fold what this wrote.
+    await syncFoldedIndex(turso, { granthKey: meta.granthKey });
     // Printed page numbers were written in the same UPDATE as the text.
     await turso.execute({ sql: "UPDATE ocr_granths SET page_count = ? WHERE granth_key = ?", args: [pages.length, meta.granthKey] });
     const { error: e1 } = await sb.from("granth_ocr_files").update({ file_size: up.pdf.size }).eq("id", meta.fileId);
@@ -439,7 +449,8 @@ for (const f of (await readdir(pubDir)).filter((f) => /^summary.*\.json$/.test(f
 for (;;) {
   const ocrState = existsSync(path.join(ocrDir, "state.json")) ? JSON.parse(await readFile(path.join(ocrDir, "state.json"), "utf8")) : { parts: {} };
   const ready = books.filter((b) => {
-    if (["published", "quarantined"].includes(summary[b.id]?.status)) return false;
+    if (summary[b.id]?.status === "published") return false;
+    if (summary[b.id]?.status === "quarantined" && !acceptGate.has(b.id)) return false;
     if (noDelete && summary[b.id]?.status === "published-old-kept") return false;
     const parts = Object.values(ocrState.parts).filter((p) => p.book === b.id);
     return parts.length && parts.every((p) => p.done);

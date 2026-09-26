@@ -1,10 +1,23 @@
-export type OCRSearchMode = "exact_word" | "contains" | "begins_with" | "ends_with";
+import {
+  foldSanskrit,
+  foldSanskritText,
+  gujaratiCaseForms,
+  isGrammarLabelAt,
+  sanskritQueryForms,
+} from "./sanskrit-fold.mjs";
+
+export type OCRSearchMode = "sanskrit_forms" | "exact_word" | "contains" | "begins_with" | "ends_with";
 
 export const OCR_SEARCH_MODE_OPTIONS: Array<{
   mode: OCRSearchMode;
   label: string;
   description: string;
 }> = [
+  {
+    mode: "sanskrit_forms",
+    label: "Sanskrit forms",
+    description: "The word and its Sanskrit declensions (देवः, देवम्, पर्षद्…), skipping grammar labels like स्त्री.",
+  },
   {
     mode: "exact_word",
     label: "Exact word",
@@ -37,7 +50,7 @@ export type SearchMatch = {
 const WORD_CHAR_PATTERN = /[\p{L}\p{N}\p{M}_]/u;
 
 export function parseOCRSearchMode(raw: unknown): OCRSearchMode {
-  if (raw === "contains" || raw === "begins_with" || raw === "ends_with") return raw;
+  if (raw === "sanskrit_forms" || raw === "contains" || raw === "begins_with" || raw === "ends_with") return raw;
   return "exact_word";
 }
 
@@ -54,44 +67,92 @@ function isBoundaryChar(char: string | undefined) {
   return !WORD_CHAR_PATTERN.test(char);
 }
 
-export function findOCRSearchMatches(content: string, query: string, mode: OCRSearchMode): SearchMatch[] {
-  // Both sides are canonicalised: the corpus holds the same glyph written more
-  // than one way (nukta before vs after virama), and a typed query only ever
-  // carries one of them.
-  const source = String(content ?? "").normalize("NFC");
-  const needle = String(query ?? "").normalize("NFC").trim();
-  if (!source || !needle) return [];
+/**
+ * The folded strings a query is looked up by. Matching happens on folded text
+ * (see lib/sanskrit-fold.mjs), so Gujarati/Devanagari script, anusvara vs
+ * class nasal, joiners and र्ऋ/ऋ never decide whether a word is found.
+ */
+export function foldedNeedlesForQuery(query: string, mode: OCRSearchMode) {
+  const text = String(query ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
+  if (!text) return [];
+  if (mode === "sanskrit_forms") return [...new Set([...sanskritQueryForms(text), ...gujaratiOnlyForms(text)])];
+  const folded = foldSanskrit(text);
+  return folded ? [folded] : [];
+}
 
-  const pattern = new RegExp(escapeRegExp(needle), "giu");
+const GUJARATI_CHAR = /[\u0A80-\u0AFF]/;
+const gujaratiOnlyCache = new Map<string, string[]>();
+/** Gujarati-inflected forms that are not also Sanskrit forms of the word. */
+function gujaratiOnlyForms(query: string) {
+  let forms = gujaratiOnlyCache.get(query);
+  if (!forms) {
+    const sanskrit = new Set(sanskritQueryForms(query));
+    forms = /\s/.test(query) ? [] : gujaratiCaseForms(query).filter((form) => !sanskrit.has(form));
+    if (gujaratiOnlyCache.size > 500) gujaratiOnlyCache.clear();
+    gujaratiOnlyCache.set(query, forms);
+  }
+  return forms;
+}
+
+type FoldedContent = ReturnType<typeof foldForMatching>;
+
+function foldForMatching(content: string) {
+  return foldSanskritText(String(content ?? ""), true);
+}
+
+const needlePatternCache = new Map<string, RegExp>();
+function needlePattern(needles: string[]) {
+  const key = needles.join("\u0000");
+  let pattern = needlePatternCache.get(key);
+  if (!pattern) {
+    const sorted = [...needles].sort((a, b) => b.length - a.length).map(escapeRegExp);
+    pattern = new RegExp(sorted.join("|"), "gu");
+    if (needlePatternCache.size > 500) needlePatternCache.clear();
+    needlePatternCache.set(key, pattern);
+  }
+  pattern.lastIndex = 0;
+  return pattern;
+}
+
+function findInFolded(folded: FoldedContent, query: string, mode: OCRSearchMode): SearchMatch[] {
+  const needles = foldedNeedlesForQuery(query, mode);
+  if (needles.length === 0 || !folded.text) return [];
+  const { text, starts, ends, source } = folded;
+  const needle = String(query ?? "").normalize("NFC").trim();
+  const wordMode = mode === "exact_word" || mode === "sanskrit_forms";
+  const pattern = needlePattern(needles);
   const matches: SearchMatch[] = [];
   let match: RegExpExecArray | null;
 
-  while ((match = pattern.exec(source)) !== null) {
-    const start = typeof match.index === "number" ? match.index : 0;
-    const text = match[0] ?? "";
-    const end = start + text.length;
-
-    const left = source[start - 1];
-    const right = source[end];
-
-    if (mode === "exact_word" && (!isBoundaryChar(left) || !isBoundaryChar(right))) {
-      continue;
-    }
-    if (mode === "begins_with" && !isBoundaryChar(left)) {
-      continue;
-    }
-    if (mode === "ends_with" && !isBoundaryChar(right)) {
-      continue;
-    }
-
-    matches.push({ start, end, text, query: needle });
-
-    if (text.length === 0) {
+  while ((match = pattern.exec(text)) !== null) {
+    const hit = match[0] ?? "";
+    if (!hit) {
       pattern.lastIndex += 1;
+      continue;
     }
+    const fStart = match.index;
+    const fEnd = fStart + hit.length;
+    const leftOk = isBoundaryChar(text[fStart - 1]);
+    const rightOk = isBoundaryChar(text[fEnd]);
+
+    if (wordMode && (!leftOk || !rightOk)) continue;
+    if (mode === "begins_with" && !leftOk) continue;
+    if (mode === "ends_with" && !rightOk) continue;
+
+    const start = starts[fStart];
+    const end = ends[fEnd - 1];
+    if (mode === "sanskrit_forms" && isGrammarLabelAt(source, start, end, hit)) continue;
+    // A Gujarati case ending only makes sense on a word written in Gujarati.
+    if (mode === "sanskrit_forms" && !GUJARATI_CHAR.test(source.slice(start, end)) && gujaratiOnlyForms(needle).includes(hit)) continue;
+    matches.push({ start, end, text: source.slice(start, end), query: needle });
   }
 
   return matches;
+}
+
+export function findOCRSearchMatches(content: string, query: string, mode: OCRSearchMode): SearchMatch[] {
+  // Offsets index the NFC form of `content`, as before; stored OCR text is NFC.
+  return findInFolded(foldForMatching(content), query, mode);
 }
 
 function queryValues(value: string | string[] | null | undefined) {
@@ -111,7 +172,9 @@ export function normalizeOCRSearchQueries(
   for (const value of [...queryValues(primary), ...queryValues(variants)]) {
     const query = String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
     if (!query) continue;
-    const key = query.toLocaleLowerCase();
+    // Variants that fold to the same text (the Gujarati spelling of a
+    // Devanagari query, anusvara vs nasal, ...) are one search.
+    const key = foldSanskrit(query);
     if (seen.has(key)) continue;
     seen.add(key);
     queries.push(query);
@@ -153,9 +216,8 @@ export function findOCRSearchMatchesForQueries(
   const normalizedQueries = normalizeOCRSearchQueries(queries);
   if (normalizedQueries.length === 0) return [];
 
-  return mergeSearchMatches(
-    normalizedQueries.flatMap((query) => findOCRSearchMatches(content, query, mode))
-  );
+  const folded = foldForMatching(content);
+  return mergeSearchMatches(normalizedQueries.flatMap((query) => findInFolded(folded, query, mode)));
 }
 
 export function hasOCRSearchMatch(content: string, query: string, mode: OCRSearchMode) {

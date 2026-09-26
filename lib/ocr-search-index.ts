@@ -1,4 +1,7 @@
 import type { Client } from "@libsql/client";
+import { type OCRSearchMode, foldedNeedlesForQuery } from "./ocr-search";
+import { FOLDED_SCHEMA_STATEMENTS, FOLDED_TABLES, foldedUpsertStatements } from "./ocr-folded-index.mjs";
+import { reverseCodePoints as reverseFoldedCodePoints } from "./sanskrit-fold.mjs";
 
 const WORD_TOKEN_PATTERN = /[\p{L}\p{N}\p{M}_]+/gu;
 type SearchIndexExecutor = Pick<Client, "execute">;
@@ -128,7 +131,7 @@ async function createOCRSearchSchema(client: SearchIndexExecutor) {
     END;`,
   ];
 
-  for (const sql of statements) {
+  for (const sql of [...statements, ...FOLDED_SCHEMA_STATEMENTS]) {
     await client.execute(sql);
   }
 }
@@ -168,4 +171,29 @@ export async function upsertOCRPageSuffixIndex(
             updated_at = CURRENT_TIMESTAMP`,
     args: [buildOCRSuffixIndexContent(content), granthKey, pageNumber],
   });
+
+  // The folded index is what search reads; keep it in step with the page.
+  for (const statement of foldedUpsertStatements({ id: pageId, granth_key: granthKey, page_number: pageNumber, content })) {
+    await client.execute(statement as { sql: string; args: Array<string | number> });
+  }
+}
+
+/**
+ * The FTS table and single MATCH expression that prefilter pages for a set of
+ * queries. Everything runs on the folded index, so the MATCH terms are folded
+ * with the same rules as the indexed text; findOCRSearchMatches then verifies
+ * every candidate page against its real content.
+ */
+export function buildOCRPrefilter(queries: string[], mode: OCRSearchMode) {
+  const terms = new Set<string>();
+  for (const query of queries) {
+    for (const needle of foldedNeedlesForQuery(query, mode)) {
+      if (mode === "begins_with") terms.add(`${escapeFtsToken(needle)}*`);
+      else if (mode === "ends_with") terms.add(`${escapeFtsToken(reverseFoldedCodePoints(needle))}*`);
+      else terms.add(escapeFtsPhrase(needle));
+    }
+  }
+  const table =
+    mode === "contains" ? FOLDED_TABLES.trigram : mode === "ends_with" ? FOLDED_TABLES.suffix : FOLDED_TABLES.words;
+  return { table, match: [...terms].join(" OR "), termCount: terms.size };
 }

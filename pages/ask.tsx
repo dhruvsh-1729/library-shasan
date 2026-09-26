@@ -62,7 +62,7 @@ export default function AskPage() {
   const [pageFrom, setPageFrom] = useState("");
   const [pageTo, setPageTo] = useState("");
   const [query, setQuery] = useState("");
-  const [matchMode, setMatchMode] = useState<OCRSearchMode>("exact_word");
+  const [matchMode, setMatchMode] = useState<OCRSearchMode>("sanskrit_forms");
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [preview, setPreview] = useState<ScopePreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
