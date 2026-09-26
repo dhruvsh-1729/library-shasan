@@ -85,7 +85,10 @@ export function blockPlainText(text) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&amp;/g, "&")
-    .replace(/(\s*\|\s*)+$/g, "")
+    // Trailing empty-cell separators. A single character class: the grouped
+    // form (\s*\|\s*)+$ backtracks exponentially on a table of empty cells
+    // and hung the whole PDF build (granth 221, page 328).
+    .replace(/[\s|]+$/, "")
     .replace(/\s+/g, " ")
     .trim();
 }

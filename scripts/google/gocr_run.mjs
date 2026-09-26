@@ -9,7 +9,7 @@
 // already uploaded are not uploaded again and parts already OCRed are never
 // sent (or paid for) twice.
 //
-//   node scripts/google/gocr_run.mjs <books.json> <workDir> [--limit=N] [--dry-run]
+//   node scripts/google/gocr_run.mjs <books.json> <workDir> [--limit=N] [--dry-run] [--hints=sa,hi,en]
 import { readFile, writeFile, mkdir, stat, rename } from "node:fs/promises";
 import { existsSync, createReadStream } from "node:fs";
 import { Readable } from "node:stream";
@@ -31,8 +31,10 @@ const UPLOAD_CONCURRENCY = 3;
 const [booksPath, workDir] = process.argv.slice(2);
 const limit = Number(process.argv.find((a) => a.startsWith("--limit="))?.split("=")[1] ?? 0);
 const dryRun = process.argv.includes("--dry-run");
+// --hints=sa,hi,en for Devanagari books; the default suits Gujarati ones.
+const hints = (process.argv.find((a) => a.startsWith("--hints="))?.split("=")[1] ?? "gu,sa,en").split(",");
 if (!booksPath || !workDir) {
-  console.error("usage: gocr_run.mjs <books.json> <workDir> [--limit=N] [--dry-run]");
+  console.error("usage: gocr_run.mjs <books.json> <workDir> [--limit=N] [--dry-run] [--hints=sa,hi,en]");
   process.exit(1);
 }
 
@@ -175,7 +177,7 @@ async function submit(parts) {
   const body = {
     inputDocuments: { gcsDocuments: { documents: parts.map((p) => ({ gcsUri: p.gcs, mimeType: "application/pdf" })) } },
     documentOutputConfig: { gcsOutputConfig: { gcsUri: `gs://${BUCKET}/out/`, fieldMask: FIELD_MASK } },
-    processOptions: { ocrConfig: { hints: { languageHints: ["gu", "sa", "en"] } } },
+    processOptions: { ocrConfig: { hints: { languageHints: hints } } },
   };
   const res = await api(`${API}/${PROCESSOR}:batchProcess`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const op = (await res.json()).name;

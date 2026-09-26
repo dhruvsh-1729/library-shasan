@@ -28,6 +28,7 @@ import { createClient as createSupabase } from "@supabase/supabase-js";
 import { UTApi } from "uploadthing/server";
 import { stripTextLayer } from "../sarvam/strip_text_layer.mjs";
 import { addTextLayer } from "../sarvam/add_text_layer.mjs";
+import { makeDevFixer } from "./dev_fix.mjs";
 
 const run = promisify(execFile);
 const HERE = path.dirname(new URL(import.meta.url).pathname);
@@ -65,6 +66,7 @@ async function writeSummary() {
 const lex = JSON.parse(await readFile(path.join(path.dirname(ocrDir), "lexicon.json"), "utf8"));
 const GU = /[઀-૿]/;
 const nfc = (s) => String(s ?? "").normalize("NFC").replace(/[‌‍]/g, "");
+const fixDevanagari = makeDevFixer(lex.dev);
 
 /**
  * Only mechanical, provable fixes:
@@ -106,7 +108,8 @@ function cleanText(text) {
   });
   let fixes = 0;
   t = t.replace(/[઀-૿]+/g, (w) => { const f = fixWord(w); if (f !== w) fixes += 1; return f; });
-  return { text: t, fixes };
+  const d = fixDevanagari(t);
+  return { text: d.text, fixes: fixes + d.fixes };
 }
 
 // ------------------------------------------------------------ quality
@@ -141,7 +144,12 @@ function gate(oldQ, newQ) {
   if (newQ.empty > oldQ.empty + Math.max(3, 0.02 * newQ.pages)) why.push(`more empty pages (${newQ.empty} vs ${oldQ.empty})`);
   // No slack: where the live text is already good, "about as good" is not a
   // reason to replace it, so any drop in either script keeps the live text.
-  const worse = (k, n) => oldQ[n] > 300 && newQ[k] != null && oldQ[k] != null && newQ[k] < oldQ[k];
+  // A script that all but vanishes while the other script grows was never
+  // there: old OCR read Devanagari as Gujarati (and vice versa), and a share of
+  // that soup happens to spell real words. Its "validity" is not a baseline.
+  const other = { gu: "dev", dev: "gu" };
+  const misread = (n) => newQ[n] < 0.05 * oldQ[n] && newQ[other[n]] > oldQ[other[n]];
+  const worse = (k, n) => oldQ[n] > 300 && !misread(n) && newQ[k] != null && oldQ[k] != null && newQ[k] < oldQ[k];
   if (worse("guValid", "gu")) why.push(`Gujarati valid ${(100 * newQ.guValid).toFixed(1)}% < live ${(100 * oldQ.guValid).toFixed(1)}%`);
   if (worse("devValid", "dev")) why.push(`Devanagari valid ${(100 * newQ.devValid).toFixed(1)}% < live ${(100 * oldQ.devValid).toFixed(1)}%`);
   if (newQ.mixed > oldQ.mixed + 5) why.push(`more mixed-script words (${newQ.mixed} vs ${oldQ.mixed})`);
