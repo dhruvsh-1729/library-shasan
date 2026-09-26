@@ -8,7 +8,10 @@ export const TEXT_ONLY_ID_PREFIX = "text:";
 export const TEXT_ONLY_COLLECTION = "GG 76 Prat (text only)";
 const TEXT_ONLY_PATH_PATTERN = "%GG 76 Prat OCR_ed/%";
 // Spreadsheet copies of granths that are already in the library with a PDF.
-const DUPLICATE_KEYS = ["414_B053915"];
+// 469–471 (Dharmaratna Prakaran 1–3) are the same edition as the library's
+// dharmratna_prakaran_part_01–03 PDFs, whose Google text reads the Sanskrit
+// verses these spreadsheets turned into Gujarati-script noise.
+const DUPLICATE_KEYS = ["414_B053915", "469_B033992", "470_B055256", "471_B060223"];
 
 export type TextOnlyGranth = {
   granthKey: string;
