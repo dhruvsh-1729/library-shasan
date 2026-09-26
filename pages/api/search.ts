@@ -18,6 +18,7 @@ import {
 import { getTursoClient } from "@/lib/turso";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
+import { excludeDuplicateGranthsSql } from "@/lib/text-only-granths";
 
 type TursoSearchRow = {
   granth_key: string;
@@ -147,12 +148,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         : "";
       const prefilter = buildOCRPrefilter(queries, matchMode);
       const ftsTable = prefilter.table;
+      const dup = excludeDuplicateGranthsSql("p.granth_key");
       const hitSql = `SELECT p.id AS page_id
                 FROM ${ftsTable}
                 JOIN ocr_pages p ON p.id = ${ftsTable}.rowid
                 JOIN ocr_granths g ON g.granth_key = p.granth_key
-                WHERE ${ftsTable} MATCH ?${relFilterSql}`;
-      const hitArgs = [prefilter.match, ...selectedRelPaths];
+                WHERE ${ftsTable} MATCH ?${relFilterSql}${dup.sql}`;
+      const hitArgs = [prefilter.match, ...selectedRelPaths, ...dup.args];
 
       // The FTS tables are only a prefilter; the boundary rules for each match
       // mode live in findOCRSearchMatches. Counting straight off the index

@@ -13,6 +13,15 @@ const TEXT_ONLY_PATH_PATTERN = "%GG 76 Prat OCR_ed/%";
 // verses these spreadsheets turned into Gujarati-script noise.
 const DUPLICATE_KEYS = ["414_B053915", "469_B033992", "470_B055256", "471_B060223"];
 
+/**
+ * SQL that keeps these copies out of a page search, so a word is not reported
+ * twice for one book (once from the spreadsheet, once from its PDF). `column`
+ * is the query's granth_key column, e.g. "p.granth_key".
+ */
+export function excludeDuplicateGranthsSql(column: string) {
+  return { sql: ` AND ${column} NOT IN (${DUPLICATE_KEYS.map(() => "?").join(",")})`, args: [...DUPLICATE_KEYS] };
+}
+
 export type TextOnlyGranth = {
   granthKey: string;
   customId: string;

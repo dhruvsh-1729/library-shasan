@@ -17,6 +17,7 @@ import {
   fetchSourceMetaByRelPaths,
 } from "@/lib/search-pdf-resolver";
 import { getTursoClient } from "@/lib/turso";
+import { excludeDuplicateGranthsSql } from "@/lib/text-only-granths";
 
 export type SearchPdfSource = {
   customId: string;
@@ -266,13 +267,14 @@ function buildHitQuery(queries: string[], matchMode: OCRSearchMode, relPaths: st
     ? ` AND g.source_rel_path IN (${scopedPaths.map(() => "?").join(",")})`
     : "";
   const { table, match } = buildOCRPrefilter(queries, matchMode);
+  const dup = excludeDuplicateGranthsSql("p.granth_key");
   const sql = `SELECT p.id AS page_id
              FROM ${table}
              JOIN ocr_pages p ON p.id = ${table}.rowid
              JOIN ocr_granths g ON g.granth_key = p.granth_key
-             WHERE ${table} MATCH ?${relFilterSql}`;
+             WHERE ${table} MATCH ?${relFilterSql}${dup.sql}`;
 
-  return { sql, args: [match, ...scopedPaths] };
+  return { sql, args: [match, ...scopedPaths, ...dup.args] };
 }
 
 function normalizeLineBreaks(value: string) {

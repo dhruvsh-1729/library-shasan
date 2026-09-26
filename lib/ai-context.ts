@@ -7,6 +7,7 @@ import {
   type OCRSearchMode,
 } from "@/lib/ocr-search";
 import { buildOCRPrefilter } from "@/lib/ocr-search-index";
+import { excludeDuplicateGranthsSql } from "@/lib/text-only-granths";
 
 /**
  * Everything the assistant is allowed to talk about is fetched here, verbatim
@@ -478,14 +479,15 @@ async function resolveSearchContext(scope: Extract<ContextScope, { kind: "search
   const keys = (scope.granthKeys ?? []).filter(Boolean).slice(0, 25);
   const filter = keys.length ? ` AND p.granth_key IN (${keys.map(() => "?").join(",")})` : "";
   const prefilter = buildOCRPrefilter([scope.query], mode);
+  const dup = excludeDuplicateGranthsSql("p.granth_key");
   const res = await client.execute({
     sql: `SELECT p.granth_key, p.page_number, p.content, g.granth_name
           FROM ${prefilter.table} f
           JOIN ocr_pages p ON p.id = f.rowid
           JOIN ocr_granths g ON g.granth_key = p.granth_key
-          WHERE ${prefilter.table} MATCH ?${filter}
+          WHERE ${prefilter.table} MATCH ?${filter}${dup.sql}
           LIMIT ?`,
-    args: [prefilter.match, ...keys, MAX_SEARCH_PASSAGES * 4],
+    args: [prefilter.match, ...keys, ...dup.args, MAX_SEARCH_PASSAGES * 4],
   });
 
   const passages: Passage[] = [];
