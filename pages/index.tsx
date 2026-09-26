@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import { getDocumentScanLabel, getDocumentStatusLabel, type DocumentScanState } from "@/lib/document-scan-state";
+import { bookNumbers } from "@/lib/granth-name-search";
 import { useEffect, useState } from "react";
 
 type GranthItem = {
@@ -240,6 +241,9 @@ export default function HomePage() {
           {items.map((row) => {
             const showCover = Boolean(row.cover_image_url) && !brokenCoverIds[row.id];
             const title = displayTitle(row);
+            // The book's number on the source drive: what a number search matches.
+            const numbers = bookNumbers(row.file_name ?? row.original_rel_path ?? "");
+            const bookNo = numbers.length ? numbers.map((n) => String(n).padStart(3, "0")).join("-") : null;
             const sizeLabel = toMB(row.file_size);
             const searchHref = row.custom_id
               ? `/search?customId=${encodeURIComponent(row.custom_id)}`
@@ -268,7 +272,8 @@ export default function HomePage() {
 
                 <div className="libraryCardBody">
                   <div className="libraryCardTop">
-                    <div title={title} className="libraryCardTitle">
+                    <div title={bookNo ? `${bookNo} · ${title}` : title} className="libraryCardTitle">
+                      {bookNo ? <span className="libraryCardNumber">{bookNo}</span> : null}
                       {title || `Granth ${row.id}`}
                     </div>
                     <span

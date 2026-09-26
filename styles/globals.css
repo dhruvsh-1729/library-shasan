@@ -401,6 +401,12 @@ button {
   -webkit-box-orient: vertical;
 }
 
+.libraryCardNumber {
+  margin-right: 6px;
+  color: #4a6b62;
+  font-variant-numeric: tabular-nums;
+}
+
 .libraryScanBadge,
 .scanBadge {
   justify-self: start;
