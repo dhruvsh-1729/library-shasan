@@ -4,7 +4,8 @@ import { type DocumentScanState, getDocumentScanState } from "@/lib/document-sca
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
-import { TEXT_ONLY_COLLECTION, fetchTextOnlyGranths, filterTextOnlyGranths } from "@/lib/text-only-granths";
+import { TEXT_ONLY_COLLECTION, fetchTextOnlyGranths } from "@/lib/text-only-granths";
+import { prepareRow, rankRows } from "@/lib/granth-name-search";
 
 type GranthItem = {
   id: number;
@@ -43,10 +44,6 @@ function parseSearch(raw: string | string[] | undefined) {
   return String(firstQueryValue(raw) ?? "").trim().slice(0, 120);
 }
 
-function escapeIlikeTerm(value: string) {
-  return value.replace(/[\\%_]/g, "\\$&").replace(/[(),]/g, " ");
-}
-
 function isMissingCoverColumns(message: string) {
   return /cover_image_url|cover_image_key/i.test(message);
 }
@@ -76,63 +73,68 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         "id,file_name,ufs_url,file_size,custom_id,collection,subcollection,original_rel_path";
       const withCoverSelect = `${baseSelect},cover_image_url,cover_image_key`;
 
+      // With a search, every row is fetched (the catalogue is a few hundred
+      // granths) and ranked in lib/granth-name-search: a typed book number
+      // must return that book, and names match across spellings and scripts,
+      // neither of which a SQL ILIKE can do.
       const buildQuery = (selectCols: string, countOnly = false) => {
         let query = supabase
           .from("granth_ocr_files")
           .select(selectCols, { count: "exact", head: countOnly })
           .order("id", { ascending: true });
-        if (!countOnly) query = query.range(offset, offset + limit - 1);
-
+        if (!countOnly && !q) query = query.range(offset, offset + limit - 1);
         if (collection) query = query.eq("collection", collection);
-        if (q) {
-          const pattern = `%${escapeIlikeTerm(q)}%`;
-          query = query.or(
-            [
-              `file_name.ilike.${pattern}`,
-              `original_rel_path.ilike.${pattern}`,
-              `custom_id.ilike.${pattern}`,
-              `collection.ilike.${pattern}`,
-              `subcollection.ilike.${pattern}`,
-            ].join(",")
-          );
-        }
         return query;
       };
 
+      const rankedPdfRows = (rows: Record<string, unknown>[]) => {
+        const prepared = rows.map((row) =>
+          prepareRow({
+            source: String(row.file_name ?? row.original_rel_path ?? ""),
+            extra: `${row.original_rel_path ?? ""} ${row.collection ?? ""} ${row.subcollection ?? ""}`,
+          })
+        );
+        return rankRows(prepared, q).map((i) => rows[i]);
+      };
+
       // Granths with OCR text but no uploaded PDF are listed after the PDF ones.
-      const textOnly =
-        collection && collection !== TEXT_ONLY_COLLECTION ? [] : filterTextOnlyGranths(await fetchTextOnlyGranths(), q);
-      let pdfTotal = 0;
-      if (collection !== TEXT_ONLY_COLLECTION) {
-        const { count, error } = await buildQuery("id", true);
-        if (error) throw new Error(error.message);
-        pdfTotal = count ?? 0;
-      }
+      const allTextOnly = collection && collection !== TEXT_ONLY_COLLECTION ? [] : await fetchTextOnlyGranths();
+      const textOnly = q
+        ? rankRows(allTextOnly.map((row) => prepareRow({ source: row.sourceRelPath || row.name, extra: `${row.granthKey} ${row.name}` })), q).map((i) => allTextOnly[i])
+        : allTextOnly;
 
       let coverColumnAvailable = true;
       let data: Record<string, unknown>[] | null = null;
+      let pdfTotal = 0;
       let total = 0;
 
-      if (offset >= pdfTotal) {
-        data = [];
-      } else {
-        const response = await buildQuery(withCoverSelect);
-        if (response.error && isMissingCoverColumns(response.error.message)) {
-          coverColumnAvailable = false;
-        } else if (response.error) {
-          throw new Error(response.error.message);
+      if (collection !== TEXT_ONLY_COLLECTION) {
+        if (q) {
+          let response = await buildQuery(withCoverSelect);
+          if (response.error && isMissingCoverColumns(response.error.message)) {
+            coverColumnAvailable = false;
+            response = await buildQuery(baseSelect);
+          }
+          if (response.error) throw new Error(response.error.message);
+          const ranked = rankedPdfRows((response.data as unknown as Record<string, unknown>[] | null) ?? []);
+          pdfTotal = ranked.length;
+          data = ranked.slice(offset, offset + limit);
         } else {
-          data = (response.data as unknown as Record<string, unknown>[] | null) ?? [];
-          total = response.count ?? data.length;
+          const { count, error } = await buildQuery("id", true);
+          if (error) throw new Error(error.message);
+          pdfTotal = count ?? 0;
+          if (offset < pdfTotal) {
+            let response = await buildQuery(withCoverSelect);
+            if (response.error && isMissingCoverColumns(response.error.message)) {
+              coverColumnAvailable = false;
+              response = await buildQuery(baseSelect);
+            }
+            if (response.error) throw new Error(response.error.message);
+            data = (response.data as unknown as Record<string, unknown>[] | null) ?? [];
+          }
         }
       }
-
-      if (!coverColumnAvailable && offset < pdfTotal) {
-        const response = await buildQuery(baseSelect);
-        if (response.error) throw new Error(response.error.message);
-        data = (response.data as unknown as Record<string, unknown>[] | null) ?? [];
-        total = response.count ?? data.length;
-      }
+      data ??= [];
 
       const scanByCustomId = new Map<string, DocumentScanRow>();
       const customIds = Array.from(
