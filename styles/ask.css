@@ -1,0 +1,815 @@
+/*
+ * Ask the library: a chat screen in the Light Table palette. A centred
+ * conversation, a message box pinned to the bottom with the send button, and
+ * the choice of what to read as a pill inside that box.
+ */
+
+.ch {
+  --ch-col: 760px;
+  --ch-side: 272px;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: var(--ch-side) minmax(0, 1fr);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 320px),
+    var(--lt-glass);
+  color: var(--lt-ink);
+  font-family: var(--lt-ui-font);
+}
+
+.ch button {
+  font: inherit;
+  color: inherit;
+}
+
+.chBody {
+  min-width: 0;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+/* ------------------------------------------------------------ history */
+
+.chHistory {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  padding: 14px 10px;
+  background: rgba(255, 255, 255, 0.55);
+  border-right: 1px solid var(--lt-glass-edge);
+  min-width: 0;
+}
+
+.chNewChat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 10px;
+  background: #fff;
+  font-weight: 600;
+  font-size: 14.5px;
+  cursor: pointer;
+}
+
+.chNewChat:hover {
+  border-color: var(--lt-cobalt);
+}
+
+.chHistoryList {
+  overflow: auto;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 1px;
+}
+
+.chHistoryEmpty {
+  margin: 8px 6px;
+  color: var(--lt-ink-3);
+  font-size: 13.5px;
+}
+
+.chHistoryDay {
+  margin: 12px 8px 4px;
+  color: var(--lt-ink-3);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.chHistoryItem {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+
+.chHistoryItem:hover,
+.chHistoryItem.isOn {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.chHistoryItem.isOn {
+  box-shadow: inset 0 0 0 1px var(--lt-glass-edge);
+}
+
+.chHistoryItem > button:first-child {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.chHistoryDelete {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--lt-ink-3);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.chHistoryItem:hover .chHistoryDelete,
+.chHistoryDelete:focus-visible {
+  opacity: 1;
+}
+
+.chHistoryDelete:hover {
+  color: #9d1f12;
+  background: #fbe9e6;
+}
+
+.chHistoryToggle {
+  display: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+.chTopLeft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chScrim {
+  display: none;
+}
+
+/* ------------------------------------------------------------ top bar */
+
+.chTop {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+  background: rgba(238, 243, 246, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.chBrand {
+  font-weight: 720;
+  font-stretch: 112%;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.chNav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.chNav a,
+.chNav button {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--lt-ink-2);
+  text-decoration: none;
+  font-weight: 560;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chNav a:hover,
+.chNav button:hover {
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--lt-ink);
+}
+
+.chNav button {
+  border: 1px solid var(--lt-glass-edge);
+  margin-left: 6px;
+}
+
+/* ------------------------------------------------------------ conversation */
+
+.chMain {
+  width: min(var(--ch-col), 100%);
+  margin: 0 auto;
+  padding: 12px 20px 24px;
+  min-width: 0;
+}
+
+.chWelcome {
+  min-height: 52dvh;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 22px;
+  text-align: center;
+}
+
+.chWelcome h1 {
+  margin: 0;
+  font-size: clamp(26px, 3.6vw, 36px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.chSuggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 640px;
+}
+
+.chSuggestion {
+  padding: 10px 16px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 140ms var(--lt-ease), border-color 140ms var(--lt-ease);
+}
+
+.chSuggestion:hover {
+  background: #fff;
+  border-color: var(--lt-cobalt);
+}
+
+.chThread {
+  display: grid;
+  gap: 22px;
+  padding-top: 12px;
+}
+
+.chTurn {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+  animation: chIn 320ms var(--lt-ease) both;
+}
+
+@keyframes chIn {
+  from {
+    opacity: 0.4;
+    transform: translateY(6px);
+  }
+}
+
+.chTurn.isUser {
+  justify-content: flex-end;
+}
+
+.chAvatar {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--lt-ink);
+  color: #fff;
+  font-family: var(--lt-indic-font);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.chBubble {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.isUser .chBubble {
+  max-width: 82%;
+  padding: 12px 16px;
+  border-radius: 18px 18px 4px 18px;
+  background: var(--lt-cobalt);
+  color: #fff;
+}
+
+.isAssistant .chBubble {
+  flex: 1;
+  padding-top: 4px;
+}
+
+.chTurnScope {
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  opacity: 0.8;
+}
+
+.chText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+.isUser .chText {
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.isError .chText {
+  color: #9d1f12;
+}
+
+.chNote {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--lt-amber-wash);
+  color: var(--lt-amber);
+  font-size: 14px;
+}
+
+.chChapters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--lt-ink-2);
+}
+
+.chChapters button {
+  min-width: 38px;
+  height: 34px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.chChapters button:hover {
+  border-color: var(--lt-cobalt);
+}
+
+.chSources {
+  margin-top: 12px;
+}
+
+.chSources summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+}
+
+.chSources summary::-webkit-details-marker {
+  display: none;
+}
+
+.chSourceChip {
+  padding: 3px 9px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--lt-ink-2);
+}
+
+.chSourcesLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lt-cobalt);
+}
+
+.chSources ol {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.chSources li {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--lt-shadow);
+  font-size: 14px;
+}
+
+.chSources li p {
+  margin: 6px 0 0;
+  color: var(--lt-ink-2);
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.chTyping {
+  display: inline-flex;
+  gap: 5px;
+  padding-top: 14px !important;
+}
+
+.chTyping span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lt-ink-3);
+  animation: chDot 1s ease-in-out infinite;
+}
+
+.chTyping span:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.chTyping span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes chDot {
+  50% {
+    transform: translateY(-4px);
+    opacity: 0.4;
+  }
+}
+
+/* ------------------------------------------------------------ the dock */
+
+.chDock {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  width: min(var(--ch-col), 100%);
+  margin: 0 auto;
+  padding: 10px 20px 18px;
+  display: grid;
+  gap: 8px;
+  background: linear-gradient(180deg, rgba(230, 237, 241, 0), var(--lt-glass) 28%);
+}
+
+.chError {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fbe9e6;
+  color: #9d1f12;
+  font-size: 14px;
+}
+
+.chComposer {
+  display: grid;
+  gap: 6px;
+  padding: 12px 12px 10px 16px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 1px 1px rgba(20, 33, 42, 0.05), 0 18px 40px -22px rgba(20, 33, 42, 0.45);
+  transition: border-color 160ms var(--lt-ease);
+}
+
+.chComposer:focus-within {
+  border-color: var(--lt-cobalt);
+}
+
+.chInput {
+  width: 100%;
+  min-height: 28px;
+  max-height: 220px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--lt-ink);
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-size: 17px;
+  line-height: 1.6;
+  padding: 2px 0;
+}
+
+.chInput::placeholder {
+  color: #7d8c96;
+}
+
+.chTools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chPill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--lt-ink-2);
+  font-size: 13.5px;
+  font-weight: 560;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chPill > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+}
+
+.chPill:hover {
+  border-color: var(--lt-cobalt);
+}
+
+.chPill.isSet {
+  background: var(--lt-cobalt-wash);
+  border-color: transparent;
+  color: var(--lt-cobalt);
+}
+
+.chSelectPill select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.chSelectPill:focus-within {
+  outline: 2px solid var(--lt-cobalt);
+  outline-offset: 2px;
+}
+
+.chSend {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--lt-ink);
+  color: #fff !important;
+  cursor: pointer;
+  transition: background 140ms var(--lt-ease), transform 140ms var(--lt-ease);
+}
+
+.chSend:hover:not(:disabled) {
+  background: var(--lt-cobalt);
+}
+
+.chSend:disabled {
+  background: #b9c5cd;
+  cursor: default;
+}
+
+/* ------------------------------------------------------------ what to read */
+
+.chScope {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 50px -24px rgba(20, 33, 42, 0.45);
+  animation: chIn 220ms var(--lt-ease) both;
+}
+
+.chScopeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chSegment {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--lt-glass);
+  gap: 2px;
+}
+
+.chSegment button {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--lt-ink-2);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chSegment button.isOn {
+  background: #fff;
+  color: var(--lt-ink);
+  box-shadow: 0 1px 3px rgba(20, 33, 42, 0.15);
+}
+
+.chDone {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--lt-cobalt);
+  color: #fff !important;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chField {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-size: 15px;
+}
+
+.chField:focus {
+  outline: none;
+  border-color: var(--lt-cobalt);
+  box-shadow: 0 0 0 3px var(--lt-cobalt-wash);
+}
+
+.chBookPicker {
+  display: grid;
+  gap: 6px;
+}
+
+.chBookList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow: auto;
+  display: grid;
+}
+
+.chBookList button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-size: 14.5px;
+  cursor: pointer;
+}
+
+.chBookList button:hover {
+  background: var(--lt-glass-lit);
+}
+
+.chBookChosen {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--lt-cobalt-wash);
+  font-weight: 600;
+}
+
+.chBookChosen button {
+  border: 0;
+  background: none;
+  color: var(--lt-cobalt) !important;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chRow {
+  display: flex;
+  gap: 8px;
+}
+
+.chScopeStatus {
+  margin: 0;
+  color: var(--lt-ink-3);
+  font-size: 13.5px;
+}
+
+@media (max-width: 900px) {
+  .ch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chHistory {
+    position: fixed;
+    z-index: 20;
+    left: 0;
+    top: 0;
+    width: min(300px, 86vw);
+    background: #f4f7f9;
+    box-shadow: 0 0 40px rgba(20, 33, 42, 0.25);
+    transform: translateX(-105%);
+    transition: transform 260ms var(--lt-ease);
+  }
+
+  .isHistoryOpen .chHistory {
+    transform: none;
+  }
+
+  .isHistoryOpen .chScrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    border: 0;
+    background: rgba(20, 33, 42, 0.3);
+  }
+
+  .chHistoryToggle {
+    display: grid;
+  }
+
+  .chHistoryDelete {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .chTop {
+    padding: 12px 16px;
+  }
+
+  .chMain,
+  .chDock {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .chTools {
+    flex-wrap: wrap;
+  }
+
+  .chPill:first-child {
+    flex: 1 1 100%;
+  }
+
+  .isUser .chBubble {
+    max-width: 90%;
+  }
+
+  .chRow {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ch *,
+  .ch *::before,
+  .ch *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.chHistoryList > div {
+  min-width: 0;
+}
+
+.chHistoryList {
+  overflow-x: hidden;
+}

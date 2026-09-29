@@ -7,7 +7,7 @@ import {
   type OCRSearchMode,
 } from "@/lib/ocr-search";
 import { buildOCRPrefilter } from "@/lib/ocr-search-index";
-import { excludeDuplicateGranthsSql } from "@/lib/text-only-granths";
+import { excludeDuplicatesSql, getGranthCatalog } from "@/lib/granth-catalog";
 
 /**
  * Everything the assistant is allowed to talk about is fetched here, verbatim
@@ -479,7 +479,7 @@ async function resolveSearchContext(scope: Extract<ContextScope, { kind: "search
   const keys = (scope.granthKeys ?? []).filter(Boolean).slice(0, 25);
   const filter = keys.length ? ` AND p.granth_key IN (${keys.map(() => "?").join(",")})` : "";
   const prefilter = buildOCRPrefilter([scope.query], mode);
-  const dup = excludeDuplicateGranthsSql("p.granth_key");
+  const dup = excludeDuplicatesSql(await getGranthCatalog(), "p.granth_key");
   const res = await client.execute({
     sql: `SELECT p.granth_key, p.page_number, p.content, g.granth_name
           FROM ${prefilter.table} f

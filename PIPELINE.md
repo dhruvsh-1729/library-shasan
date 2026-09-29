@@ -75,7 +75,7 @@ to omit hints.
 - Supabase `document_pages`: extracted page text for the existing search path.
 - Turso `ocr_granths`, `ocr_pages`, `ocr_pages_fts`: spreadsheet URL and searchable page text.
 - Turso folded search index (`ocr_pages_folded_state` + `ocr_pages_folded_fts`,
-  `_trigram_fts`, `_suffix_fts`): what `/search` actually queries.
+  `_trigram_fts`, `_suffix_fts`): what the search page (`/`) actually queries.
 
 ## Folded search index
 

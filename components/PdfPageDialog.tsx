@@ -5,6 +5,7 @@ import {
   normalizeOCRSearchQueries,
   parseOCRSearchMode,
   type OCRSearchMode,
+  type OCRSearchScripts,
 } from "@/lib/ocr-search";
 import { openPdf } from "@/lib/pdf-range-source";
 
@@ -22,6 +23,7 @@ export type PdfDialogTarget = {
   searchTerm?: string | null;
   searchTerms?: string[] | null;
   searchMode?: OCRSearchMode | null;
+  searchScripts?: OCRSearchScripts;
 };
 
 type PdfPageDialogProps = {
@@ -66,14 +68,19 @@ function titleFromUrl(pdfUrl: string | null) {
   }
 }
 
-function applySearchHighlights(textDivs: HTMLElement[], queries: string[], mode: OCRSearchMode) {
+function applySearchHighlights(
+  textDivs: HTMLElement[],
+  queries: string[],
+  mode: OCRSearchMode,
+  scripts: OCRSearchScripts = null
+) {
   if (queries.length === 0) return 0;
 
   let count = 0;
 
   for (const textDiv of textDivs) {
     const text = textDiv.textContent ?? "";
-    const matches = findOCRSearchMatchesForQueries(text, queries, mode);
+    const matches = findOCRSearchMatchesForQueries(text, queries, mode, scripts);
     if (matches.length === 0) continue;
 
     textDiv.textContent = "";
@@ -122,6 +129,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
     [target?.searchTerm, target?.searchTerms]
   );
   const highlightMode = useMemo(() => parseOCRSearchMode(target?.searchMode), [target?.searchMode]);
+  const highlightScripts = target?.searchScripts ?? null;
 
   const [pdfModule, setPdfModule] = useState<PdfJsModule | null>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
@@ -365,7 +373,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
             `"Nirmala UI", "Mangal", "Kohinoor Devanagari", sans-serif`;
           textDiv.style.unicodeBidi = "plaintext";
         }
-        setHighlightCount(applySearchHighlights(textLayer.textDivs, highlightTerms, highlightMode));
+        setHighlightCount(applySearchHighlights(textLayer.textDivs, highlightTerms, highlightMode, highlightScripts));
         setTextDivCount(textLayer.textDivs.length);
 
         const endOfContent = document.createElement("div");
@@ -399,7 +407,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
         detachSelectionHandlers = null;
       }
     };
-  }, [currentPage, highlightMode, highlightTerms, pageCount, pdfDoc, pdfModule, target, zoom]);
+  }, [currentPage, highlightMode, highlightScripts, highlightTerms, pageCount, pdfDoc, pdfModule, target, zoom]);
 
   function goToPage(page: number) {
     const maxPage = pageCount || Math.max(1, page);

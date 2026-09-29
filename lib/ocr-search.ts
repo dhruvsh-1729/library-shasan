@@ -54,6 +54,42 @@ export function parseOCRSearchMode(raw: unknown): OCRSearchMode {
   return "exact_word";
 }
 
+/**
+ * The scripts a search may match in. Matching folds Gujarati into Devanagari,
+ * so without this हिंसा also finds હિંસા; the language options on /search
+ * narrow it back. `null` means either script.
+ */
+export type OCRSearchScript = "devanagari" | "gujarati";
+export type OCRSearchScripts = OCRSearchScript[] | null;
+
+const SCRIPT_CHAR: Record<OCRSearchScript, RegExp> = {
+  devanagari: /[\u0900-\u097F\uA8E0-\uA8FF]/,
+  gujarati: /[\u0A80-\u0AFF]/,
+};
+const ALL_SCRIPTS = Object.keys(SCRIPT_CHAR) as OCRSearchScript[];
+
+/** Restriction for a list of scripts; covering every script is no restriction. */
+function toScripts(values: Iterable<unknown>): OCRSearchScripts {
+  const found = new Set(ALL_SCRIPTS.filter((script) => [...values].includes(script)));
+  return found.size === 0 || found.size === ALL_SCRIPTS.length ? null : [...found];
+}
+
+/** Scripts the given query strings are written in (before variants are merged by folding). */
+export function scriptsOfQueries(values: string[]): OCRSearchScripts {
+  return toScripts(ALL_SCRIPTS.filter((script) => values.some((value) => SCRIPT_CHAR[script].test(value))));
+}
+
+/** Reads `scripts` from a request: "devanagari", "devanagari,gujarati" or an array. */
+export function parseOCRSearchScripts(raw: unknown): OCRSearchScripts {
+  const values = (Array.isArray(raw) ? raw : raw == null ? [] : [raw]).flatMap((value) => String(value).split(","));
+  return toScripts(values.map((value) => value.trim()));
+}
+
+/** A match counts for a script when written in it; a word OCR split across both counts for both. */
+function inScripts(text: string, scripts: OCRSearchScripts) {
+  return !scripts || scripts.some((script) => SCRIPT_CHAR[script].test(text));
+}
+
 export function getOCRSearchModeLabel(mode: OCRSearchMode) {
   return OCR_SEARCH_MODE_OPTIONS.find((option) => option.mode === mode)?.label ?? "Exact word";
 }
@@ -78,6 +114,15 @@ export function foldedNeedlesForQuery(query: string, mode: OCRSearchMode) {
   if (mode === "sanskrit_forms") return [...new Set([...sanskritQueryForms(text), ...gujaratiOnlyForms(text)])];
   const folded = foldSanskrit(text);
   return folded ? [folded] : [];
+}
+
+/**
+ * Contains search runs on a trigram index, so it needs 3 characters *after*
+ * folding: न्द folds to ंद and would silently find nothing.
+ */
+export function isTooShortForContains(query: string) {
+  const needles = foldedNeedlesForQuery(query, "contains");
+  return needles.length === 0 || needles.some((needle) => Array.from(needle).length < 3);
 }
 
 const GUJARATI_CHAR = /[\u0A80-\u0AFF]/;
@@ -211,13 +256,15 @@ function mergeSearchMatches(matches: SearchMatch[]) {
 export function findOCRSearchMatchesForQueries(
   content: string,
   queries: string | string[],
-  mode: OCRSearchMode
+  mode: OCRSearchMode,
+  scripts: OCRSearchScripts = null
 ) {
   const normalizedQueries = normalizeOCRSearchQueries(queries);
   if (normalizedQueries.length === 0) return [];
 
   const folded = foldForMatching(content);
-  return mergeSearchMatches(normalizedQueries.flatMap((query) => findInFolded(folded, query, mode)));
+  const matches = normalizedQueries.flatMap((query) => findInFolded(folded, query, mode));
+  return mergeSearchMatches(scripts ? matches.filter((match) => inScripts(match.text, scripts)) : matches);
 }
 
 export function hasOCRSearchMatch(content: string, query: string, mode: OCRSearchMode) {
@@ -236,20 +283,38 @@ export type OCRSearchOccurrence = {
   text: string;
 };
 
+// A virama, a vowel sign or a joiner belongs to the letter before it: an
+// excerpt that starts or ends between them shows a dotted-circle glyph.
+const JOINS_PREVIOUS = /[\p{M}\u200c\u200d]/u;
+const VIRAMAS = /[\u094d\u0acd]/;
+
+/** Moves an excerpt's start back and its end forward to whole letters. */
+function snapToClusters(text: string, start: number, end: number) {
+  let a = start;
+  let b = end;
+  while (a > 0 && (JOINS_PREVIOUS.test(text[a] ?? "") || VIRAMAS.test(text[a - 1] ?? ""))) a -= 1;
+  while (b < text.length && (JOINS_PREVIOUS.test(text[b] ?? "") || VIRAMAS.test(text[b - 1] ?? ""))) b += 1;
+  return [a, b] as const;
+}
+
 export function buildOCRSearchOccurrences(
   content: string,
   queries: string | string[],
   mode: OCRSearchMode,
-  maxChars = 240
+  maxChars = 240,
+  scripts: OCRSearchScripts = null
 ): OCRSearchOccurrence[] {
   const clean = String(content ?? "").replace(/\s+/g, " ").trim();
   if (!clean) return [];
 
-  return findOCRSearchMatchesForQueries(clean, queries, mode).map((match) => {
+  return findOCRSearchMatchesForQueries(clean, queries, mode, scripts).map((match) => {
     const matchLength = Math.max(1, match.end - match.start);
     const sidePadding = Math.max(45, Math.floor((maxChars - matchLength) / 2));
-    const start = Math.max(0, match.start - sidePadding);
-    const end = Math.min(clean.length, match.end + sidePadding);
+    const [start, end] = snapToClusters(
+      clean,
+      Math.max(0, match.start - sidePadding),
+      Math.min(clean.length, match.end + sidePadding)
+    );
 
     const leadingEllipsis = start > 0 ? "…" : "";
     const trailingEllipsis = end < clean.length ? "…" : "";
@@ -277,12 +342,13 @@ export function buildOCRSearchExcerptForQueries(
   content: string,
   queries: string | string[],
   mode: OCRSearchMode,
-  maxChars = 180
+  maxChars = 180,
+  scripts: OCRSearchScripts = null
 ) {
   const cleanContent = String(content ?? "").replace(/\s+/g, " ").trim();
   if (!cleanContent) return "";
 
-  const firstMatch = findOCRSearchMatchesForQueries(cleanContent, queries, mode)[0];
+  const firstMatch = findOCRSearchMatchesForQueries(cleanContent, queries, mode, scripts)[0];
   if (!firstMatch) {
     if (cleanContent.length <= maxChars) return cleanContent;
     return `${cleanContent.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
@@ -290,8 +356,11 @@ export function buildOCRSearchExcerptForQueries(
 
   const matchLength = Math.max(1, firstMatch.end - firstMatch.start);
   const sidePadding = Math.max(45, Math.floor((maxChars - matchLength) / 2));
-  const start = Math.max(0, firstMatch.start - sidePadding);
-  const end = Math.min(cleanContent.length, firstMatch.end + sidePadding);
+  const [start, end] = snapToClusters(
+    cleanContent,
+    Math.max(0, firstMatch.start - sidePadding),
+    Math.min(cleanContent.length, firstMatch.end + sidePadding)
+  );
   let excerpt = cleanContent.slice(start, end).trim();
 
   if (start > 0) excerpt = `…${excerpt}`;

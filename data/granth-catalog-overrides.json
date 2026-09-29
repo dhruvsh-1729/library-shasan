@@ -1,0 +1,99 @@
+{
+  "_about": "Checked corrections to the granth catalog (lib/granth-catalog-build.mjs). The source tables are never rewritten; these win over what is read from file names and the library book list. 'books' is keyed by granth_library_books.id, 'granths' by Turso granth_key. A granth with duplicate_of is the same edition as that granth and is kept out of search so no word is counted twice. Run `node scripts/granth_catalog_report.mjs` after editing.",
+  "books": {
+    "58": {
+      "_why": "title_english was copied from book 55; codes 146-152 are the Trishashti volumes",
+      "title_english": "Trishashti Shalaka Purush Charitra Mahakavya"
+    },
+    "107": {
+      "_why": "title_display held the author's name",
+      "title_display": "लोकप्रकाश"
+    }
+  },
+  "granths": {
+    "203": {
+      "duplicate_of": "202",
+      "_why": "'- Copy' of 202 (same accession B001849) with a noisier OCR layer; pages align 1:1"
+    },
+    "229": {
+      "native_title": "ભાષારહસ્ય પ્રકરણ શબ્દશઃ વિવેચન"
+    },
+    "230": {
+      "native_title": "ભાષારહસ્ય પ્રકરણ શબ્દશઃ વિવેચન"
+    },
+    "250_B004722": {
+      "duplicate_of": "250",
+      "_why": "spreadsheet copy of the PDF-indexed 250; 45% shared text"
+    },
+    "298_B026194": {
+      "duplicate_of": "298",
+      "_why": "spreadsheet copy of 298; 60% shared text, same page count"
+    },
+    "315": {
+      "_why": "library book list spells it 'Upseshsahityamala'",
+      "title": "Updesh Sahityamala"
+    },
+    "315_B044147": {
+      "duplicate_of": "315",
+      "_why": "spreadsheet copy of 315; 62% shared text, same page count"
+    },
+    "333_B036957": {
+      "duplicate_of": "333",
+      "_why": "spreadsheet copy of 333; 73% shared text, same accession code"
+    },
+    "334_B036958": {
+      "duplicate_of": "334",
+      "_why": "spreadsheet copy of 334; 88% shared text, same accession code"
+    },
+    "348_B026923": {
+      "duplicate_of": "348",
+      "_why": "spreadsheet copy of 348; same accession code"
+    },
+    "350_B032139": {
+      "duplicate_of": "350",
+      "_why": "spreadsheet copy of 350; same accession code"
+    },
+    "398_B041343": {
+      "duplicate_of": "unnum_6f7955f30d65",
+      "_why": "spreadsheet copy of acharang_sutra_bhavanuvad_part_02; 80% shared text"
+    },
+    "414_B053915": {
+      "duplicate_of": "147",
+      "_why": "spreadsheet copy of 147 (was DUPLICATE_KEYS)"
+    },
+    "426_C010451": {
+      "_why": "stray 'eet' in the source name",
+      "title": "प्रश्नव्याकरणाङ्गम्",
+      "native_title": "प्रश्नव्याकरणाङ्गम्"
+    },
+    "429_C001957": {
+      "duplicate_of": "429_C000391",
+      "_why": "same edition scanned twice: pages align with a 1-2 page offset"
+    },
+    "440": {
+      "_why": "folder name says part 03; the book covers numbers 440-441",
+      "title": "Vyakhya Pragnapti Sutram",
+      "part": "3"
+    },
+    "459_B018244": {
+      "duplicate_of": "x510a74028d",
+      "_why": "49-page spreadsheet copy of mitra_dwatrinshika (96 pages); 76% of its text is in the PDF"
+    },
+    "469_B033992": {
+      "duplicate_of": "unnum_37efd6e27bec",
+      "_why": "same edition as dharmratna_prakaran_part_01; spreadsheet turned the Sanskrit into Gujarati-script noise (was DUPLICATE_KEYS)"
+    },
+    "470_B055256": {
+      "duplicate_of": "unnum_4876995746e6",
+      "_why": "same edition as dharmratna_prakaran_part_02 (was DUPLICATE_KEYS)"
+    },
+    "471_B060223": {
+      "duplicate_of": "unnum_7d81e403b64e",
+      "_why": "same edition as dharmratna_prakaran_part_03 (was DUPLICATE_KEYS)"
+    },
+    "unnum_4354dd334c8b": {
+      "duplicate_of": "unnum_d2589d35d42f",
+      "_why": "'-ORIGINAL' copy of the same file; 96% shared text"
+    }
+  }
+}

@@ -1,8 +1,10 @@
 import {
   buildOCRSearchExcerptForQueries,
   findOCRSearchMatchesForQueries,
+  isTooShortForContains,
   normalizeOCRSearchQueries,
   type OCRSearchMode,
+  type OCRSearchScripts,
 } from "@/lib/ocr-search";
 import { buildOCRPrefilter } from "@/lib/ocr-search-index";
 import {
@@ -17,7 +19,7 @@ import {
   fetchSourceMetaByRelPaths,
 } from "@/lib/search-pdf-resolver";
 import { getTursoClient } from "@/lib/turso";
-import { excludeDuplicateGranthsSql } from "@/lib/text-only-granths";
+import { excludeDuplicatesSql, getGranthCatalog } from "@/lib/granth-catalog";
 
 export type SearchPdfSource = {
   customId: string;
@@ -251,8 +253,8 @@ export function validateSearchDownloadQueries(
 ) {
   const queries = normalizeOCRSearchQueries(query, variants).filter((value) => Array.from(value).length >= 2);
   if (queries.length === 0) throw new SearchMatchError(400, "Enter at least 2 characters before building a PDF.");
-  if (matchMode === "contains" && queries.some((value) => Array.from(value).length < 3)) {
-    throw new SearchMatchError(400, "Contains search requires at least 3 characters.");
+  if (matchMode === "contains" && queries.some(isTooShortForContains)) {
+    throw new SearchMatchError(400, "Contains search needs at least 3 letters once conjuncts are folded (न्द counts as 2).");
   }
   return queries;
 }
@@ -261,13 +263,13 @@ export function validateSearchDownloadQueries(
  * Builds the FTS hit sub-query. `relPaths` scopes it to specific granths;
  * `null` searches every indexed granth (the "All granths" filter mode).
  */
-function buildHitQuery(queries: string[], matchMode: OCRSearchMode, relPaths: string[] | null) {
+async function buildHitQuery(queries: string[], matchMode: OCRSearchMode, relPaths: string[] | null) {
   const scopedPaths = relPaths ?? [];
   const relFilterSql = scopedPaths.length
     ? ` AND g.source_rel_path IN (${scopedPaths.map(() => "?").join(",")})`
     : "";
   const { table, match } = buildOCRPrefilter(queries, matchMode);
-  const dup = excludeDuplicateGranthsSql("p.granth_key");
+  const dup = excludeDuplicatesSql(await getGranthCatalog(), "p.granth_key");
   const sql = `SELECT p.id AS page_id
              FROM ${table}
              JOIN ocr_pages p ON p.id = ${table}.rowid
@@ -294,10 +296,11 @@ function collapseLineText(value: string) {
 export function findMatchLinesInPageContent(
   content: string,
   queries: string[],
-  matchMode: OCRSearchMode
+  matchMode: OCRSearchMode,
+  scripts: OCRSearchScripts = null
 ): Array<Omit<SearchMatchLine, "page_number">> {
   const normalized = normalizeLineBreaks(content);
-  const matches = findOCRSearchMatchesForQueries(normalized, queries, matchMode);
+  const matches = findOCRSearchMatchesForQueries(normalized, queries, matchMode, scripts);
   if (matches.length === 0) return [];
 
   const lines = normalized.split("\n");
@@ -339,45 +342,69 @@ export async function loadSearchMatchGranths(
   query: string | string[],
   matchMode: OCRSearchMode,
   limit = MAX_EXPORT_GRANTH_PREVIEW,
-  queryVariants?: string | string[] | null
+  queryVariants?: string | string[] | null,
+  scripts: OCRSearchScripts = null
 ) {
   const queries = validateSearchDownloadQueries(query, queryVariants, matchMode);
   const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_EXPORT_GRANTH_PREVIEW));
-  const hits = buildHitQuery(queries, matchMode, relPaths);
+  const hits = await buildHitQuery(queries, matchMode, relPaths);
 
+  return loadVerifiedGranths(hits, queries, matchMode, scripts, boundedLimit);
+}
+
+// Hit pages read and verified for the export list; the same cap as /api/search.
+const VERIFY_SCAN_CAP = 4000;
+
+/**
+ * The index is only a prefilter, so every hit page is checked against its text
+ * with the same rules as the result tiles (match mode, and scripts: the index
+ * folds Gujarati into Devanagari). Counting raw index hits listed granths with
+ * no real match and matched-page totals the screen never showed.
+ */
+async function loadVerifiedGranths(
+  hits: Awaited<ReturnType<typeof buildHitQuery>>,
+  queries: string[],
+  matchMode: OCRSearchMode,
+  scripts: OCRSearchScripts,
+  limit: number
+) {
   const result = await getTursoClient().execute({
     sql: `WITH hits AS (${hits.sql}),
-            unique_hits AS (
-              SELECT page_id
-              FROM hits
-              GROUP BY page_id
-            )
-          SELECT
-            g.granth_key,
-            g.source_rel_path,
-            g.granth_name,
-            COUNT(*) AS matched_pages,
-            MIN(p.page_number) AS first_page
+            unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
+          SELECT g.granth_key, g.source_rel_path, g.granth_name, p.page_number, p.content
           FROM unique_hits
           JOIN ocr_pages p ON p.id = unique_hits.page_id
           JOIN ocr_granths g ON g.granth_key = p.granth_key
-          GROUP BY g.granth_key, g.source_rel_path, g.granth_name
-          ORDER BY matched_pages DESC, g.granth_name ASC
           LIMIT ?`,
-    args: [...hits.args, boundedLimit + 1],
+    args: [...hits.args, VERIFY_SCAN_CAP + 1],
   });
 
-  const granths: SearchMatchGranthSummary[] = result.rows.slice(0, boundedLimit).map((row) => ({
-    granth_key: String(row.granth_key ?? ""),
-    source_rel_path: String(row.source_rel_path ?? ""),
-    granth_name: String(row.granth_name ?? ""),
-    matched_pages: toInt(row.matched_pages),
-    first_page: Math.max(1, toInt(row.first_page, 1)),
-  }));
+  const byGranth = new Map<string, SearchMatchGranthSummary>();
+  for (const row of result.rows.slice(0, VERIFY_SCAN_CAP)) {
+    if (findOCRSearchMatchesForQueries(String(row.content ?? ""), queries, matchMode, scripts).length === 0) continue;
+    const key = String(row.granth_key ?? "");
+    const page = Math.max(1, toInt(row.page_number, 1));
+    const entry = byGranth.get(key);
+    if (entry) {
+      entry.matched_pages += 1;
+      entry.first_page = Math.min(entry.first_page, page);
+      continue;
+    }
+    byGranth.set(key, {
+      granth_key: key,
+      source_rel_path: String(row.source_rel_path ?? ""),
+      granth_name: String(row.granth_name ?? ""),
+      matched_pages: 1,
+      first_page: page,
+    });
+  }
 
+  const sorted = [...byGranth.values()].sort(
+    (a, b) => b.matched_pages - a.matched_pages || a.granth_name.localeCompare(b.granth_name)
+  );
   return {
-    granths,
-    truncated: result.rows.length > boundedLimit,
+    granths: sorted.slice(0, limit),
+    truncated: sorted.length > limit || result.rows.length > VERIFY_SCAN_CAP,
     queries,
   };
 }
@@ -389,12 +416,17 @@ export async function loadSearchMatchLines(
   sourceRelPath: string,
   query: string | string[],
   matchMode: OCRSearchMode,
-  options: { pages?: number[] | null; maxRows?: number; queryVariants?: string | string[] | null } = {}
+  options: {
+    pages?: number[] | null;
+    maxRows?: number;
+    queryVariants?: string | string[] | null;
+    scripts?: OCRSearchScripts;
+  } = {}
 ) {
   const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
   const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
   const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
-  const hits = buildHitQuery(queries, matchMode, [sourceRelPath]);
+  const hits = await buildHitQuery(queries, matchMode, [sourceRelPath]);
 
   const result = await getTursoClient().execute({
     sql: `WITH hits AS (${hits.sql}),
@@ -422,7 +454,7 @@ export async function loadSearchMatchLines(
     if (pageNumber <= 0) continue;
     if (pageFilter && !pageFilter.has(pageNumber)) continue;
 
-    const pageLines = findMatchLinesInPageContent(String(row.content ?? ""), queries, matchMode);
+    const pageLines = findMatchLinesInPageContent(String(row.content ?? ""), queries, matchMode, options.scripts ?? null);
     if (pageLines.length === 0) continue;
     matchedPages.add(pageNumber);
 
@@ -444,12 +476,13 @@ export async function loadSearchMatchPages(
   query: string | string[],
   matchMode: OCRSearchMode,
   limit = MAX_MATCH_PAGE_PREVIEW,
-  queryVariants?: string | string[] | null
+  queryVariants?: string | string[] | null,
+  scripts: OCRSearchScripts = null
 ) {
   const queries = validateSearchDownloadQueries(query, queryVariants, matchMode);
   const boundedLimit = Math.max(1, Math.min(Math.floor(limit), MAX_MATCH_PAGE_PREVIEW));
   const client = getTursoClient();
-  const hits = buildHitQuery(queries, matchMode, [sourceRelPath]);
+  const hits = await buildHitQuery(queries, matchMode, [sourceRelPath]);
 
   const result = await client.execute({
     sql: `WITH hits AS (${hits.sql}),
@@ -477,7 +510,7 @@ export async function loadSearchMatchPages(
 
     const pageNumber = toInt(row.page_number);
     const content = String(row.content ?? "");
-    const matches = findOCRSearchMatchesForQueries(content, queries, matchMode);
+    const matches = findOCRSearchMatchesForQueries(content, queries, matchMode, scripts);
     if (pageNumber <= 0 || matches.length === 0) continue;
 
     const existing = byPage.get(pageNumber);
@@ -489,7 +522,7 @@ export async function loadSearchMatchPages(
     byPage.set(pageNumber, {
       page_number: pageNumber,
       occurrence_count: matches.length,
-      snippet: buildOCRSearchExcerptForQueries(content, queries, matchMode, 260),
+      snippet: buildOCRSearchExcerptForQueries(content, queries, matchMode, 260, scripts),
     });
   }
 

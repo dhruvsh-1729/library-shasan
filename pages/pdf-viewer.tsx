@@ -343,8 +343,8 @@ export default function PdfViewerPage() {
             }}
           >
             <div className="appPillNav" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <Link href="/">Library</Link>
-              <Link href="/search">Search</Link>
+              <Link href="/library">Library</Link>
+              <Link href="/">Search</Link>
               {originalHref ? (
                 <a href={originalHref} target="_blank" rel="noreferrer">
                   Original PDF URL

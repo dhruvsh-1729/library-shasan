@@ -1,36 +1,29 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
-import { SEARCHABLE_DOCUMENT_STATUSES } from "@/lib/document-scan-state";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { granthDisplayName, getGranthCatalog, isSearchable } from "@/lib/granth-catalog";
+import { assignShortKeys } from "@/lib/granth-short-keys";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
-import { fetchTextOnlyGranths } from "@/lib/text-only-granths";
-import { assignShortKeys } from "@/lib/granth-short-keys";
 
-type GranthOption = {
+export type SearchGranthOption = {
   custom_id: string;
-  /** Short id used in /search URLs, e.g. "215". */
+  /** Short id used in search URLs, e.g. "215". */
   key: string;
+  granth_key: string;
   /** "pdf": has an uploaded PDF; "text": OCR text only. */
   kind: "pdf" | "text";
-  pdf_name: string | null;
+  /** "Adhyatmasar Shabdasha Vivechan · Part 3" */
   display_name: string;
+  title: string;
+  native_title: string;
+  part: string | null;
+  series: string | null;
+  author: string | null;
+  book_number: string | null;
+  page_count: number | null;
+  /** The file name as stored, for matching and for anyone checking the source. */
+  source_name: string;
 };
-
-function displayName(pdfName: string | null, customId: string) {
-  const raw = pdfName && pdfName.trim() ? pdfName : customId;
-  return raw.replace(/\s+OCR\.pdf$/i, "").replace(/\.pdf$/i, "");
-}
-
-function firstQueryValue(raw: string | string[] | undefined) {
-  return Array.isArray(raw) ? raw[0] : raw;
-}
-
-function parseIntQuery(raw: string | string[] | undefined, fallback: number, min: number, max: number) {
-  const parsed = Number.parseInt(String(firstQueryValue(raw) ?? fallback), 10);
-  if (!Number.isFinite(parsed) || Number.isNaN(parsed)) return fallback;
-  return Math.max(min, Math.min(max, parsed));
-}
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -39,80 +32,45 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   try {
-    const page = parseIntQuery(req.query.page, 1, 1, 100000);
-    const limit = parseIntQuery(req.query.limit, 200, 1, 5000);
-    const offset = parseIntQuery(req.query.offset, (page - 1) * limit, 0, 1000000);
-    const q = String(firstQueryValue(req.query.q) ?? "").trim().slice(0, 120);
-
-    const cacheKey = buildCacheKey(req, "search-granths");
+    const cacheKey = buildCacheKey(req, "search-granths-v2");
     const { value: payload, status } = await getCachedJson(cacheKey, 300, async () => {
-      // The whole searchable catalog is small (a few hundred granths), so it is
-      // loaded in full: short keys are assigned over all of it, and the name
-      // filter and paging are applied afterwards.
-      const supabase = getSupabaseAdmin();
-      const docs: { custom_id: string | null; pdf_name: string | null; original_relative_path: string | null }[] = [];
-      for (let from = 0; ; from += 1000) {
-        const { data, error } = await supabase
-          .from("documents")
-          .select("custom_id,pdf_name,original_relative_path")
-          .not("custom_id", "is", null)
-          .in("status", [...SEARCHABLE_DOCUMENT_STATUSES])
-          .order("pdf_name", { ascending: true, nullsFirst: false })
-          .range(from, from + 999);
-        if (error) throw new Error(error.message);
-        docs.push(...(data ?? []));
-        if (!data || data.length < 1000) break;
+      // Every searchable granth is listed, from the catalog: exactly the granths
+      // the index holds, less the duplicates it keeps out of search. Picking a
+      // granth that has no indexed pages (or listing one twice) is not possible.
+      const catalog = await getGranthCatalog();
+      const listed = catalog.entries.filter((entry) => isSearchable(catalog, entry));
+      const sourceOf = (entry: (typeof listed)[number]) => entry.document_rel_path || entry.granth_key;
+      const keys = assignShortKeys(listed.map((entry) => ({ id: entry.custom_id, source: sourceOf(entry) })));
+
+      const items: SearchGranthOption[] = listed.map((entry) => ({
+        custom_id: entry.custom_id,
+        key: keys.get(entry.custom_id) ?? entry.granth_key,
+        granth_key: entry.granth_key,
+        kind: entry.kind,
+        display_name: granthDisplayName(entry),
+        title: entry.title,
+        native_title: entry.native_title,
+        part: entry.part,
+        series: entry.series,
+        author: entry.author,
+        book_number: entry.book_number,
+        page_count: entry.page_count,
+        source_name: entry.source_name,
+      }));
+
+      // Links keep working when a key changes or a granth turns out to be a
+      // duplicate: its granth key, text-only id and old key lead to the granth
+      // that is searched in its place.
+      const aliases: Record<string, string> = {};
+      for (const entry of catalog.entries) {
+        const target = isSearchable(catalog, entry) ? entry : catalog.byGranthKey.get(entry.duplicate_of ?? "");
+        if (!target || !isSearchable(catalog, target)) continue;
+        for (const alias of [entry.granth_key, entry.custom_id, `text:${entry.granth_key}`]) {
+          if (alias && alias !== target.custom_id) aliases[alias] = target.custom_id;
+        }
       }
 
-      const seen = new Set<string>();
-      const all: (GranthOption & { source: string })[] = [];
-      for (const row of docs) {
-        const customId = String(row.custom_id ?? "").trim();
-        if (!customId || seen.has(customId)) continue;
-        seen.add(customId);
-        all.push({
-          custom_id: customId,
-          key: "",
-          kind: "pdf",
-          pdf_name: row.pdf_name ?? null,
-          display_name: displayName(row.pdf_name ?? null, customId),
-          source: row.original_relative_path || row.pdf_name || customId,
-        });
-      }
-      // Granths with OCR text but no uploaded PDF are searchable too.
-      for (const row of await fetchTextOnlyGranths()) {
-        all.push({
-          custom_id: row.customId,
-          key: "",
-          kind: "text",
-          pdf_name: null,
-          display_name: row.name,
-          source: row.granthKey,
-        });
-      }
-      const keys = assignShortKeys(all.map((row) => ({ id: row.custom_id, source: row.source })));
-
-      const term = q.toLowerCase();
-      const matching = all
-        .filter((row) => !term || `${keys.get(row.custom_id)} ${row.display_name} ${row.source}`.toLowerCase().includes(term))
-        .map(({ source, ...row }) => ({ ...row, key: keys.get(row.custom_id) ?? source }));
-      const items = matching.slice(offset, offset + limit);
-      const total = matching.length;
-      return {
-        items,
-        total,
-        meta: {
-          total,
-          pageCount: items.length,
-          page: Math.floor(offset / limit) + 1,
-          limit,
-          offset,
-          totalPages: Math.max(1, Math.ceil(total / limit)),
-          hasNextPage: offset + items.length < total,
-          hasPreviousPage: offset > 0,
-          q: q || null,
-        },
-      };
+      return { items, total: items.length, aliases };
     });
 
     setPublicCacheHeaders(res, { maxAgeSeconds: 300, staleWhileRevalidateSeconds: 1800 }, status);

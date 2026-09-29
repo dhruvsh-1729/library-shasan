@@ -839,8 +839,8 @@ export default function GranthExtractorPage() {
           <div className="extractorHeaderText">
             <h1>Granth Page Extractor</h1>
             <div className="extractorNav">
-              <Link href="/">Library</Link>
-              <Link href="/search">Search pages</Link>
+              <Link href="/library">Library</Link>
+              <Link href="/">Search</Link>
               <Link href="/scannable-documents">Scan status</Link>
             </div>
           </div>

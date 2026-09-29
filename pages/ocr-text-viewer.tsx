@@ -1,5 +1,12 @@
 import OcrReplacePanel from "@/components/OcrReplacePanel";
-import { type OCRSearchMode, findOCRSearchMatches, getOCRSearchModeLabel, parseOCRSearchMode } from "@/lib/ocr-search";
+import {
+  type OCRSearchMode,
+  type OCRSearchScripts,
+  findOCRSearchMatchesForQueries,
+  getOCRSearchModeLabel,
+  parseOCRSearchMode,
+  parseOCRSearchScripts,
+} from "@/lib/ocr-search";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { ReactNode } from "react";
@@ -28,11 +35,17 @@ function readSingleQuery(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? "";
 }
 
-function buildOccurrenceSummary(content: string, query: string, mode: OCRSearchMode, maxChars = 120) {
+function buildOccurrenceSummary(
+  content: string,
+  queries: string[],
+  mode: OCRSearchMode,
+  scripts: OCRSearchScripts,
+  maxChars = 120
+) {
   const normalized = String(content ?? "").replace(/\s+/g, " ").trim();
-  if (!normalized || !query.trim()) return null;
+  if (!normalized || queries.length === 0) return null;
 
-  const matches = findOCRSearchMatches(normalized, query, mode);
+  const matches = findOCRSearchMatchesForQueries(normalized, queries, mode, scripts);
   if (matches.length === 0) return null;
 
   const firstMatch = matches[0];
@@ -62,12 +75,18 @@ export default function OCRTextViewerPage() {
   const targetPage = pageRaw ? Number(pageRaw) : null;
   const q = readSingleQuery(router.query.q);
   const matchMode = parseOCRSearchMode(readSingleQuery(router.query.matchMode));
+  // Every spelling the search used ("hinsa" alone matches nothing in Devanagari
+  // text), and the scripts it kept, so this page shows the same hits.
+  const variantsKey = [q, ...[router.query.queryVariant ?? []].flat()].map((v) => String(v).trim()).filter(Boolean).join("\n");
+  const queries = useMemo(() => variantsKey.split("\n").filter(Boolean), [variantsKey]);
+  const scriptsKey = readSingleQuery(router.query.scripts);
+  const scripts = useMemo(() => parseOCRSearchScripts(scriptsKey), [scriptsKey]);
 
   const occurrenceItems = useMemo<OccurrenceItem[]>(() => {
-    if (!q.trim()) return [];
+    if (queries.length === 0) return [];
     return rows
       .map((row) => {
-        const summary = buildOccurrenceSummary(row.content, q, matchMode);
+        const summary = buildOccurrenceSummary(row.content, queries, matchMode, scripts);
         if (!summary) return null;
         return {
           pageNumber: row.page_number,
@@ -76,7 +95,7 @@ export default function OCRTextViewerPage() {
         };
       })
       .filter((value): value is OccurrenceItem => Boolean(value));
-  }, [matchMode, q, rows]);
+  }, [matchMode, queries, rows, scripts]);
 
   const totalOccurrenceCount = useMemo(
     () => occurrenceItems.reduce((sum, item) => sum + item.count, 0),
@@ -90,7 +109,7 @@ export default function OCRTextViewerPage() {
   }, [activePageNumber, rows]);
 
   function renderHighlightedText(text: string) {
-    const matches = findOCRSearchMatches(text, q, matchMode);
+    const matches = findOCRSearchMatchesForQueries(text, queries, matchMode, scripts);
     if (!text || matches.length === 0) return text;
 
     const parts: ReactNode[] = [];
@@ -219,7 +238,7 @@ export default function OCRTextViewerPage() {
         <header style={{ marginBottom: 16 }}>
           <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.15 }}>OCR Granth Text Viewer</h1>
           <div className="appPillNav" style={{ marginTop: 10, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 16 }}>
-            <Link href="/search">Back to search</Link>
+            <Link href="/">Back to search</Link>
             {granth?.xlsx_url ? (
               <a href={granth.xlsx_url} target="_blank" rel="noreferrer">
                 Open XLSX

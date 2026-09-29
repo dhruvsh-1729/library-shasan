@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createReadStream } from "node:fs";
 import { rm } from "node:fs/promises";
-import { parseOCRSearchMode } from "@/lib/ocr-search";
+import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
 import {
   type CombinedPdfSource,
   buildCombinedSearchPdf,
@@ -40,6 +40,7 @@ type DownloadBody = {
   q?: string | null;
   queryVariants?: unknown;
   matchMode?: string | null;
+  scripts?: unknown;
   pages?: unknown;
   contextPages?: unknown;
   delivery?: string | null;
@@ -129,6 +130,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const body = (req.body || {}) as DownloadBody;
     const delivery = body.delivery === "email" ? "email" : "download";
     const matchMode = parseOCRSearchMode(body.matchMode);
+    const scripts = parseOCRSearchScripts(body.scripts);
     const queries = validateSearchDownloadQueries(String(body.q || "").trim(), parseQueryVariants(body.queryVariants), matchMode);
     const contextPages = normalizeContextPageRadius(body.contextPages);
     const granthSelections = parseGranthSelections(body.granths);
@@ -170,7 +172,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         const { pages: matchingPages } = await loadSearchMatchPages(
           String(selection.sourceRelPath || "") || source.sourceRelPath,
           queries,
-          matchMode
+          matchMode,
+          undefined,
+          undefined,
+          scripts
         );
 
         if (matchingPages.length === 0) {
@@ -218,7 +223,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const requestedPages = parseSelectedPages(body.pages);
 
       const source = await resolveSearchPdfSource(customId, sourceRelPath);
-      const { pages: matchingPages } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, queries, matchMode);
+      const { pages: matchingPages } = await loadSearchMatchPages(
+        sourceRelPath || source.sourceRelPath,
+        queries,
+        matchMode,
+        undefined,
+        undefined,
+        scripts
+      );
       const matchingPageSet = new Set(matchingPages.map((page) => page.page_number));
       const requested = requestedPages ?? matchingPages.map((page) => page.page_number);
       const selectedPages = requested.filter((page) => matchingPageSet.has(page));

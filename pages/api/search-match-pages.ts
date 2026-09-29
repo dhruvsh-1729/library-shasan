@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
-import { parseOCRSearchMode } from "@/lib/ocr-search";
+import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
 import {
   MAX_MATCH_PAGE_DOWNLOAD,
   SearchMatchError,
@@ -27,12 +27,20 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const q = String(firstQueryValue(req.query.q) || "").trim();
     const queryVariants = req.query.queryVariant ?? req.query.queryVariants;
     const matchMode = parseOCRSearchMode(firstQueryValue(req.query.matchMode));
+    const scripts = parseOCRSearchScripts(req.query.scripts);
     const queries = validateSearchDownloadQueries(q, queryVariants, matchMode);
 
     const cacheKey = buildCacheKey(req, "search-match-pages");
     const { value: payload, status } = await getCachedJson(cacheKey, 60, async () => {
       const source = await resolveSearchPdfSource(customId, sourceRelPath);
-      const { pages, truncated } = await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, queries, matchMode);
+      const { pages, truncated } = await loadSearchMatchPages(
+        sourceRelPath || source.sourceRelPath,
+        queries,
+        matchMode,
+        undefined,
+        undefined,
+        scripts
+      );
 
       return {
         custom_id: source.customId,

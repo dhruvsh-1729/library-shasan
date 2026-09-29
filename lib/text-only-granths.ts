@@ -6,21 +6,10 @@ import { getTursoClient } from "@/lib/turso";
 // from Turso under a synthetic id instead.
 export const TEXT_ONLY_ID_PREFIX = "text:";
 export const TEXT_ONLY_COLLECTION = "GG 76 Prat (text only)";
-const TEXT_ONLY_PATH_PATTERN = "%GG 76 Prat OCR_ed/%";
-// Spreadsheet copies of granths that are already in the library with a PDF.
-// 469–471 (Dharmaratna Prakaran 1–3) are the same edition as the library's
-// dharmratna_prakaran_part_01–03 PDFs, whose Google text reads the Sanskrit
-// verses these spreadsheets turned into Gujarati-script noise.
-const DUPLICATE_KEYS = ["414_B053915", "469_B033992", "470_B055256", "471_B060223"];
-
-/**
- * SQL that keeps these copies out of a page search, so a word is not reported
- * twice for one book (once from the spreadsheet, once from its PDF). `column`
- * is the query's granth_key column, e.g. "p.granth_key".
- */
-export function excludeDuplicateGranthsSql(column: string) {
-  return { sql: ` AND ${column} NOT IN (${DUPLICATE_KEYS.map(() => "?").join(",")})`, args: [...DUPLICATE_KEYS] };
-}
+const TEXT_ONLY_PATH_SEGMENT = "GG 76 Prat OCR_ed/";
+const TEXT_ONLY_PATH_PATTERN = `%${TEXT_ONLY_PATH_SEGMENT}%`;
+// Which of these duplicate a granth that has a PDF is recorded in the granth
+// catalog (data/granth-catalog-overrides.json); callers filter through it.
 
 export type TextOnlyGranth = {
   granthKey: string;
@@ -41,9 +30,8 @@ export async function fetchTextOnlyGranths(): Promise<TextOnlyGranth[]> {
     sql: `SELECT granth_key, granth_name, source_rel_path, page_count
           FROM ocr_granths
           WHERE source_rel_path LIKE ?
-            AND granth_key NOT IN (${DUPLICATE_KEYS.map(() => "?").join(",")})
           ORDER BY granth_key`,
-    args: [TEXT_ONLY_PATH_PATTERN, ...DUPLICATE_KEYS],
+    args: [TEXT_ONLY_PATH_PATTERN],
   });
   const rows = result.rows.map((row) => {
     const granthKey = String(row.granth_key ?? "");

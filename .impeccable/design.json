@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-29T11:31:55.340379+00:00",
+  "title": "Design System: Granth Search",
+  "extensions": {
+    "scope": "Light Table world owns /search only; library '/', admin, auth and viewers still use styles/globals.css. Tokens are declared on .lt, not :root.",
+    "colorMeta": {
+      "glass": {
+        "role": "neutral",
+        "displayName": "Backlit Glass",
+        "canonical": "oklch(94.2% 0.009 232.4)",
+        "tonalRamp": [
+          "oklch(15% 0.009 232.4)",
+          "oklch(26% 0.009 232.4)",
+          "oklch(38% 0.009 232.4)",
+          "oklch(49% 0.009 232.4)",
+          "oklch(61% 0.009 232.4)",
+          "oklch(72% 0.009 232.4)",
+          "oklch(84% 0.009 232.4)",
+          "oklch(95% 0.009 232.4)"
+        ]
+      },
+      "glass-lit": {
+        "role": "neutral",
+        "displayName": "Lit Glass",
+        "canonical": "oklch(98.3% 0.004 236.5)",
+        "tonalRamp": [
+          "oklch(15% 0.004 236.5)",
+          "oklch(26% 0.004 236.5)",
+          "oklch(38% 0.004 236.5)",
+          "oklch(49% 0.004 236.5)",
+          "oklch(61% 0.004 236.5)",
+          "oklch(72% 0.004 236.5)",
+          "oklch(84% 0.004 236.5)",
+          "oklch(95% 0.004 236.5)"
+        ]
+      },
+      "glass-edge": {
+        "role": "neutral",
+        "displayName": "Glass Edge",
+        "canonical": "oklch(87.2% 0.018 234.5)",
+        "tonalRamp": [
+          "oklch(15% 0.018 234.5)",
+          "oklch(26% 0.018 234.5)",
+          "oklch(38% 0.018 234.5)",
+          "oklch(49% 0.018 234.5)",
+          "oklch(61% 0.018 234.5)",
+          "oklch(72% 0.018 234.5)",
+          "oklch(84% 0.018 234.5)",
+          "oklch(95% 0.018 234.5)"
+        ]
+      },
+      "slip": {
+        "role": "neutral",
+        "displayName": "Slip White",
+        "canonical": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0.000 89.9)",
+          "oklch(26% 0.000 89.9)",
+          "oklch(38% 0.000 89.9)",
+          "oklch(49% 0.000 89.9)",
+          "oklch(61% 0.000 89.9)",
+          "oklch(72% 0.000 89.9)",
+          "oklch(84% 0.000 89.9)",
+          "oklch(95% 0.000 89.9)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(24.0% 0.025 239.4)",
+        "tonalRamp": [
+          "oklch(15% 0.025 239.4)",
+          "oklch(26% 0.025 239.4)",
+          "oklch(38% 0.025 239.4)",
+          "oklch(49% 0.025 239.4)",
+          "oklch(61% 0.025 239.4)",
+          "oklch(72% 0.025 239.4)",
+          "oklch(84% 0.025 239.4)",
+          "oklch(95% 0.025 239.4)"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "oklch(43.3% 0.028 240.7)",
+        "tonalRamp": [
+          "oklch(15% 0.028 240.7)",
+          "oklch(26% 0.028 240.7)",
+          "oklch(38% 0.028 240.7)",
+          "oklch(49% 0.028 240.7)",
+          "oklch(61% 0.028 240.7)",
+          "oklch(72% 0.028 240.7)",
+          "oklch(84% 0.028 240.7)",
+          "oklch(95% 0.028 240.7)"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "oklch(48.8% 0.030 244.9)",
+        "tonalRamp": [
+          "oklch(15% 0.030 244.9)",
+          "oklch(26% 0.030 244.9)",
+          "oklch(38% 0.030 244.9)",
+          "oklch(49% 0.030 244.9)",
+          "oklch(61% 0.030 244.9)",
+          "oklch(72% 0.030 244.9)",
+          "oklch(84% 0.030 244.9)",
+          "oklch(95% 0.030 244.9)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "oklch(89.8% 0.014 233.8)",
+        "tonalRamp": [
+          "oklch(15% 0.014 233.8)",
+          "oklch(26% 0.014 233.8)",
+          "oklch(38% 0.014 233.8)",
+          "oklch(49% 0.014 233.8)",
+          "oklch(61% 0.014 233.8)",
+          "oklch(72% 0.014 233.8)",
+          "oklch(84% 0.014 233.8)",
+          "oklch(95% 0.014 233.8)"
+        ]
+      },
+      "tick": {
+        "role": "neutral",
+        "displayName": "Tick",
+        "canonical": "oklch(75.5% 0.028 234.1)",
+        "tonalRamp": [
+          "oklch(15% 0.028 234.1)",
+          "oklch(26% 0.028 234.1)",
+          "oklch(38% 0.028 234.1)",
+          "oklch(49% 0.028 234.1)",
+          "oklch(61% 0.028 234.1)",
+          "oklch(72% 0.028 234.1)",
+          "oklch(84% 0.028 234.1)",
+          "oklch(95% 0.028 234.1)"
+        ]
+      },
+      "pencil": {
+        "role": "secondary",
+        "displayName": "Grease-Pencil Red",
+        "canonical": "oklch(54.3% 0.190 30.8)",
+        "tonalRamp": [
+          "oklch(15% 0.160 30.8)",
+          "oklch(26% 0.160 30.8)",
+          "oklch(38% 0.190 30.8)",
+          "oklch(49% 0.190 30.8)",
+          "oklch(61% 0.190 30.8)",
+          "oklch(72% 0.190 30.8)",
+          "oklch(84% 0.190 30.8)",
+          "oklch(95% 0.160 30.8)"
+        ]
+      },
+      "cobalt": {
+        "role": "primary",
+        "displayName": "China-Marker Cobalt",
+        "canonical": "oklch(44.1% 0.114 254.6)",
+        "tonalRamp": [
+          "oklch(15% 0.114 254.6)",
+          "oklch(26% 0.114 254.6)",
+          "oklch(38% 0.114 254.6)",
+          "oklch(49% 0.114 254.6)",
+          "oklch(61% 0.114 254.6)",
+          "oklch(72% 0.114 254.6)",
+          "oklch(84% 0.114 254.6)",
+          "oklch(95% 0.114 254.6)"
+        ]
+      },
+      "cobalt-deep": {
+        "role": "primary",
+        "displayName": "Deep Cobalt",
+        "canonical": "oklch(36.2% 0.091 254.6)",
+        "tonalRamp": [
+          "oklch(15% 0.091 254.6)",
+          "oklch(26% 0.091 254.6)",
+          "oklch(38% 0.091 254.6)",
+          "oklch(49% 0.091 254.6)",
+          "oklch(61% 0.091 254.6)",
+          "oklch(72% 0.091 254.6)",
+          "oklch(84% 0.091 254.6)",
+          "oklch(95% 0.091 254.6)"
+        ]
+      },
+      "cobalt-wash": {
+        "role": "primary",
+        "displayName": "Cobalt Wash",
+        "canonical": "oklch(94.2% 0.017 250.8)",
+        "tonalRamp": [
+          "oklch(15% 0.017 250.8)",
+          "oklch(26% 0.017 250.8)",
+          "oklch(38% 0.017 250.8)",
+          "oklch(49% 0.017 250.8)",
+          "oklch(61% 0.017 250.8)",
+          "oklch(72% 0.017 250.8)",
+          "oklch(84% 0.017 250.8)",
+          "oklch(95% 0.017 250.8)"
+        ]
+      },
+      "amber": {
+        "role": "tertiary",
+        "displayName": "Lamp Amber",
+        "canonical": "oklch(48.2% 0.103 72.5)",
+        "tonalRamp": [
+          "oklch(15% 0.103 72.5)",
+          "oklch(26% 0.103 72.5)",
+          "oklch(38% 0.103 72.5)",
+          "oklch(49% 0.103 72.5)",
+          "oklch(61% 0.103 72.5)",
+          "oklch(72% 0.103 72.5)",
+          "oklch(84% 0.103 72.5)",
+          "oklch(95% 0.103 72.5)"
+        ]
+      },
+      "amber-wash": {
+        "role": "tertiary",
+        "displayName": "Amber Wash",
+        "canonical": "oklch(95.8% 0.032 85.5)",
+        "tonalRamp": [
+          "oklch(15% 0.032 85.5)",
+          "oklch(26% 0.032 85.5)",
+          "oklch(38% 0.032 85.5)",
+          "oklch(49% 0.032 85.5)",
+          "oklch(61% 0.032 85.5)",
+          "oklch(72% 0.032 85.5)",
+          "oklch(84% 0.032 85.5)",
+          "oklch(95% 0.032 85.5)"
+        ]
+      },
+      "pencil-wash": {
+        "role": "secondary",
+        "displayName": "Pencil Wash",
+        "canonical": "rgba(198, 47, 28, 0.1)",
+        "tonalRamp": [
+          "oklch(15% 0.160 30.8)",
+          "oklch(26% 0.160 30.8)",
+          "oklch(38% 0.190 30.8)",
+          "oklch(49% 0.190 30.8)",
+          "oklch(61% 0.190 30.8)",
+          "oklch(72% 0.190 30.8)",
+          "oklch(84% 0.190 30.8)",
+          "oklch(95% 0.160 30.8)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Tally Figure",
+        "purpose": "The occurrence count in the tally."
+      },
+      "headline": {
+        "displayName": "Masthead",
+        "purpose": "The page title only; also the size of the secondary page count."
+      },
+      "title": {
+        "displayName": "Slip Title",
+        "purpose": "Granth title on a slip."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base UI text, tabular numerals."
+      },
+      "label": {
+        "displayName": "Condensed Label",
+        "purpose": "Field legends, sentence case."
+      },
+      "folio": {
+        "displayName": "Folio",
+        "purpose": "Page number on each slip."
+      },
+      "indic-line": {
+        "displayName": "Indic Passage",
+        "purpose": "Ringed passages on slips."
+      },
+      "indic-query": {
+        "displayName": "Indic Query",
+        "purpose": "The query input."
+      },
+      "indic-chip": {
+        "displayName": "Indic Chip",
+        "purpose": "Spelling chips."
+      }
+    },
+    "shadows": [
+      {
+        "name": "slip",
+        "value": "0 1px 0 rgba(20, 33, 42, 0.06), 0 2px 4px rgba(20, 33, 42, 0.05), 0 22px 40px -26px rgba(20, 33, 42, 0.42)",
+        "purpose": "Page slip lying on backlit glass."
+      },
+      {
+        "name": "console",
+        "value": "0 1px 1px rgba(20, 33, 42, 0.05), 0 12px 28px -14px rgba(20, 33, 42, 0.3)",
+        "purpose": "Query bar and granth picker."
+      },
+      {
+        "name": "loupe",
+        "value": "0 14px 26px -12px rgba(20, 33, 42, 0.5)",
+        "purpose": "The loupe lens."
+      },
+      {
+        "name": "dialog",
+        "value": "0 30px 70px -20px rgba(20, 33, 42, 0.5)",
+        "purpose": "Export and delivery dialogs over a 38% ink scrim with 3px blur."
+      },
+      {
+        "name": "glass-inset",
+        "value": "inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(20, 33, 42, 0.04)",
+        "purpose": "The glass panel's edge highlight."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 4px #e4edf7",
+        "purpose": "Query bar focus-within, plus the border turning cobalt."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-lt",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Every Light Table transition and animation."
+      },
+      {
+        "name": "state-fast",
+        "value": "140ms",
+        "purpose": "Button, chip and segment hover/active."
+      },
+      {
+        "name": "focus",
+        "value": "160ms",
+        "purpose": "Query bar border and halo."
+      },
+      {
+        "name": "slip-settle",
+        "value": "520ms, stagger 35ms per slip up to 12",
+        "purpose": "Slips laid down from 60% opacity, 8px lower, 1.5px blur."
+      },
+      {
+        "name": "lamp-on",
+        "value": "900ms",
+        "purpose": "One bloom when results land."
+      },
+      {
+        "name": "lamp-sweep",
+        "value": "1.6s infinite",
+        "purpose": "Sheen across the glass while aria-busy."
+      },
+      {
+        "name": "loupe-lift",
+        "value": "260ms, translateY(-3px)",
+        "purpose": "Loupe rises on slip hover/focus."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "none",
+        "purpose": "prefers-reduced-motion disables all .lt animation and transition."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "720px"
+      },
+      {
+        "name": "frame-max",
+        "value": "1320px"
+      },
+      {
+        "name": "slips-max",
+        "value": "1040px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Search Button",
+      "kind": "button",
+      "refersTo": "button-search",
+      "description": "The one filled button: ends the query bar.",
+      "html": "<button class=\"ds-go\">Search</button>",
+      "css": ".ds-go{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 22px;border:0;border-radius:8px;background:#1f5390;color:#fff;font:650 16px Archivo, 'Segoe UI', system-ui, sans-serif;cursor:pointer;transition:background 140ms cubic-bezier(0.16,1,0.3,1),transform 140ms cubic-bezier(0.16,1,0.3,1)}.ds-go:hover{background:#173e6c}.ds-go:active{transform:translateY(1px)}.ds-go:focus-visible{outline:2px solid #1f5390;outline-offset:2px}"
+    },
+    {
+      "name": "Outline Action",
+      "kind": "button",
+      "refersTo": "button-action",
+      "description": "Slip and toolbar actions; primary variant carries cobalt at rest.",
+      "html": "<div class=\"ds-actions\"><button class=\"ds-action ds-action-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 2.5h6.7L15 5.8V17.5H5ZM11.5 2.7V6H15M7.5 9.5h5M7.5 12.5h5\"/></svg> Check on page</button><button class=\"ds-action\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 4h14v12H3ZM3 8h14M3 12h14M8 4v12\"/></svg> CSV row</button></div>",
+      "css": ".ds-actions{display:flex;gap:6px;flex-wrap:wrap}.ds-action{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:0 13px;border:1px solid #d5dfe5;border-radius:7px;background:#fff;color:#14212a;font:580 14px Archivo, 'Segoe UI', system-ui, sans-serif;cursor:pointer;transition:border-color 140ms cubic-bezier(0.16,1,0.3,1),background 140ms cubic-bezier(0.16,1,0.3,1)}.ds-action-primary{border-color:#1f5390;color:#1f5390}.ds-action:hover{border-color:#1f5390;background:#e4edf7}.ds-action:focus-visible{outline:2px solid #1f5390;outline-offset:2px}"
+    },
+    {
+      "name": "Query Bar",
+      "kind": "input",
+      "refersTo": "query-bar",
+      "description": "Indic-first search field with cobalt focus halo.",
+      "html": "<label class=\"ds-query\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M8.8 15.1a6.3 6.3 0 1 1 0-12.6 6.3 6.3 0 0 1 0 12.6ZM13.3 13.3 17.5 17.5\"/></svg><input placeholder=\"हिंसा · હિંસા · hinsa\" aria-label=\"Word to search\"><kbd class=\"ds-kbd\">/</kbd><button class=\"ds-go\">Search</button></label>",
+      "css": ".ds-query{display:flex;align-items:center;gap:12px;padding:8px 8px 8px 18px;background:#fff;border:1px solid #cad7df;border-radius:12px;color:#526270;box-shadow:0 1px 1px rgba(20,33,42,.05),0 12px 28px -14px rgba(20,33,42,.3);transition:border-color 160ms,box-shadow 160ms}.ds-query:focus-within{border-color:#1f5390;box-shadow:0 0 0 4px #e4edf7,0 1px 1px rgba(20,33,42,.05),0 12px 28px -14px rgba(20,33,42,.3)}.ds-query input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:#14212a;font:400 26px/1.5 'Tiro Devanagari Sanskrit', 'Noto Serif Gujarati', 'Noto Serif Devanagari', serif;caret-color:#1f5390}.ds-query input::placeholder{color:#8a99a3}.ds-kbd{font:600 12px Archivo, 'Segoe UI', system-ui, sans-serif;color:#526270;border:1px solid #d5dfe5;border-bottom-width:2px;border-radius:5px;padding:1px 7px}.ds-query:focus-within .ds-kbd{visibility:hidden}.ds-go{min-height:48px;padding:0 22px;border:0;border-radius:8px;background:#1f5390;color:#fff;font:650 16px Archivo, 'Segoe UI', system-ui, sans-serif;cursor:pointer}.ds-go:hover{background:#173e6c}"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segment-option",
+      "description": "Match mode, scripts and scope; selected is solid ink.",
+      "html": "<fieldset class=\"ds-seg\"><legend>Match</legend><div><button class=\"is-on\" aria-pressed=\"true\">Sanskrit forms</button><button aria-pressed=\"false\">Exact word</button><button aria-pressed=\"false\">Contains</button></div></fieldset>",
+      "css": ".ds-seg{border:0;margin:0;padding:0;display:grid;gap:6px}.ds-seg legend{padding:0;color:#526270;font:600 12.5px Archivo, 'Segoe UI', system-ui, sans-serif;font-stretch:88%;letter-spacing:.02em}.ds-seg>div{display:inline-flex;gap:2px;padding:3px;border:1px solid #cad7df;border-radius:8px;background:rgba(255,255,255,.5)}.ds-seg button{min-height:36px;padding:0 12px;border:0;border-radius:6px;background:transparent;color:#43535f;font:560 14px Archivo, 'Segoe UI', system-ui, sans-serif;cursor:pointer}.ds-seg button:hover{background:#fff;color:#14212a}.ds-seg button.is-on{background:#14212a;color:#fff}.ds-seg button:focus-visible{outline:2px solid #1f5390;outline-offset:2px}"
+    },
+    {
+      "name": "Spelling Chip",
+      "kind": "chip",
+      "refersTo": "spelling-chip",
+      "description": "A Devanagari spelling with its page count; chosen ones take the pencil.",
+      "html": "<div class=\"ds-forms\"><button class=\"ds-form is-on\" aria-pressed=\"true\"><span>हिंसा</span><small>3,851</small></button><button class=\"ds-form\" aria-pressed=\"false\"><span>हिंस</span><small>46</small></button><button class=\"ds-form is-empty\" aria-pressed=\"false\"><span>हींसा</span><small>0</small></button></div>",
+      "css": ".ds-forms{display:flex;gap:8px;flex-wrap:wrap}.ds-form{display:inline-flex;align-items:baseline;gap:8px;padding:4px 12px 5px;border:1px solid #cad7df;border-radius:999px;background:rgba(255,255,255,.55);color:#14212a;cursor:pointer;transition:background 140ms,border-color 140ms}.ds-form span{font:400 20px/1.4 'Tiro Devanagari Sanskrit', 'Noto Serif Gujarati', 'Noto Serif Devanagari', serif}.ds-form small{font:600 12px Archivo, 'Segoe UI', system-ui, sans-serif;color:#526270;font-variant-numeric:tabular-nums}.ds-form:hover{background:#fff}.ds-form.is-on{background:#fff;border-color:#c62f1c;box-shadow:inset 0 0 0 1px #c62f1c}.ds-form.is-on small{color:#c62f1c}.ds-form.is-empty{border-style:dashed}.ds-form:focus-visible{outline:2px solid #1f5390;outline-offset:2px}"
+    },
+    {
+      "name": "Library Nav",
+      "kind": "nav",
+      "refersTo": "",
+      "description": "Plain text links in the masthead.",
+      "html": "<nav class=\"ds-nav\"><a href=\"#\">Library</a><a href=\"#\">Ask the library</a><a href=\"#\">Scan status</a></nav>",
+      "css": ".ds-nav{display:flex;gap:4px;flex-wrap:wrap}.ds-nav a{padding:8px 12px;border-radius:6px;color:#43535f;text-decoration:none;font:560 14px Archivo, 'Segoe UI', system-ui, sans-serif}.ds-nav a:hover{background:rgba(255,255,255,.75);color:#14212a}.ds-nav a:focus-visible{outline:2px solid #1f5390;outline-offset:2px}"
+    },
+    {
+      "name": "Page Slip",
+      "kind": "card",
+      "refersTo": "page-slip",
+      "description": "One hit: a mounted page slip with folio, ringed passage and loupe.",
+      "html": "<div class=\"ds-glass\"><article class=\"ds-slip\"><header class=\"ds-head\"><div><h3>Prashamrati Prakaran</h3><p><span class=\"ds-native\">प्रशमरति प्रकरण</span><b>No. 226</b></p></div><div class=\"ds-folio\"><span>page</span><strong>33</strong></div></header><p class=\"ds-line\">…જ્યાં મિથ્યાજ્ઞાન હોય ત્યાં <mark class=\"ds-ring\">હિંસા</mark>, અસત્ય, ચોરી…</p><div class=\"ds-loupe\"><mark class=\"ds-ring\">હિંસા</mark></div><footer class=\"ds-foot\"><span>2 occurrences on this page</span><button class=\"ds-action\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 2.5h6.7L15 5.8V17.5H5ZM11.5 2.7V6H15M7.5 9.5h5M7.5 12.5h5\"/></svg> Check on page</button></footer></article></div>",
+      "css": ".ds-glass{padding:30px 26px;border-radius:16px;border:1px solid #cad7df;background:radial-gradient(120% 70% at 50% 0%,rgba(255,255,255,.95),rgba(255,255,255,0) 70%),linear-gradient(180deg,#eef3f6,#e3eaef)}.ds-slip{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 120px;grid-template-areas:'head head' 'line loupe' 'foot foot';gap:16px 28px;padding:20px 24px 16px;background:#fff;border-radius:3px;color:#14212a;font-family:Archivo, 'Segoe UI', system-ui, sans-serif;box-shadow:0 1px 0 rgba(20,33,42,.06),0 2px 4px rgba(20,33,42,.05),0 22px 40px -26px rgba(20,33,42,.42)}.ds-slip::before{content:'';position:absolute;inset:-9px;pointer-events:none;background:linear-gradient(#9fb3bf,#9fb3bf) 0 0/12px 1px no-repeat,linear-gradient(#9fb3bf,#9fb3bf) 0 0/1px 12px no-repeat,linear-gradient(#9fb3bf,#9fb3bf) 100% 0/12px 1px no-repeat,linear-gradient(#9fb3bf,#9fb3bf) 100% 0/1px 12px no-repeat,linear-gradient(#9fb3bf,#9fb3bf) 0 100%/12px 1px no-repeat,linear-gradient(#9fb3bf,#9fb3bf) 0 100%/1px 12px no-repeat,linear-gradient(#9fb3bf,#9fb3bf) 100% 100%/12px 1px no-repeat,linear-gradient(#9fb3bf,#9fb3bf) 100% 100%/1px 12px no-repeat}.ds-head{grid-area:head;display:flex;justify-content:space-between;gap:16px;padding-bottom:12px;border-bottom:1px solid #d5dfe5}.ds-head h3{margin:0;font-size:17px;font-weight:650;line-height:1.3}.ds-head p{margin:4px 0 0;display:flex;gap:12px;align-items:baseline;color:#526270;font-size:13px}.ds-native{font:16px 'Tiro Devanagari Sanskrit', 'Noto Serif Gujarati', 'Noto Serif Devanagari', serif;color:#43535f}.ds-head b{font-weight:600;font-stretch:88%}.ds-folio{display:grid;justify-items:end;line-height:1}.ds-folio span{font-size:11.5px;font-weight:600;font-stretch:85%;color:#526270}.ds-folio strong{font-size:34px;font-weight:650;font-stretch:80%;letter-spacing:-.02em}.ds-line{grid-area:line;margin:0;font:400 21px/1.8 'Tiro Devanagari Sanskrit', 'Noto Serif Gujarati', 'Noto Serif Devanagari', serif}.ds-ring{position:relative;background:none;color:#14212a;padding:0 .18em}.ds-ring::after{content:'';position:absolute;inset:-.2em -.12em -.12em;background:url(\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'><g fill='none' stroke='%23c62f1c' stroke-linecap='round'><path d='M22 5.5C44 1.5 80 2.5 93 12.5C101 20 93 33.5 67 36.5C41 39.5 10 37 4.5 26.5C0.5 17.5 12 8.5 34 4.8L47 3.8' stroke-width='2.6' vector-effect='non-scaling-stroke' opacity='.92'/><path d='M30 4.6C50 2 84 4.5 94 14' stroke-width='1.2' vector-effect='non-scaling-stroke' opacity='.55'/></g></svg>\") center / 100% 100% no-repeat;pointer-events:none}.ds-loupe{grid-area:loupe;width:120px;height:120px;border-radius:50%;border:3px solid #14212a;outline:2px solid #fff;background:#fff;display:grid;place-items:center;font:400 34px/1.6 'Tiro Devanagari Sanskrit', 'Noto Serif Gujarati', 'Noto Serif Devanagari', serif;box-shadow:0 14px 26px -12px rgba(20,33,42,.5);transition:transform 260ms cubic-bezier(0.16,1,0.3,1)}.ds-slip:hover .ds-loupe{transform:translateY(-3px)}.ds-foot{grid-area:foot;display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;border-top:1px solid #d5dfe5;color:#526270;font-size:13px;font-weight:560}.ds-action{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:0 13px;border:1px solid #1f5390;border-radius:7px;background:#fff;color:#1f5390;font:580 14px Archivo, 'Segoe UI', system-ui, sans-serif;cursor:pointer}.ds-action:hover{background:#e4edf7}"
+    },
+    {
+      "name": "Tally",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Verified counts set as the headline, with the searched forms and scope.",
+      "html": "<div class=\"ds-tally\"><p class=\"ds-fig\"><strong>12,082+</strong><span>occurrences</span></p><p class=\"ds-fig ds-second\"><strong>4,657+</strong><span>pages</span></p><p class=\"ds-scope\"><span>हिंसा</span><small>Sanskrit forms · Devanagari + Gujarati · in all granths</small></p></div>",
+      "css": ".ds-tally{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 30px;color:#14212a;font-family:Archivo, 'Segoe UI', system-ui, sans-serif;font-variant-numeric:tabular-nums}.ds-fig{margin:0;display:inline-flex;align-items:baseline;gap:10px}.ds-fig strong{font-size:56px;font-weight:680;font-stretch:92%;letter-spacing:-.03em;line-height:.95}.ds-fig span{font-size:16px;font-weight:560;color:#43535f}.ds-second strong{font-size:36px;color:#43535f}.ds-scope{margin:0 0 4px;display:grid;gap:2px}.ds-scope span{font:400 22px/1.4 'Tiro Devanagari Sanskrit', 'Noto Serif Gujarati', 'Noto Serif Devanagari', serif}.ds-scope small{font-size:13.5px;color:#526270}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Light Table",
+    "overview": "A researcher's backlit glass table. The ground is cool, faintly blue glass with ruler ticks along its top and left edges; each search hit is a white page slip laid on it, mounted with crop marks at its corners; the matched word on the slip is ringed by hand in red grease pencil, and a loupe in the slip's right margin shows that word at twice the size. Actions are written in cobalt, like a china marker. The page exists to let someone check a hit on its page, so the text itself is the largest, highest-contrast thing on screen.\n\nDensity is working density, not dashboard density: one reading column of slips in page order, generous Indic line height (1.8), and counts set as big, condensed tabular numerals that read as a tally, not a KPI. Light arrives as state: the glass brightens once when results land and a sheen sweeps it while searching. Nothing else moves.\n\nThe world refuses the category's grid of same-size result cards with a yellow highlighter. Hits are never highlighted with a fill; they are ringed.",
+    "keyCharacteristics": [
+      "Cool backlit glass ground with 8px/40px ruler ticks; white slips with crop-mark corners.",
+      "One hand-drawn red ring per matched word, the only red on a healthy screen.",
+      "Cobalt for every action and focus; ink-black for the selected segment.",
+      "Archivo (variable width) for the interface; Tiro Devanagari Sanskrit and Noto Serif Gujarati for the text, always larger than the UI around it.",
+      "Tabular numerals everywhere; the tally is the headline.",
+      "Amber means \"partial or not verified\", never decoration."
+    ],
+    "rules": [
+      {
+        "name": "The Ring, Not the Highlighter Rule",
+        "body": "A matched word is marked only by the grease-pencil ring, an open, uneven red stroke around the word with a transparent background. Never mark a hit with a background fill, yellow or otherwise.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three Inks Rule",
+        "body": "Red marks the hit, cobalt marks what you can do, amber marks what is not verified. No ink is borrowed for another job; a red button or a cobalt highlight breaks the table.",
+        "section": "colors"
+      },
+      {
+        "name": "The Text Is Larger Rule",
+        "body": "Indic text is never set smaller than the Latin UI beside it; any Devanagari or Gujarati run on this surface is at least 16px and usually 18 to 22px, at line height 1.4 or more.",
+        "section": "typography"
+      },
+      {
+        "name": "The Width Axis Rule",
+        "body": "Hierarchy among Latin labels is carried by Archivo's width axis and weight, not by uppercase or tracking. Folios, book numbers and labels condense (80 to 88%); only the masthead widens.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Tally Rule",
+        "body": "All numerals are tabular (`font-variant-numeric: tabular-nums` on the root) and formatted en-IN (12,082). An inexact count carries a trailing \"+\", never a rounded or approximate word.",
+        "section": "typography"
+      },
+      {
+        "name": "The Lamp Below Rule",
+        "body": "Light comes from under the glass: shadows are short and soft, highlights sit on top edges, and the one bloom (the lamp coming on as results land, 900ms) rises from beneath. Nothing is lit from a direction the table doesn't have.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Unverified Slip Rule",
+        "body": "A hit the page text does not confirm loses its mount: no shadow, no crop marks, 72% white, a 1px dashed Tick outline, and an amber count line reading \"Index hit, not confirmed in the page text\". Doubt is shown by the object, not by a badge.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do scope every new Light Table rule under `.lt` and use the `--lt-*` tokens; the shared dialogs restyle only inside it.",
+      "Do mark hits with the grease-pencil ring (`mark.ltRing`) and nothing else, both on slips and in matched-page lists.",
+      "Do keep every action and focus in Cobalt, with a 2px outline at 2px offset for `:focus-visible`.",
+      "Do set Indic text at 16px or more (usually 18 to 22px) and line height 1.4 to 1.8, larger than the Latin UI beside it.",
+      "Do show unverified or partial states with the object itself (dashed unmounted slip, amber tape, trailing \"+\"), in amber.",
+      "Do lay results as one column of slips in page order, each with its folio and loupe.",
+      "Do honor `prefers-reduced-motion`: all Light Table animation and transition turns off."
+    ],
+    "donts": [
+      "Don't highlight a match with a background fill or yellow highlighter.",
+      "Don't arrange hits as a grid of same-size result cards.",
+      "Don't use Grease-Pencil Red for buttons, errors or decoration; it belongs to the ring and to chosen spellings.",
+      "Don't use hard or offset shadows; depth is soft and lit from below.",
+      "Don't set Latin labels in uppercase with wide tracking; condense with Archivo's width axis instead.",
+      "Don't apply these tokens to the library, admin or auth pages piecemeal; those still run on `globals.css` until they are moved into the Light Table deliberately."
+    ]
+  }
+}

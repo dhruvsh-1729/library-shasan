@@ -1,0 +1,497 @@
+/*
+ * The Light Table, carried to every page.
+ *
+ * The search page (styles/search.css) is the reference: cool backlit glass,
+ * white slips with soft shadows, cobalt for actions, grease-pencil red only
+ * for found words, Archivo for the interface and script-made faces for the
+ * text. This layer is loaded last and restyles the shared shells, headings,
+ * panels, inputs, buttons, tabs and badges the other pages already use, so
+ * their behaviour and markup stay as they are.
+ */
+
+:root {
+  --lt-glass: #e6edf1;
+  --lt-glass-lit: #f7fafc;
+  --lt-glass-edge: #cad7df;
+  --lt-ink: #14212a;
+  --lt-ink-2: #43535f;
+  --lt-ink-3: #526270;
+  --lt-rule: #d5dfe5;
+  --lt-tick: #9fb3bf;
+  --lt-pencil: #c62f1c;
+  --lt-cobalt: #1f5390;
+  --lt-cobalt-deep: #173e6c;
+  --lt-cobalt-wash: #e4edf7;
+  --lt-amber: #815300;
+  --lt-amber-wash: #fbf0d9;
+  --lt-green: #25643f;
+  --lt-green-wash: #e3f1e8;
+  --lt-shadow: 0 1px 1px rgba(20, 33, 42, 0.05), 0 12px 28px -14px rgba(20, 33, 42, 0.3);
+  --lt-slip-shadow: 0 1px 0 rgba(20, 33, 42, 0.06), 0 2px 4px rgba(20, 33, 42, 0.05), 0 22px 40px -26px rgba(20, 33, 42, 0.42);
+  --lt-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The font variables are set by next/font on the app wrapper (pages/_app.tsx),
+   so the stacks that use them are resolved there, not on :root. */
+.ltFonts {
+  --lt-ui-font: var(--lt-font-ui), "Segoe UI", system-ui, sans-serif;
+  --lt-indic-font: var(--lt-font-deva), var(--lt-font-guj), "Noto Serif Devanagari", "Noto Serif Gujarati", serif;
+  font-family: var(--lt-ui-font);
+}
+
+body {
+  background: var(--lt-glass);
+  color: var(--lt-ink);
+}
+
+::selection {
+  background: rgba(198, 47, 28, 0.12);
+}
+
+:focus-visible {
+  outline: 2px solid var(--lt-cobalt);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------ shells */
+
+.libraryShell,
+.scanShell,
+.extractorShell,
+.adminShell,
+.authShell,
+.askShell {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 280px),
+    var(--lt-glass);
+  color: var(--lt-ink);
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-variant-numeric: tabular-nums;
+}
+
+.libraryTitle,
+.scanTitle,
+.extractorHeader h1,
+.adminTitle,
+.authTitle,
+.askTitle {
+  font-family: var(--lt-ui-font);
+  font-weight: 720;
+  font-stretch: 112%;
+  letter-spacing: -0.02em;
+  color: var(--lt-ink);
+}
+
+.libraryTitle,
+.scanTitle,
+.extractorHeader h1,
+.adminTitle,
+.askTitle {
+  font-size: clamp(28px, 3.2vw, 36px);
+  line-height: 1.05;
+}
+
+.libraryStatusLine,
+.scanStatusLine,
+.adminSubtitle,
+.authSubtitle,
+.askSubtitle {
+  color: var(--lt-ink-2);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------ navigation */
+
+.libraryNav a,
+.scanNav a,
+.extractorNav a,
+.askNav a,
+.appPillNav a,
+.adminNav a,
+.adminNavButton {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--lt-ink-2);
+  text-decoration: none;
+  font-family: var(--lt-ui-font);
+  font-weight: 560;
+  font-size: 14px;
+}
+
+.libraryNav a:hover,
+.scanNav a:hover,
+.extractorNav a:hover,
+.askNav a:hover,
+.appPillNav a:hover,
+.adminNav a:hover,
+.adminNavButton:hover {
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--lt-ink);
+}
+
+/* ------------------------------------------------------------ slips and panels */
+
+.libraryCard,
+.scanRow,
+.extractorControlPanel,
+.extractorContextPanel,
+.extractorInfoPanel,
+.extractorResultPanel,
+.extractorPreviewPanel,
+.adminPanel,
+.authCard,
+.askPanel,
+.askChat {
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-shadow: var(--lt-slip-shadow);
+}
+
+.authCard {
+  border-radius: 12px;
+}
+
+.libraryCard {
+  position: relative;
+  overflow: visible;
+  transition: transform 220ms var(--lt-ease);
+}
+
+.libraryCard:hover {
+  transform: translateY(-3px);
+}
+
+.libraryCover {
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+  background: var(--lt-glass-lit);
+}
+
+.libraryCoverFallback {
+  color: var(--lt-ink-3);
+  font-weight: 560;
+}
+
+.libraryCardTitle {
+  color: var(--lt-ink);
+  font-weight: 650;
+  font-size: 16px;
+}
+
+.libraryCardNumber {
+  color: var(--lt-ink-3);
+  font-weight: 650;
+  font-stretch: 85%;
+}
+
+.libraryCardNative {
+  font-family: var(--lt-indic-font);
+  color: var(--lt-ink-2);
+}
+
+/* ------------------------------------------------------------ inputs */
+
+.librarySearchInput,
+.extractorInput,
+.adminInput,
+.adminSelect,
+.adminTextarea,
+.authInput,
+.askInput,
+.pageJumpInputGroup input {
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  box-shadow: none;
+  transition: border-color 160ms var(--lt-ease), box-shadow 160ms var(--lt-ease);
+}
+
+.librarySearchInput {
+  min-height: 52px;
+  font-size: 19px;
+  border-radius: 12px;
+  box-shadow: var(--lt-shadow);
+}
+
+.librarySearchInput:focus,
+.extractorInput:focus,
+.adminInput:focus,
+.adminSelect:focus,
+.adminTextarea:focus,
+.authInput:focus,
+.askInput:focus,
+.pageJumpInputGroup input:focus {
+  outline: none;
+  border-color: var(--lt-cobalt);
+  box-shadow: 0 0 0 4px var(--lt-cobalt-wash);
+}
+
+/* ------------------------------------------------------------ buttons */
+
+.extractorPrimaryButton,
+.adminPrimaryButton,
+.authPrimaryButton,
+.askSend {
+  border: 0;
+  border-radius: 8px;
+  background: var(--lt-cobalt);
+  color: #fff;
+  font-family: var(--lt-ui-font);
+  font-weight: 650;
+  box-shadow: none;
+  transition: background 140ms var(--lt-ease);
+}
+
+.extractorPrimaryButton:hover:not(:disabled),
+.adminPrimaryButton:hover:not(:disabled),
+.authPrimaryButton:hover:not(:disabled),
+.askSend:hover:not(:disabled) {
+  background: var(--lt-cobalt-deep);
+}
+
+.libraryClearButton,
+.libraryPageButton,
+.pageJumpPager button,
+.inlinePdfButton,
+.libraryPdfLink,
+.libraryCardActions a,
+.scanLinks a,
+.adminGhostButton,
+.authGoogleButton,
+.extractorActions button,
+.extractorCodeGrid button,
+.extractorModeGrid button,
+.extractorIdentifierGrid button,
+.extractorRangeHint button,
+.extractorCoverStrip button,
+.extractorSegmentRanges button,
+.pdfDialogControls button,
+.pdfDialogControls a {
+  border: 1px solid var(--lt-rule);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-family: var(--lt-ui-font);
+  font-weight: 600;
+  box-shadow: none;
+  transition: border-color 140ms var(--lt-ease), background 140ms var(--lt-ease);
+}
+
+.libraryClearButton:hover:not(:disabled),
+.libraryPageButton:hover:not(:disabled),
+.pageJumpPager button:hover:not(:disabled),
+.inlinePdfButton:hover,
+.libraryPdfLink:hover,
+.libraryCardActions a:hover,
+.scanLinks a:hover,
+.adminGhostButton:hover:not(:disabled),
+.authGoogleButton:hover:not(:disabled),
+.extractorActions button:hover:not(:disabled),
+.pdfDialogControls button:hover:not(:disabled),
+.pdfDialogControls a:hover {
+  border-color: var(--lt-cobalt);
+  background: var(--lt-cobalt-wash);
+}
+
+/* A library slip has one main action; the rest are quiet links. */
+.libraryCardActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.libraryCardActions > :first-child {
+  border-color: var(--lt-cobalt);
+  color: var(--lt-cobalt);
+}
+
+.libraryCardActions > a:not(:first-child) {
+  border: 0;
+  background: none;
+  padding: 6px 0;
+  min-height: 0;
+  color: var(--lt-cobalt);
+  font-weight: 580;
+}
+
+.libraryCardActions > a:not(:first-child):hover {
+  background: none;
+  text-decoration: underline;
+}
+
+.extractorCodeGrid button.isActive,
+.extractorModeGrid button.isActive,
+.extractorIdentifierGrid button.isActive,
+.extractorCoverStrip button.isActive {
+  background: var(--lt-ink);
+  border-color: var(--lt-ink);
+  color: #fff;
+}
+
+.adminDangerButton {
+  border-radius: 7px;
+  font-family: var(--lt-ui-font);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ tabs */
+
+.scanTab,
+.adminTab {
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--lt-ink-2);
+  font-family: var(--lt-ui-font);
+  box-shadow: none;
+}
+
+.scanTab.isActive,
+.adminTab.isActive,
+.adminTab[aria-selected="true"] {
+  background: var(--lt-ink);
+  border-color: var(--lt-ink);
+  color: #fff;
+}
+
+.scanTab.isActive strong {
+  color: #fff;
+}
+
+/* ------------------------------------------------------------ badges and notes */
+
+.libraryScanBadge,
+.scanBadge,
+.adminBadge {
+  border: 0;
+  border-radius: 999px;
+  font-family: var(--lt-ui-font);
+  font-weight: 650;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+}
+
+.libraryScanBadge.is-ready,
+.scanBadge.is-ready {
+  background: var(--lt-green-wash);
+  color: var(--lt-green);
+}
+
+.libraryScanBadge.is-review,
+.scanBadge.is-review,
+.libraryScanBadge.is-remaining,
+.scanBadge.is-remaining {
+  background: var(--lt-amber-wash);
+  color: var(--lt-amber);
+}
+
+.libraryError,
+.scanError,
+.extractorError,
+.adminError,
+.authError,
+.askError {
+  border: 0;
+  border-radius: 8px;
+  background: #fbe9e6;
+  color: #9d1f12;
+}
+
+.libraryWarning,
+.extractorNotice,
+.authNotice {
+  border: 0;
+  border-radius: 8px;
+  background: var(--lt-amber-wash);
+  color: var(--lt-amber);
+}
+
+.libraryEmpty,
+.scanEmpty,
+.adminEmpty,
+.askEmpty {
+  border: 1px dashed var(--lt-tick);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--lt-ink-2);
+}
+
+/* ------------------------------------------------------------ tables */
+
+.adminTable th {
+  color: var(--lt-ink-3);
+  font-family: var(--lt-ui-font);
+  font-weight: 650;
+  font-stretch: 88%;
+}
+
+.adminTable td {
+  border-color: var(--lt-rule);
+}
+
+/* ------------------------------------------------------------ PDF viewer dialog */
+
+.pdfDialogPanel {
+  border-radius: 14px;
+  box-shadow: 0 30px 70px -20px rgba(20, 33, 42, 0.5);
+  font-family: var(--lt-ui-font);
+}
+
+.pdfDialogTitle {
+  font-weight: 680;
+  color: var(--lt-ink);
+}
+
+.pdfDialogSubline {
+  color: var(--lt-ink-2);
+}
+
+.pdfDialogViewport {
+  background: var(--lt-glass);
+}
+
+.loadingSpinner {
+  border-color: var(--lt-cobalt);
+  border-right-color: transparent;
+}
+
+/* Scripture text anywhere in the app uses the faces made for it. */
+.askTurnBody,
+.askSourcePreview,
+.searchDownloadSnippet,
+.extractorBookCopy h2 {
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .libraryCard {
+    transition: none;
+  }
+}
+
+/* Same page margins as the search page. */
+.libraryShell,
+.scanShell,
+.extractorShell,
+.adminShell,
+.askShell {
+  padding: 30px 28px 64px;
+}
+
+@media (max-width: 720px) {
+  .libraryShell,
+  .scanShell,
+  .extractorShell,
+  .adminShell,
+  .askShell {
+    padding: 18px 16px 48px;
+  }
+}

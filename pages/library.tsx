@@ -1,0 +1,331 @@
+import Link from "next/link";
+import { PageJumpPager } from "@/components/PageJumpPager";
+import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
+import { getDocumentScanLabel, getDocumentStatusLabel, type DocumentScanState } from "@/lib/document-scan-state";
+import { bookNumbers } from "@/lib/granth-name-search";
+import { useEffect, useState } from "react";
+
+type GranthItem = {
+  id: number;
+  file_name: string | null;
+  ufs_url: string | null;
+  file_size: number | null;
+  custom_id: string | null;
+  collection: string | null;
+  subcollection: string | null;
+  original_rel_path: string | null;
+  cover_image_url: string | null;
+  cover_image_key: string | null;
+  document_status: string | null;
+  scan_state: DocumentScanState;
+  mapping_book_id: number | null;
+  mapping_book_code: string | null;
+  display_name?: string | null;
+  native_title?: string | null;
+};
+
+type ApiResponse = {
+  items: GranthItem[];
+  meta: {
+    count: number;
+    total: number;
+    pageCount: number;
+    limit: number;
+    offset: number;
+    page: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+    q: string | null;
+    collection: string | null;
+    coverColumnAvailable: boolean;
+  };
+};
+
+type DocumentStats = {
+  total_documents: number;
+  processed_documents: number;
+  ready_documents?: number;
+  review_documents?: number;
+  searchable_documents?: number;
+  remaining_documents?: number;
+};
+
+const BOOKS_PER_PAGE = 10;
+
+function toMB(sizeBytes: number | null) {
+  if (sizeBytes == null || !Number.isFinite(sizeBytes)) return null;
+  return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function displayTitle(row: GranthItem) {
+  // The granth catalog's title; the file-name cleanup below is only a fallback
+  // for a file the search index has not taken in yet.
+  if (row.display_name) return row.display_name;
+  const raw = row.file_name ?? row.original_rel_path ?? row.custom_id ?? `Granth ${row.id}`;
+  const base = raw.split(/[\\/]/).pop() ?? raw;
+  let cleaned = base
+    .replace(/\.pdf$/i, "")
+    .replace(/\s+OCR$/i, "")
+    .replace(/\s+-\s+Copy$/i, "")
+    .replace(/^\d{1,4}(?:-\d{1,4})?[_\s.-]+/, "")
+    .replace(/^[A-Za-z]\d{4,}[_\s.-]+/, "");
+
+  for (let i = 0; i < 6; i += 1) {
+    cleaned = cleaned.replace(/[_\s.-]+(?:\d{4,}|hr\d*|std|ocr|ocred|needs[_\s-]*ocr)$/i, "");
+  }
+
+  return cleaned
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export default function HomePage() {
+  const [items, setItems] = useState<GranthItem[]>([]);
+  const [meta, setMeta] = useState<ApiResponse["meta"] | null>(null);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [coverColumnAvailable, setCoverColumnAvailable] = useState(true);
+  const [brokenCoverIds, setBrokenCoverIds] = useState<Record<number, boolean>>({});
+  const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
+  const [nameQuery, setNameQuery] = useState("");
+  const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
+    const timer = window.setTimeout(() => {
+      async function load() {
+        setLoading(true);
+        setError(null);
+        try {
+          const params = new URLSearchParams();
+          params.set("limit", String(BOOKS_PER_PAGE));
+          params.set("page", String(page));
+          if (nameQuery.trim()) params.set("q", nameQuery.trim());
+
+          const granthRes = await fetch(`/api/granths?${params.toString()}`, {
+            signal: controller.signal,
+          });
+          const granthJson = (await granthRes.json()) as ApiResponse | { error?: string };
+
+          if (!granthRes.ok) {
+            throw new Error(
+              ("error" in granthJson && granthJson.error) || `Request failed (${granthRes.status})`
+            );
+          }
+
+          if (!active) return;
+          const payload = granthJson as ApiResponse;
+          setItems(payload.items ?? []);
+          setMeta(payload.meta ?? null);
+          setCoverColumnAvailable(payload.meta?.coverColumnAvailable ?? true);
+        } catch (loadError) {
+          if (!active || controller.signal.aborted) return;
+          setError(loadError instanceof Error ? loadError.message : String(loadError));
+        } finally {
+          if (active && !controller.signal.aborted) setLoading(false);
+        }
+      }
+
+      void load();
+    }, 220);
+
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [nameQuery, page]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadStats() {
+      try {
+        const statsRes = await fetch("/api/document-stats");
+        const statsJson = (await statsRes.json()) as DocumentStats | { error?: string };
+        if (statsRes.ok && active) {
+          setDocumentStats(statsJson as DocumentStats);
+        }
+      } catch (statsError) {
+        console.error(statsError);
+      }
+    }
+
+    void loadStats();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const total = meta?.total ?? 0;
+  const totalPages = meta?.totalPages ?? 1;
+  const currentPage = meta?.page ?? page;
+  const rangeStart = total === 0 ? 0 : (meta?.offset ?? 0) + 1;
+  const rangeEnd = total === 0 ? 0 : Math.min((meta?.offset ?? 0) + items.length, total);
+  const searchableDocuments = documentStats?.searchable_documents ?? documentStats?.processed_documents ?? 0;
+  const remainingDocuments =
+    documentStats?.remaining_documents ??
+    (documentStats ? Math.max(0, documentStats.total_documents - searchableDocuments) : 0);
+
+  function goToPage(targetPage: number) {
+    const nextPage = Math.max(1, Math.min(totalPages, targetPage));
+    if (nextPage !== page) setPage(nextPage);
+  }
+
+  function onQueryChange(value: string) {
+    setNameQuery(value);
+    setPage(1);
+  }
+
+  return (
+    <main className="libraryShell">
+      <div className="libraryFrame">
+        <header className="libraryHeader">
+          <div className="libraryHeaderText">
+            <h1 className="libraryTitle">Granth Library</h1>
+            <div className="libraryStatusLine">
+              {error ? "Could not load granths" : loading && items.length === 0 ? "Loading granths..." : `${rangeStart}-${rangeEnd} of ${total}`}
+            </div>
+          </div>
+          <nav className="libraryNav" aria-label="Library tools">
+            <Link href="/">Search</Link>
+            <Link href="/ask">Ask</Link>
+            <Link href="/granth-extractor">Extractor</Link>
+            <Link href="/scannable-documents">Scan status</Link>
+          </nav>
+        </header>
+
+        <section className="libraryToolbar" aria-label="Library search and pagination">
+          <div className="librarySearchBox">
+            <input
+              value={nameQuery}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Find a book by name or number"
+              aria-label="Search granth name"
+              className="librarySearchInput"
+            />
+            {nameQuery ? (
+              <button
+                type="button"
+                className="libraryClearButton"
+                onClick={() => onQueryChange("")}
+                aria-label="Clear search"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          <PageJumpPager
+            currentPage={currentPage}
+            totalPages={totalPages}
+            loading={loading}
+            ariaLabel="Book pages"
+            onPageChange={goToPage}
+          />
+        </section>
+
+        {error ? <div className="libraryError">{error}</div> : null}
+
+        <section className="libraryGrid" aria-busy={loading}>
+          {!error && items.length === 0 && !loading ? (
+            <div className="libraryEmpty">No granths found.</div>
+          ) : null}
+
+          {items.map((row) => {
+            const showCover = Boolean(row.cover_image_url) && !brokenCoverIds[row.id];
+            const title = displayTitle(row);
+            // The book's number on the source drive: what a number search matches.
+            const numbers = bookNumbers(row.file_name ?? row.original_rel_path ?? "");
+            const bookNo = numbers.length ? numbers.map((n) => String(n).padStart(3, "0")).join("-") : null;
+            const sizeLabel = toMB(row.file_size);
+            const searchHref = row.custom_id
+              ? `/?customId=${encodeURIComponent(row.custom_id)}`
+              : "";
+            const extractorHref = row.mapping_book_id
+              ? `/granth-extractor?bookId=${encodeURIComponent(String(row.mapping_book_id))}${
+                  row.mapping_book_code ? `&bookCode=${encodeURIComponent(row.mapping_book_code)}` : ""
+                }`
+              : "";
+
+            return (
+              <article key={row.id} className="libraryCard">
+                <div className="libraryCover">
+                  {showCover ? (
+                    <img
+                      src={row.cover_image_url ?? ""}
+                      alt={`${title} cover`}
+                      className="libraryCoverImage"
+                      loading="lazy"
+                      onError={() => setBrokenCoverIds((prev) => ({ ...prev, [row.id]: true }))}
+                    />
+                  ) : (
+                    <div className="libraryCoverFallback">No cover</div>
+                  )}
+                </div>
+
+                <div className="libraryCardBody">
+                  <div className="libraryCardTop">
+                    <div title={bookNo ? `${bookNo} · ${title}` : title} className="libraryCardTitle">
+                      {bookNo ? <span className="libraryCardNumber">{bookNo}</span> : null}
+                      {title || `Granth ${row.id}`}
+                    </div>
+                    {row.scan_state !== "ready" ? (
+                      <span
+                        className={`libraryScanBadge is-${row.scan_state}`}
+                        title={getDocumentStatusLabel(row.document_status, row.scan_state)}
+                      >
+                        {getDocumentScanLabel(row.scan_state)}
+                      </span>
+                    ) : null}
+                  </div>
+                  {row.native_title && row.native_title !== title ? (
+                    <div className="libraryCardNative">{row.native_title}</div>
+                  ) : null}
+                  <div className="libraryCardActions">
+                    {row.ufs_url ? (
+                      <button
+                        type="button"
+                        className="libraryPdfLink inlinePdfButton"
+                        onClick={() => setPdfTarget({ pdfUrl: row.ufs_url ?? "", title, page: 1 })}
+                      >
+                        Open PDF
+                      </button>
+                    ) : row.custom_id?.startsWith("text:") ? (
+                      <Link
+                        href={`/ocr-text-viewer?granthKey=${encodeURIComponent(row.custom_id.slice("text:".length))}`}
+                      >
+                        Open text
+                      </Link>
+                    ) : null}
+                    {searchHref ? <Link href={searchHref}>Search in this book</Link> : null}
+                    {extractorHref ? <Link href={extractorHref}>Print gatha</Link> : null}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </section>
+
+        <footer className="libraryFooter">
+          <PageJumpPager
+            currentPage={currentPage}
+            totalPages={totalPages}
+            loading={loading}
+            ariaLabel="Book pages"
+            onPageChange={goToPage}
+          />
+          {!coverColumnAvailable ? (
+            <span className="libraryWarning">Cover columns missing in DB.</span>
+          ) : null}
+        </footer>
+      </div>
+      <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
+    </main>
+  );
+}

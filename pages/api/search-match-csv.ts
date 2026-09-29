@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { setNoStore } from "@/lib/api-cache";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
-import { parseOCRSearchMode } from "@/lib/ocr-search";
+import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
 import { CsvFileWriter } from "@/lib/search-csv";
 import {
   MAX_CSV_GRANTHS,
@@ -38,6 +38,7 @@ type CsvBody = {
   q?: string | null;
   queryVariants?: unknown;
   matchMode?: string | null;
+  scripts?: unknown;
   pages?: unknown;
   delivery?: string | null;
   email?: string | null;
@@ -123,6 +124,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const body = (req.body || {}) as CsvBody;
     const delivery = body.delivery === "email" ? "email" : "download";
     const matchMode = parseOCRSearchMode(body.matchMode);
+    const scripts = parseOCRSearchScripts(body.scripts);
     const queries = validateSearchDownloadQueries(String(body.q || "").trim(), parseQueryVariants(body.queryVariants), matchMode);
 
     const multiSelections = parseGranthSelections(body.granths);
@@ -180,6 +182,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const { lines, truncated: granthTruncated } = await loadSearchMatchLines(entry.relPath, queries, matchMode, {
         pages: entry.pages,
         maxRows: MAX_CSV_ROWS - writer.rowCount,
+        scripts,
       });
       if (granthTruncated) truncated = true;
       if (lines.length > 0) granthsWithRows += 1;

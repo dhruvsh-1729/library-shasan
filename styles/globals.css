@@ -2813,3 +2813,15 @@ button {
 @media (max-width: 760px) {
   .askInput, .askSelect, .askTextarea { font-size: 16px; }
 }
+
+/* The granth's title in its own script, under the catalog title. */
+.libraryCardNative {
+  color: #33413e;
+  font-family: "Noto Serif Devanagari", "Noto Serif Gujarati", serif;
+  font-size: 17px;
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}

@@ -6,6 +6,7 @@ import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import { TEXT_ONLY_COLLECTION, fetchTextOnlyGranths } from "@/lib/text-only-granths";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
+import { getGranthCatalog, granthDisplayName, isSearchable } from "@/lib/granth-catalog";
 
 type GranthItem = {
   id: number;
@@ -22,6 +23,9 @@ type GranthItem = {
   scan_state: DocumentScanState;
   mapping_book_id: number | null;
   mapping_book_code: string | null;
+  /** Clean title from the granth catalog ("Dharm Sangraha · Part 1"); null for a granth not indexed. */
+  display_name: string | null;
+  native_title: string | null;
 };
 
 type DocumentScanRow = {
@@ -68,6 +72,12 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const cacheKey = buildCacheKey(req, "granths");
     const { value: payload, status } = await getCachedJson(cacheKey, 120, async () => {
       const supabase = getSupabaseAdmin();
+      const catalog = await getGranthCatalog();
+      const catalogEntry = (customId: unknown) => catalog.byCustomId.get(String(customId ?? ""));
+      const catalogText = (customId: unknown) => {
+        const entry = catalogEntry(customId);
+        return entry ? `${entry.title} ${entry.native_title} ${entry.series ?? ""}` : "";
+      };
 
       const baseSelect =
         "id,file_name,ufs_url,file_size,custom_id,collection,subcollection,original_rel_path";
@@ -91,16 +101,24 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         const prepared = rows.map((row) =>
           prepareRow({
             source: String(row.file_name ?? row.original_rel_path ?? ""),
-            extra: `${row.original_rel_path ?? ""} ${row.collection ?? ""} ${row.subcollection ?? ""}`,
+            extra: `${row.original_rel_path ?? ""} ${row.collection ?? ""} ${row.subcollection ?? ""} ${catalogText(row.custom_id)}`,
           })
         );
         return rankRows(prepared, q).map((i) => rows[i]);
       };
 
       // Granths with OCR text but no uploaded PDF are listed after the PDF ones.
-      const allTextOnly = collection && collection !== TEXT_ONLY_COLLECTION ? [] : await fetchTextOnlyGranths();
+      // Spreadsheet copies of a granth that is listed with its PDF are left out.
+      const allTextOnly = (collection && collection !== TEXT_ONLY_COLLECTION ? [] : await fetchTextOnlyGranths()).filter(
+        (row) => isSearchable(catalog, catalog.byGranthKey.get(row.granthKey))
+      );
       const textOnly = q
-        ? rankRows(allTextOnly.map((row) => prepareRow({ source: row.sourceRelPath || row.name, extra: `${row.granthKey} ${row.name}` })), q).map((i) => allTextOnly[i])
+        ? rankRows(
+            allTextOnly.map((row) =>
+              prepareRow({ source: row.sourceRelPath || row.name, extra: `${row.granthKey} ${row.name} ${catalogText(row.customId)}` })
+            ),
+            q
+          ).map((i) => allTextOnly[i])
         : allTextOnly;
 
       let coverColumnAvailable = true;
@@ -211,6 +229,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           scan_state: getDocumentScanState(documentStatus),
           mapping_book_id: mapping?.book_id ?? null,
           mapping_book_code: mapping?.book_code ?? null,
+          display_name: catalogEntry(customId) ? granthDisplayName(catalogEntry(customId)!) : null,
+          native_title: catalogEntry(customId)?.native_title || null,
         };
       });
 
@@ -231,6 +251,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           scan_state: "review",
           mapping_book_id: null,
           mapping_book_code: null,
+          display_name: catalogEntry(row.customId) ? granthDisplayName(catalogEntry(row.customId)!) : null,
+          native_title: catalogEntry(row.customId)?.native_title || null,
         });
       }
       total = pdfTotal + textOnly.length;

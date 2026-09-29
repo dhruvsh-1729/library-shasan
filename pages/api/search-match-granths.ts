@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
-import { parseOCRSearchMode } from "@/lib/ocr-search";
+import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
 import {
   MAX_COMBINED_PDF_GRANTHS,
   MAX_CSV_GRANTHS,
@@ -36,6 +36,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const q = String(firstQueryValue(req.query.q) || "").trim();
     const queryVariants = req.query.queryVariant ?? req.query.queryVariants;
     const matchMode = parseOCRSearchMode(firstQueryValue(req.query.matchMode));
+    const scripts = parseOCRSearchScripts(req.query.scripts);
     const queries = validateSearchDownloadQueries(q, queryVariants, matchMode);
     const selectedGranths = parseGranthIds(req.query.granths).slice(0, 500);
 
@@ -62,7 +63,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         };
       }
 
-      const { granths, truncated } = await loadSearchMatchGranths(scopedRelPaths, queries, matchMode);
+      const { granths, truncated } = await loadSearchMatchGranths(
+        scopedRelPaths,
+        queries,
+        matchMode,
+        undefined,
+        undefined,
+        scripts
+      );
       const targets = await resolveGranthPdfTargets(
         granths.map((granth) => ({
           granth_key: granth.granth_key,
@@ -81,7 +89,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         return {
           granth_key: granth.granth_key,
           source_rel_path: granth.source_rel_path,
-          granth_name: granth.granth_name || target.pdf_name,
+          granth_name: target.pdf_name || granth.granth_name,
           custom_id: target.custom_id,
           pdf_name: source.ok ? source.source.pdfName : target.pdf_name,
           matched_pages: granth.matched_pages,

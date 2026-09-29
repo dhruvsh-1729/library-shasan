@@ -150,30 +150,11 @@ export default function ScannableDocumentsPage() {
             </div>
           </div>
           <nav className="scanNav" aria-label="Library tools">
-            <Link href="/">Library</Link>
-            <Link href="/search">Search pages</Link>
+            <Link href="/library">Library</Link>
+            <Link href="/">Search</Link>
             <Link href="/granth-extractor">Extractor</Link>
           </nav>
         </header>
-
-        <section className="scanStats" aria-label="Document scan counts">
-          <div className="scanStat">
-            <span>Needs scan</span>
-            <strong>{meta?.remaining_documents ?? 0}</strong>
-          </div>
-          <div className="scanStat">
-            <span>Ready</span>
-            <strong>{meta?.ready_documents ?? 0}</strong>
-          </div>
-          <div className="scanStat">
-            <span>Review</span>
-            <strong>{meta?.review_documents ?? 0}</strong>
-          </div>
-          <div className="scanStat">
-            <span>Total</span>
-            <strong>{meta?.total_documents ?? 0}</strong>
-          </div>
-        </section>
 
         <section className="scanToolbar" aria-label="Scan status filters">
           <div className="scanTabs">
@@ -211,18 +192,8 @@ export default function ScannableDocumentsPage() {
               </div>
 
               <div className="scanMetaBlock">
-                <span className="scanMetaLabel">Custom ID</span>
-                <span className="scanMono">{row.custom_id}</span>
-              </div>
-
-              <div className="scanMetaBlock">
                 <span className="scanMetaLabel">Updated</span>
                 <span>{formatDate(row.updated_at)}</span>
-              </div>
-
-              <div className="scanMetaBlock">
-                <span className="scanMetaLabel">Status</span>
-                <span>{getDocumentStatusLabel(row.status, row.scan_state)}</span>
               </div>
 
               <div className="scanLinks">
@@ -232,27 +203,20 @@ export default function ScannableDocumentsPage() {
                     className="inlinePdfButton"
                     onClick={() => setPdfTarget({ pdfUrl: row.pdf_url ?? "", title: row.display_name, page: 1 })}
                   >
-                    PDF
+                    Open PDF
                   </button>
-                ) : (
-                  <span>No PDF</span>
-                )}
+                ) : null}
                 {row.csv_url ? (
                   <a href={row.csv_url} target="_blank" rel="noreferrer">
                     CSV
                   </a>
-                ) : (
-                  <span>No CSV</span>
-                )}
+                ) : null}
               </div>
             </article>
           ))}
         </section>
 
         <footer className="scanFooter">
-          <span>
-            Showing {rangeStart}-{rangeEnd} of {totalForView}
-          </span>
           <PageJumpPager
             currentPage={currentPage}
             totalPages={totalPages}

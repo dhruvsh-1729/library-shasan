@@ -1,0 +1,1089 @@
+/*
+ * The search page ("/"): the Light Table.
+ * Results are page slips on backlit glass; the found word is ringed in grease
+ * pencil and magnified under a loupe. Few words, large text. Everything is
+ * scoped under .lt so the shared dialogs match here and keep their own look
+ * elsewhere.
+ */
+
+.lt {
+  --lt-glass: #e6edf1;
+  --lt-glass-lit: #f7fafc;
+  --lt-glass-edge: #cad7df;
+  --lt-slip: #ffffff;
+  --lt-ink: #14212a;
+  --lt-ink-2: #43535f;
+  --lt-ink-3: #526270;
+  --lt-rule: #d5dfe5;
+  --lt-tick: #9fb3bf;
+  --lt-pencil: #c62f1c;
+  --lt-pencil-wash: rgba(198, 47, 28, 0.1);
+  --lt-cobalt: #1f5390;
+  --lt-cobalt-deep: #173e6c;
+  --lt-cobalt-wash: #e4edf7;
+  --lt-amber: #815300;
+  --lt-shadow: 0 1px 1px rgba(20, 33, 42, 0.05), 0 12px 28px -14px rgba(20, 33, 42, 0.3);
+  --lt-slip-shadow: 0 1px 0 rgba(20, 33, 42, 0.06), 0 2px 4px rgba(20, 33, 42, 0.05), 0 22px 40px -26px rgba(20, 33, 42, 0.42);
+  --lt-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --lt-ui: var(--lt-font-ui), "Segoe UI", system-ui, sans-serif;
+  --lt-indic: var(--lt-font-deva), var(--lt-font-guj), "Noto Serif Devanagari", "Noto Serif Gujarati", serif;
+
+  min-height: 100dvh;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 280px), var(--lt-glass);
+  color: var(--lt-ink);
+  font-family: var(--lt-ui);
+  font-size: 16px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  caret-color: var(--lt-cobalt);
+}
+
+.lt ::selection {
+  background: var(--lt-pencil-wash);
+}
+
+.lt * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--lt-tick) transparent;
+}
+
+.lt :focus-visible {
+  outline: 2px solid var(--lt-cobalt);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.lt button {
+  font: inherit;
+  color: inherit;
+}
+
+.lt a {
+  color: var(--lt-cobalt);
+  text-underline-offset: 0.2em;
+}
+
+.lt .indic {
+  font-family: var(--lt-indic);
+}
+
+.ltIcon {
+  flex-shrink: 0;
+  transition: transform 160ms var(--lt-ease);
+}
+
+.ltFrame {
+  width: min(1040px, 100%);
+  margin: 0 auto;
+  padding: 30px 28px 64px;
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------ top */
+
+.ltTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+}
+
+.ltTop h1 {
+  margin: 0;
+  font-size: clamp(28px, 3.2vw, 38px);
+  font-weight: 720;
+  font-stretch: 112%;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.ltNav {
+  display: flex;
+  gap: 2px;
+}
+
+.ltNav a {
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--lt-ink-2);
+  text-decoration: none;
+  font-weight: 560;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.ltNav a:hover {
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--lt-ink);
+}
+
+/* ------------------------------------------------------------ search */
+
+.ltSearch {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ltBox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 20px;
+  background: var(--lt-slip);
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 14px;
+  box-shadow: var(--lt-shadow);
+  transition: border-color 160ms var(--lt-ease), box-shadow 160ms var(--lt-ease);
+}
+
+.ltBox:focus-within {
+  border-color: var(--lt-cobalt);
+  box-shadow: 0 0 0 4px var(--lt-cobalt-wash), var(--lt-shadow);
+}
+
+.ltBox input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--lt-ink);
+  font-size: clamp(22px, 2.4vw, 28px);
+  line-height: 1.5;
+  padding: 6px 0;
+}
+
+.ltBox input::placeholder {
+  color: #7d8c96;
+}
+
+.ltGo,
+.ltPrimary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  background: var(--lt-cobalt);
+  color: #fff !important;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 140ms var(--lt-ease), transform 140ms var(--lt-ease);
+}
+
+.ltGo {
+  min-height: 52px;
+  padding: 0 26px;
+  border-radius: 10px;
+  font-size: 17px;
+}
+
+.ltPrimary {
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.ltGo:hover:not(:disabled),
+.ltPrimary:hover {
+  background: var(--lt-cobalt-deep);
+}
+
+.ltGo:active:not(:disabled),
+.ltPrimary:active {
+  transform: translateY(1px);
+}
+
+.ltGo:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+.ltLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 8px 4px;
+  color: var(--lt-cobalt) !important;
+  font-weight: 580;
+  font-size: 14.5px;
+  cursor: pointer;
+  text-decoration: none;
+  border-radius: 6px;
+}
+
+.ltLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.ltMuted {
+  margin: 0;
+  color: var(--lt-ink-3);
+  font-size: 14.5px;
+}
+
+.ltWarn,
+.ltStale {
+  margin: 0;
+  color: var(--lt-amber);
+  font-size: 14.5px;
+  font-weight: 560;
+}
+
+.ltError {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fbe9e6;
+  color: #9d1f12;
+  font-size: 14.5px;
+  font-weight: 560;
+}
+
+.ltSpellings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.ltSpelling {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--lt-ink-2);
+  cursor: pointer;
+  transition: background 140ms var(--lt-ease), border-color 140ms var(--lt-ease);
+}
+
+.ltSpelling .indic {
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.ltSpelling:hover {
+  background: #fff;
+}
+
+.ltSpelling.isOn {
+  background: #fff;
+  border-color: var(--lt-pencil);
+  box-shadow: inset 0 0 0 1px var(--lt-pencil);
+  color: var(--lt-ink);
+}
+
+.ltSpelling.isOn .ltIcon {
+  color: var(--lt-pencil);
+}
+
+.ltMoreToggle {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  color: var(--lt-ink-2);
+  font-weight: 600;
+  font-size: 14.5px;
+  cursor: pointer;
+}
+
+.ltMoreToggle:hover {
+  color: var(--lt-ink);
+}
+
+.ltMoreToggle[aria-expanded="true"] .ltIcon {
+  transform: rotate(90deg);
+}
+
+.ltOptionsNow {
+  margin-top: -6px;
+}
+
+.ltOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+  padding: 16px 18px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.ltOption {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ltOptionLabel {
+  color: var(--lt-ink-3);
+  font-size: 12.5px;
+  font-weight: 650;
+  font-stretch: 88%;
+  letter-spacing: 0.02em;
+}
+
+.ltChoices {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.ltChoices label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
+  color: var(--lt-ink-2);
+  font-weight: 560;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 140ms var(--lt-ease), color 140ms var(--lt-ease);
+}
+
+.ltChoices label:hover {
+  background: #fff;
+  color: var(--lt-ink);
+}
+
+.ltChoices label.isOn {
+  background: var(--lt-ink);
+  color: #fff;
+}
+
+/* The radio/checkbox itself is replaced by the selected state. */
+.ltChoices input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ltChoices label:has(input:focus-visible) {
+  outline: 2px solid var(--lt-cobalt);
+  outline-offset: 2px;
+}
+
+.ltChosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ltChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--lt-rule);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.ltChip > span {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ltChip button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lt-ink-3);
+  cursor: pointer;
+}
+
+.ltChip button:hover {
+  background: var(--lt-pencil-wash);
+  color: var(--lt-pencil);
+}
+
+.ltPicker {
+  background: #fff;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 12px;
+  box-shadow: var(--lt-shadow);
+  overflow: hidden;
+}
+
+.ltPickerBar {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--lt-rule);
+  background: var(--lt-glass-lit);
+}
+
+.ltPickerBar input {
+  flex: 1;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--lt-rule);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-size: 17px;
+}
+
+.ltPickerList {
+  max-height: min(420px, 55dvh);
+  overflow: auto;
+  padding: 6px;
+}
+
+.ltPickerList > p {
+  padding: 12px;
+}
+
+.ltPickRow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ltPickRow:hover {
+  background: var(--lt-glass-lit);
+}
+
+.ltPickRow.isOn {
+  background: var(--lt-cobalt-wash);
+}
+
+.ltPickRow input {
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+  accent-color: var(--lt-cobalt);
+}
+
+.ltPickName {
+  display: grid;
+  min-width: 0;
+}
+
+.ltPickName strong {
+  font-weight: 600;
+}
+
+.ltPickName .indic {
+  color: var(--lt-ink-2);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.ltPickNo {
+  color: var(--lt-ink-3);
+  font-size: 13px;
+  font-weight: 600;
+  font-stretch: 85%;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ the glass */
+
+.ltResults {
+  position: relative;
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+
+.ltGlass {
+  padding: 30px 28px 34px;
+  border-radius: 16px;
+  border: 1px solid var(--lt-glass-edge);
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 70%),
+    linear-gradient(180deg, #eef3f6, #e3eaef);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+}
+
+/* Ruler ticks along the top and left edges of the glass. */
+.ltGlass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, var(--lt-tick) 0 1px, transparent 1px 40px) 0 0 / 100% 12px no-repeat,
+    repeating-linear-gradient(90deg, rgba(159, 179, 191, 0.7) 0 1px, transparent 1px 8px) 0 0 / 100% 6px no-repeat,
+    repeating-linear-gradient(180deg, var(--lt-tick) 0 1px, transparent 1px 40px) 0 0 / 12px 100% no-repeat,
+    repeating-linear-gradient(180deg, rgba(159, 179, 191, 0.7) 0 1px, transparent 1px 8px) 0 0 / 6px 100% no-repeat;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+/* The lamp comes on when results land. */
+.ltGlass.isLit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(90% 60% at 50% 25%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 70%);
+  opacity: 0;
+  animation: ltLampOn 900ms var(--lt-ease) both;
+  pointer-events: none;
+}
+
+@keyframes ltLampOn {
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.ltLoading {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--lt-cobalt);
+  font-weight: 600;
+}
+
+.ltSpinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: ltSpin 700ms linear infinite;
+}
+
+@keyframes ltSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------ tally */
+
+.ltSummary {
+  position: relative;
+  display: grid;
+  gap: 10px;
+}
+
+.ltTally {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 26px;
+}
+
+.ltTally p {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.ltTally strong {
+  font-size: clamp(38px, 5vw, 58px);
+  font-weight: 680;
+  font-stretch: 92%;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.ltTally span {
+  color: var(--lt-ink-2);
+  font-weight: 560;
+  font-size: 16px;
+}
+
+.ltTally .isSecond strong {
+  font-size: clamp(28px, 3.2vw, 38px);
+  color: var(--lt-ink-2);
+}
+
+.ltTally .ltTallyWord {
+  font-size: 24px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ltForms summary {
+  cursor: pointer;
+  color: var(--lt-ink-2);
+  font-weight: 600;
+  font-size: 14.5px;
+  width: fit-content;
+}
+
+.ltForms ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ltForms li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 10px 4px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.ltForms li .indic {
+  font-size: 18px;
+}
+
+.ltForms b {
+  color: var(--lt-ink-2);
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.ltExportAll {
+  justify-self: start;
+  padding-left: 0;
+}
+
+.ltEmpty {
+  position: relative;
+  margin: 0;
+  font-size: 18px;
+  color: var(--lt-ink-2);
+}
+
+.ltEmpty p {
+  margin: 0;
+}
+
+.ltEmpty .indic {
+  color: var(--lt-ink);
+  font-size: 1.2em;
+}
+
+/* ------------------------------------------------------------ page slips */
+
+.ltCards {
+  position: relative;
+  display: grid;
+  gap: 30px;
+}
+
+.ltCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 148px;
+  grid-template-areas:
+    "head head"
+    "note note"
+    "text loupe"
+    "foot foot";
+  gap: 14px 32px;
+  padding: 20px 24px 16px;
+  background: var(--lt-slip);
+  box-shadow: var(--lt-slip-shadow);
+  border-radius: 3px;
+  animation: ltSettle 480ms var(--lt-ease) both;
+}
+
+/* Crop marks at the corners, as on a mounted transparency. */
+.ltCard::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  pointer-events: none;
+  --m: var(--lt-tick);
+  background:
+    linear-gradient(var(--m), var(--m)) 0 0 / 12px 1px no-repeat,
+    linear-gradient(var(--m), var(--m)) 0 0 / 1px 12px no-repeat,
+    linear-gradient(var(--m), var(--m)) 100% 0 / 12px 1px no-repeat,
+    linear-gradient(var(--m), var(--m)) 100% 0 / 1px 12px no-repeat,
+    linear-gradient(var(--m), var(--m)) 0 100% / 12px 1px no-repeat,
+    linear-gradient(var(--m), var(--m)) 0 100% / 1px 12px no-repeat,
+    linear-gradient(var(--m), var(--m)) 100% 100% / 12px 1px no-repeat,
+    linear-gradient(var(--m), var(--m)) 100% 100% / 1px 12px no-repeat;
+}
+
+.ltCard.isUnverified {
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.72);
+  outline: 1px dashed var(--lt-tick);
+  outline-offset: -1px;
+}
+
+.ltCard.isUnverified::before {
+  display: none;
+}
+
+@keyframes ltSettle {
+  from {
+    opacity: 0.6;
+    transform: translateY(8px);
+  }
+}
+
+.ltCardHead {
+  grid-area: head;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--lt-rule);
+}
+
+.ltCardHead h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.ltCardNative {
+  margin: 4px 0 0;
+  font-family: var(--lt-indic);
+  color: var(--lt-ink-2);
+  font-size: 16px;
+}
+
+.ltFolio {
+  display: grid;
+  justify-items: end;
+  align-content: start;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.ltFolio span {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-stretch: 85%;
+  color: var(--lt-ink-3);
+}
+
+.ltFolio strong {
+  font-size: 34px;
+  font-weight: 650;
+  font-stretch: 80%;
+  letter-spacing: -0.02em;
+}
+
+.ltCardNote {
+  grid-area: note;
+  margin: 0;
+  color: var(--lt-amber);
+  font-size: 14px;
+  font-weight: 560;
+}
+
+.ltCardText {
+  grid-area: text;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ltCardText p {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.ltCardText p + p {
+  padding-top: 12px;
+  border-top: 1px dashed var(--lt-rule);
+}
+
+/* The grease-pencil ring around the found word. */
+.lt mark.ltRing {
+  position: relative;
+  background: none;
+  color: var(--lt-ink);
+  padding: 0 0.18em;
+  margin: 0 0.04em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.lt mark.ltRing::after {
+  content: "";
+  position: absolute;
+  inset: -0.2em -0.12em -0.12em;
+  background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='1.8' numOctaves='2' seed='7'/><feDisplacementMap in='SourceGraphic' scale='1.6'/></filter><g fill='none' stroke='%23c62f1c' stroke-linecap='round' filter='url(%23w)'><path d='M22 5.5C44 1.5 80 2.5 93 12.5C101 20 93 33.5 67 36.5C41 39.5 10 37 4.5 26.5C0.5 17.5 12 8.5 34 4.8L47 3.8' stroke-width='2.6' vector-effect='non-scaling-stroke' opacity='.92'/><path d='M30 4.6C50 2 84 4.5 94 14' stroke-width='1.2' vector-effect='non-scaling-stroke' opacity='.55'/></g></svg>") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+/* The loupe: the found word and a little of its line, at twice the size. */
+.ltLoupe {
+  grid-area: loupe;
+  width: 148px;
+  height: 148px;
+  align-self: start;
+  border-radius: 50%;
+  border: 3px solid var(--lt-ink);
+  outline: 2px solid #fff;
+  background: #fff;
+  box-shadow: 0 14px 26px -12px rgba(20, 33, 42, 0.5);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  font-family: var(--lt-indic);
+  font-size: 40px;
+  line-height: 1.6;
+  white-space: nowrap;
+  color: var(--lt-ink-2);
+  transition: transform 260ms var(--lt-ease);
+}
+
+.ltLoupeSide {
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.ltLoupeSide.isBefore {
+  justify-content: flex-end;
+}
+
+.ltCard:hover .ltLoupe,
+.ltCard:focus-within .ltLoupe {
+  transform: translateY(-3px);
+}
+
+.ltCardFoot {
+  grid-area: foot;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--lt-rule);
+}
+
+.ltPager {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.ltPager button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--lt-rule);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ltPager button:hover:not(:disabled) {
+  border-color: var(--lt-cobalt);
+}
+
+.ltPager button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ltPager span {
+  color: var(--lt-ink-2);
+  font-weight: 560;
+}
+
+/* ------------------------------------------------------------ dialogs, in this page */
+
+.lt .searchDownloadOverlay,
+.lt .downloadDeliveryOverlay {
+  background: rgba(20, 33, 42, 0.38);
+  backdrop-filter: blur(3px);
+}
+
+.lt .searchDownloadPanel,
+.lt .downloadDeliveryPanel {
+  background: #fff;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 14px;
+  box-shadow: 0 30px 70px -20px rgba(20, 33, 42, 0.5);
+  font-family: var(--lt-ui);
+  color: var(--lt-ink);
+}
+
+.lt .searchDownloadHeader h2 {
+  font-size: 22px;
+  font-weight: 680;
+}
+
+.lt .searchDownloadHeader button,
+.lt .searchDownloadToolbar button,
+.lt .searchDownloadFooter button,
+.lt .downloadDeliveryActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  border: 1px solid var(--lt-rule);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-weight: 600;
+}
+
+.lt .searchDownloadFooter button.isPrimary {
+  background: var(--lt-cobalt);
+  border-color: var(--lt-cobalt);
+  color: #fff;
+}
+
+.lt .searchDownloadFooter {
+  background: #fff;
+  border-top: 1px solid var(--lt-rule);
+}
+
+.lt .searchDownloadPageRow input {
+  accent-color: var(--lt-cobalt);
+}
+
+.lt .searchDownloadSnippet {
+  font-family: var(--lt-indic);
+  font-size: 19px;
+  line-height: 1.8;
+}
+
+/* ------------------------------------------------------------ phones */
+
+@media (max-width: 720px) {
+  .ltFrame {
+    padding: 18px 16px 48px;
+    gap: 14px;
+  }
+
+  .ltNav {
+    margin-left: -8px;
+  }
+
+  .ltNav a {
+    padding: 6px 8px;
+    font-size: 13.5px;
+  }
+
+  .ltBox {
+    padding: 6px 6px 6px 14px;
+  }
+
+  .ltGo {
+    min-height: 46px;
+    padding: 0 16px;
+  }
+
+  .ltOptions {
+    display: grid;
+  }
+
+  .ltChoices {
+    display: flex;
+  }
+
+  .ltChoices label {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  .ltGlass {
+    padding: 22px 14px 26px;
+    border-radius: 12px;
+  }
+
+  .ltCards {
+    gap: 24px;
+  }
+
+  .ltCard {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "head head"
+      "note note"
+      "text text"
+      "loupe foot";
+    gap: 12px;
+    padding: 16px 16px 14px;
+  }
+
+  .ltLoupe {
+    width: 96px;
+    height: 96px;
+    font-size: 27px;
+    border-width: 2px;
+    align-self: center;
+  }
+
+  .ltCardText p {
+    font-size: 20px;
+  }
+
+  .ltCardFoot {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .ltCardFoot .ltPrimary {
+    flex: 1 1 100%;
+  }
+
+  .ltPager {
+    gap: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt *,
+  .lt *::before,
+  .lt *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

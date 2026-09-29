@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
 import { downloadBlob, filenameFromResponse } from "@/lib/download-file";
-import type { OCRSearchMode } from "@/lib/ocr-search";
+import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
 import { MAX_CONTEXT_PAGE_RADIUS, normalizeContextPageRadius } from "@/lib/page-context";
 
 export type ExportFormat = "pdf" | "csv";
@@ -36,6 +36,7 @@ type SearchExportDialogProps = {
   open: boolean;
   queries: string[];
   matchMode: OCRSearchMode;
+  scripts: OCRSearchScripts;
   granthIds: string[];
   scopeLabel: string;
   onClose: () => void;
@@ -69,6 +70,7 @@ export function SearchExportDialog({
   open,
   queries,
   matchMode,
+  scripts,
   granthIds,
   scopeLabel,
   onClose,
@@ -85,6 +87,7 @@ export function SearchExportDialog({
 
   const granthKey = granthIds.join(",");
   const queryKey = queries.join("\n");
+  const scriptKey = scripts?.join(",") ?? "";
 
   useEffect(() => {
     if (!open) {
@@ -115,6 +118,7 @@ export function SearchExportDialog({
         params.set("q", activeQueries[0]);
         for (const variant of activeQueries.slice(1)) params.append("queryVariant", variant);
         params.set("matchMode", matchMode);
+        if (scriptKey) params.set("scripts", scriptKey);
         if (granthKey) params.set("granths", granthKey);
 
         const res = await fetch(`/api/search-match-granths?${params.toString()}`);
@@ -137,7 +141,7 @@ export function SearchExportDialog({
     // Query and granth lists are compared by their joined keys so a re-render
     // with equal-but-new arrays does not refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [granthKey, matchMode, open, queryKey]);
+  }, [granthKey, matchMode, open, queryKey, scriptKey]);
 
   const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
   const selectedGranths = useMemo(
@@ -255,6 +259,7 @@ export function SearchExportDialog({
           q: queries[0],
           queryVariants: queries.slice(1),
           matchMode,
+          scripts,
           ...(format === "pdf" ? { contextPages, maxPagesPerGranth } : {}),
           delivery,
           email,

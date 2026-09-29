@@ -4,21 +4,18 @@ import {
   buildOCRSearchOccurrences,
   buildOCRSearchExcerptForQueries,
   findOCRSearchMatchesForQueries,
+  isTooShortForContains,
   normalizeOCRSearchQueries,
   parseOCRSearchMode,
-  type OCRSearchMode,
+  parseOCRSearchScripts,
 } from "@/lib/ocr-search";
 import { buildOCRPrefilter } from "@/lib/ocr-search-index";
 import { foldSanskrit } from "@/lib/sanskrit-fold.mjs";
-import {
-  type DocumentMeta,
-  resolveGranthPdfTargets,
-  resolveRelPathsForCustomIds,
-} from "@/lib/search-pdf-resolver";
+import { excludeDuplicatesSql, getGranthCatalog, relPathsForIds } from "@/lib/granth-catalog";
+import { resolveGranthPdfTargets } from "@/lib/search-pdf-resolver";
 import { getTursoClient } from "@/lib/turso";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
-import { excludeDuplicateGranthsSql } from "@/lib/text-only-granths";
 
 type TursoSearchRow = {
   granth_key: string;
@@ -90,6 +87,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const offset = Math.max(0, (page - 1) * limit);
     const selectedGranths = parseGranthIds(req.query.granths).slice(0, 250);
     const matchMode = parseOCRSearchMode(req.query.matchMode);
+    const scripts = parseOCRSearchScripts(req.query.scripts);
     const queries = normalizeOCRSearchQueries(q, parseQueryVariants(req.query.queryVariant ?? req.query.queryVariants))
       .filter((query) => Array.from(query).length >= 2)
       .slice(0, 8);
@@ -108,10 +106,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       });
     }
 
-    if (matchMode === "contains" && queries.some((query) => Array.from(query).length < 3)) {
+    if (matchMode === "contains" && queries.some(isTooShortForContains)) {
       setNoStore(res);
       return res.status(400).json({
-        error: "Contains search requires at least 3 characters so it can use the trigram index.",
+        error: "Contains search needs at least 3 letters once conjuncts are folded (न्द counts as 2). Use a longer query or another match mode.",
         results: [],
         total: 0,
         page,
@@ -125,13 +123,15 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
     const cacheKey = buildCacheKey(req, "pdf-search-turso");
     const { value: payload, status } = await getCachedJson(cacheKey, 60, async () => {
-      const { docs: selectedDocs, relPaths: selectedRelPaths } = await resolveRelPathsForCustomIds(selectedGranths);
+      const catalog = await getGranthCatalog();
+      const { relPaths: selectedRelPaths, missing: missingGranths } = relPathsForIds(catalog, selectedGranths);
 
       if (selectedGranths.length > 0 && selectedRelPaths.length === 0) {
         return {
           results: [],
           total: 0,
           selected_granth_count: selectedGranths.length,
+          missing_granths: missingGranths,
           page,
           per_page: limit,
           total_pages: 1,
@@ -148,7 +148,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         : "";
       const prefilter = buildOCRPrefilter(queries, matchMode);
       const ftsTable = prefilter.table;
-      const dup = excludeDuplicateGranthsSql("p.granth_key");
+      const dup = excludeDuplicatesSql(catalog, "p.granth_key");
       const hitSql = `SELECT p.id AS page_id
                 FROM ${ftsTable}
                 JOIN ocr_pages p ON p.id = ${ftsTable}.rowid
@@ -164,10 +164,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       // Capped so a broad query cannot pull the whole corpus into memory.
       const OCCURRENCE_SCAN_CAP = 4000;
 
-      // These three read the same hit set and do not depend on each other, so
-      // they go out together; run in series they made a broad search wait for
-      // three full-text passes end to end.
-      const [countResult, occurrenceResult, listResult] = await Promise.all([
+      // The count and the scan read the same hit set and do not depend on each
+      // other, so they go out together.
+      const pageColumns = `p.granth_key, g.source_rel_path, g.granth_name AS pdf_name, p.page_number, p.content`;
+      const [countResult, scanResult] = await Promise.all([
         client.execute({
           sql: `WITH hits AS (${hitSql})
                 SELECT COUNT(DISTINCT page_id) AS total
@@ -177,44 +177,25 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         client.execute({
           sql: `WITH hits AS (${hitSql}),
                 unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
-                SELECT p.content
-                FROM unique_hits
-                JOIN ocr_pages p ON p.id = unique_hits.page_id
-                LIMIT ?`,
-          args: [...hitArgs, OCCURRENCE_SCAN_CAP + 1],
-        }),
-        client.execute({
-          sql: `WITH hits AS (${hitSql}),
-                unique_hits AS (
-                  SELECT page_id, MIN(page_id) AS sort_id
-                  FROM hits
-                  GROUP BY page_id
-                )
-                SELECT
-                  p.granth_key,
-                  g.source_rel_path,
-                  g.granth_name AS pdf_name,
-                  p.page_number,
-                  p.content,
-                  0 AS rank
+                SELECT ${pageColumns}
                 FROM unique_hits
                 JOIN ocr_pages p ON p.id = unique_hits.page_id
                 JOIN ocr_granths g ON g.granth_key = p.granth_key
-                ORDER BY unique_hits.sort_id ASC
-                LIMIT ? OFFSET ?`,
-          args: [...hitArgs, limit, offset],
+                ORDER BY unique_hits.page_id ASC
+                LIMIT ?`,
+          args: [...hitArgs, OCCURRENCE_SCAN_CAP + 1],
         }),
       ]);
-      const countsExact = occurrenceResult.rows.length <= OCCURRENCE_SCAN_CAP;
+      const countsExact = scanResult.rows.length <= OCCURRENCE_SCAN_CAP;
       let totalOccurrences = 0;
-      let verifiedPages = 0;
       // How often each written form was matched, so a count can be checked
       // (पर्षद् 2, परिषद् 17 ...). Keyed by folded form, shown as first seen.
       const formCounts = new Map<string, { form: string; count: number }>();
-      for (const row of occurrenceResult.rows.slice(0, OCCURRENCE_SCAN_CAP)) {
-        const matches = findOCRSearchMatchesForQueries(toStr(row.content), queries, matchMode);
+      const verifiedRows: typeof scanResult.rows = [];
+      for (const row of scanResult.rows.slice(0, OCCURRENCE_SCAN_CAP)) {
+        const matches = findOCRSearchMatchesForQueries(toStr(row.content), queries, matchMode, scripts);
         if (matches.length > 0) {
-          verifiedPages += 1;
+          verifiedRows.push(row);
           totalOccurrences += matches.length;
           for (const match of matches) {
             const key = foldSanskrit(match.text);
@@ -224,30 +205,44 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           }
         }
       }
+      const verifiedPages = verifiedRows.length;
       const occurrencesExact = countsExact;
 
-      const rows = listResult.rows.map((row) => ({
+      // A complete scan pages through the verified pages, so no tile is a page
+      // whose only hit is in a script the search left out. Past the cap the
+      // index hits are paged instead, as the scan cannot see every page.
+      const listRows = countsExact
+        ? verifiedRows.slice(offset, offset + limit)
+        : (
+            await client.execute({
+              sql: `WITH hits AS (${hitSql}),
+                    unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
+                    SELECT ${pageColumns}
+                    FROM unique_hits
+                    JOIN ocr_pages p ON p.id = unique_hits.page_id
+                    JOIN ocr_granths g ON g.granth_key = p.granth_key
+                    ORDER BY unique_hits.page_id ASC
+                    LIMIT ? OFFSET ?`,
+              args: [...hitArgs, limit, offset],
+            })
+          ).rows;
+
+      const rows = listRows.map((row) => ({
         granth_key: toStr(row.granth_key),
         source_rel_path: toStr(row.source_rel_path),
         pdf_name: toStr(row.pdf_name),
         page_number: toInt(row.page_number),
         content: toStr(row.content),
-        rank: Number(row.rank ?? 0),
+        rank: 0,
       })) as TursoSearchRow[];
 
-      const selectedByRelPath = new Map<string, DocumentMeta>(
-        selectedDocs
-          .filter((row) => row.original_relative_path)
-          .map((row) => [String(row.original_relative_path), row])
-      );
       const targets = await resolveGranthPdfTargets(
         rows.map((row) => ({
           granth_key: row.granth_key,
           source_rel_path: row.source_rel_path,
           pdf_name: row.pdf_name,
           page_number: row.page_number,
-        })),
-        { extraDocsByRelPath: selectedByRelPath }
+        }))
       );
 
       const results = rows.map((row, index) => {
@@ -263,10 +258,12 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           page_number: target.page_number,
           source_page_number: row.page_number,
           source_rel_path: row.source_rel_path,
-          snippet: buildOCRSearchExcerptForQueries(row.content, queries, matchMode, 520),
-          occurrences: buildOCRSearchOccurrences(row.content, queries, matchMode, 320),
+          snippet: buildOCRSearchExcerptForQueries(row.content, queries, matchMode, 520, scripts),
+          occurrences: buildOCRSearchOccurrences(row.content, queries, matchMode, 320, scripts),
           score: row.rank,
-          occurrence_count: findOCRSearchMatchesForQueries(row.content, queries, matchMode).length,
+          occurrence_count: findOCRSearchMatchesForQueries(row.content, queries, matchMode, scripts).length,
+          // False only past the scan cap, for an index hit the text does not confirm.
+          verified: findOCRSearchMatchesForQueries(row.content, queries, matchMode, scripts).length > 0,
           csv_url: target.csv_url,
           open_pdf_url: viewerUrl,
           matched_queries: queries,
@@ -283,15 +280,19 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         form_counts: [...formCounts.values()].sort((a, b) => b.count - a.count).slice(0, 60),
         total_occurrences_exact: occurrencesExact,
         occurrence_scan_cap: OCCURRENCE_SCAN_CAP,
-        occurrence_scanned_pages: Math.min(occurrenceResult.rows.length, OCCURRENCE_SCAN_CAP),
+        occurrence_scanned_pages: Math.min(scanResult.rows.length, OCCURRENCE_SCAN_CAP),
         selected_granth_count: selectedGranths.length,
+        missing_granths: missingGranths,
         page,
         per_page: limit,
         total_pages: Math.max(1, Math.ceil(total / limit)),
-        total_is_exact: true,
+        // Past the scan cap the total is the index's count, which can include
+        // pages with no real match.
+        total_is_exact: countsExact,
         search_backend: "turso",
         search_table: ftsTable,
         match_mode: matchMode,
+        scripts,
         queries,
       };
     });

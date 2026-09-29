@@ -1,4 +1,4 @@
-// Short, readable ids for granths in /search URLs ("?in=215,296"), in place of the
+// Short, readable ids for granths in search URLs ("?in=215,296"), in place of the
 // long document custom ids. A granth's key is its leading book number ("215",
 // "440-441"); where two granths share a number the first two name parts are used
 // ("429_C000391"), and a granth with no number falls back to its id's hash.

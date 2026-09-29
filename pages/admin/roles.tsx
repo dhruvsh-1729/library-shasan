@@ -232,7 +232,7 @@ export default function AdminRolesPage({ currentUser }: RolesPageProps) {
           </div>
           <nav className="adminNav">
             {canManageUsers ? <Link href="/admin/users">Users</Link> : null}
-            <Link href="/">Back to library</Link>
+            <Link href="/library">Back to library</Link>
             <button
               type="button"
               className="adminNavButton"

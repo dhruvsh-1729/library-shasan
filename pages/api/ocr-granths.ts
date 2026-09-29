@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { getGranthCatalog, granthDisplayName, isSearchable } from "@/lib/granth-catalog";
 import { getTursoClient } from "@/lib/turso";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
@@ -71,11 +72,22 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       };
     });
 
+    // Names come from the granth catalog; ?searchable=1 leaves out the
+    // duplicates search keeps out, for pickers that read what search reads.
+    const catalog = await getGranthCatalog();
+    const searchableOnly = String(req.query.searchable ?? "") === "1";
+    const listed = searchableOnly ? items.filter((row) => isSearchable(catalog, catalog.byGranthKey.get(row.granth_key))) : items;
     res.status(200).json({
-      items: items.map((row) => ({
-        ...row,
-        display_name: displayName(row.book_number, row.library_code, row.granth_name),
-      })),
+      items: listed.map((row) => {
+        const entry = catalog.byGranthKey.get(row.granth_key);
+        return {
+          ...row,
+          source_name: row.granth_name,
+          granth_name: entry ? granthDisplayName(entry) : row.granth_name,
+          display_name: entry ? granthDisplayName(entry) : displayName(row.book_number, row.library_code, row.granth_name),
+          duplicate_of: entry?.duplicate_of ?? null,
+        };
+      }),
       total: toInt(countResult.rows[0]?.total),
       limit,
     });
