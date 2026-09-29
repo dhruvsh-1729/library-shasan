@@ -813,3 +813,59 @@
 .chHistoryList {
   overflow-x: hidden;
 }
+
+.chHistorySearch,
+.chRename {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+  font-family: var(--lt-ui-font), var(--lt-indic-font);
+  font-size: 14px;
+}
+
+.chHistorySearch:focus,
+.chRename:focus {
+  outline: none;
+  border-color: var(--lt-cobalt);
+}
+
+.chRename {
+  flex: 1;
+  min-width: 0;
+  margin: 2px 4px;
+}
+
+.chHistory {
+  grid-template-rows: auto auto 1fr;
+}
+
+button.chSourceChip {
+  cursor: pointer;
+}
+
+button.chSourceChip:hover {
+  border-color: var(--lt-cobalt);
+  color: var(--lt-cobalt);
+}
+
+.chSourceOpen {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--lt-cobalt) !important;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chSourceOpen:hover {
+  text-decoration: underline;
+}
+
+.chHistoryDelete.isRename:hover {
+  color: var(--lt-cobalt);
+  background: var(--lt-cobalt-wash);
+}

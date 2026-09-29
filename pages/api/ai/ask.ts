@@ -16,6 +16,7 @@ import {
 import { chat, CHAT_MODELS, SarvamChatError, type ChatTurn, type ChatModelId } from "@/lib/sarvam-chat";
 import { parseOCRSearchMode } from "@/lib/ocr-search";
 import { recentTurns, saveTurn } from "@/lib/ask-chats";
+import { describeGranth, getGranthCatalog } from "@/lib/granth-catalog";
 import type { SessionUser } from "@/lib/auth-users";
 
 type Body = {
@@ -192,6 +193,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: SessionU
 
     const result = await answer({ context, question, language, model, history });
     const described = describeContext(context);
+    // Each source says where to open it: its PDF page, or the OCR text page.
+    const catalog = await getGranthCatalog().catch(() => null);
+    const passages = described.passages.map((p) => {
+      const info = catalog ? describeGranth(catalog, p.granthKey) : null;
+      return { ...p, pdfUrl: info?.pdfUrl || null, granthName: info?.displayName ?? p.granthName };
+    });
+    described.passages = passages;
     const chatId = await save(result.content, {
       scopeLine: described.summaryLine,
       sources: described.passages,

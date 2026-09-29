@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { setNoStore } from "@/lib/api-cache";
 import { deleteChat, getChat, renameChat } from "@/lib/ask-chats";
+import { describeGranth, getGranthCatalog } from "@/lib/granth-catalog";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import type { SessionUser } from "@/lib/auth-users";
@@ -13,7 +14,21 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: SessionU
   try {
     if (req.method === "GET") {
       const chat = await getChat(user.id, id);
-      return chat ? res.status(200).json({ chat }) : res.status(404).json({ error: "Chat not found." });
+      if (!chat) return res.status(404).json({ error: "Chat not found." });
+      // Sources saved before they carried a PDF link get it from the catalog.
+      const catalog = await getGranthCatalog().catch(() => null);
+      if (catalog) {
+        for (const message of chat.messages) {
+          const sources = message.meta?.sources;
+          if (!Array.isArray(sources)) continue;
+          message.meta.sources = sources.map((source: { granthKey?: string; granthName?: string; pdfUrl?: string | null }) => {
+            const info = source.granthKey ? describeGranth(catalog, source.granthKey) : null;
+            if (!info) return source;
+            return { ...source, granthName: info.displayName, pdfUrl: source.pdfUrl !== undefined ? source.pdfUrl : info.pdfUrl || null };
+          });
+        }
+      }
+      return res.status(200).json({ chat });
     }
     if (req.method === "PATCH") {
       const ok = await renameChat(user.id, id, String((req.body ?? {}).title ?? ""));

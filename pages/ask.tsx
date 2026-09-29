@@ -1,6 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
@@ -28,6 +29,8 @@ type SourcePassage = {
   pageNumber: number;
   label: string;
   preview: string;
+  /** Where the page opens: its PDF (null for a granth with only OCR text). */
+  pdfUrl?: string | null;
 };
 
 type Turn = {
@@ -109,6 +112,10 @@ export default function AskPage() {
   const [chatsLoaded, setChatsLoaded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
+  const [chatQuery, setChatQuery] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -131,9 +138,9 @@ export default function AskPage() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
 
-  async function refreshChats() {
+  async function refreshChats(query = chatQuery) {
     try {
-      const res = await fetch("/api/ai/chats");
+      const res = await fetch(`/api/ai/chats${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`);
       const json = await res.json();
       if (res.ok && Array.isArray(json.chats)) setChats(json.chats);
     } catch {
@@ -142,7 +149,33 @@ export default function AskPage() {
       setChatsLoaded(true);
     }
   }
-  useEffect(() => { void refreshChats(); }, []);
+  // The list follows the search box, a moment after typing stops.
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshChats(chatQuery), chatQuery ? 250 : 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatQuery]);
+
+  async function saveRename(id: string) {
+    const title = renameDraft.trim();
+    setRenamingId(null);
+    if (!title) return;
+    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
+    await fetch(`/api/ai/chats/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }).catch(() => undefined);
+  }
+
+  /** Opens a cited page: in the PDF viewer, or as OCR text when the granth has no PDF. */
+  function openSource(source: SourcePassage) {
+    if (source.pdfUrl) {
+      setPdfTarget({ pdfUrl: source.pdfUrl, page: source.pageNumber, title: source.granthName });
+    } else {
+      void router.push(`/ocr-text-viewer?granthKey=${encodeURIComponent(source.granthKey)}&page=${source.pageNumber}`);
+    }
+  }
 
   // ?chat=<id> opens a saved conversation, restoring what it was reading.
   const chatParam = typeof router.query.chat === "string" ? router.query.chat : "";
@@ -357,9 +390,16 @@ export default function AskPage() {
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>
             New chat
           </button>
+          <input
+            className="chHistorySearch"
+            value={chatQuery}
+            onChange={(e) => setChatQuery(e.target.value)}
+            placeholder="Search chats"
+            aria-label="Search chats"
+          />
           <nav className="chHistoryList">
             {!chatsLoaded ? null : chats.length === 0 ? (
-              <p className="chHistoryEmpty">Your chats will appear here.</p>
+              <p className="chHistoryEmpty">{chatQuery ? "No chat matches." : "Your chats will appear here."}</p>
             ) : (
               chats.map((c, i) => {
                 const day = chatDay(c.updated_at);
@@ -368,8 +408,27 @@ export default function AskPage() {
                   <div key={c.id}>
                     {showDay ? <p className="chHistoryDay">{day}</p> : null}
                     <div className={`chHistoryItem${c.id === chatId ? " isOn" : ""}`}>
-                      <button type="button" onClick={() => openChat(c.id)} title={c.title}>
-                        {c.title}
+                      {renamingId === c.id ? (
+                        <input
+                          className="chRename"
+                          autoFocus
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onBlur={() => void saveRename(c.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void saveRename(c.id);
+                            if (e.key === "Escape") setRenamingId(null);
+                          }}
+                          aria-label="Chat name"
+                        />
+                      ) : (
+                        <button type="button" onClick={() => openChat(c.id)} title={c.title}>
+                          {c.title}
+                        </button>
+                      )}
+                      <button type="button" className="chHistoryDelete isRename" aria-label={`Rename “${c.title}”`}
+                        onClick={() => { setRenamingId(c.id); setRenameDraft(c.title); }}>
+                        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 16l1-4 8.5-8.5a2 2 0 0 1 3 3L8 15ZM12 5l3 3" /></svg>
                       </button>
                       <button type="button" className="chHistoryDelete" aria-label={`Delete “${c.title}”`}
                         onClick={() => { if (window.confirm("Delete this chat?")) void removeChat(c.id); }}>
@@ -440,7 +499,15 @@ export default function AskPage() {
                       <details className="chSources">
                         <summary>
                           {t.sources.slice(0, 4).map((s) => (
-                            <span key={s.index} className="chSourceChip">p. {s.pageNumber}</span>
+                            <button
+                              key={s.index}
+                              type="button"
+                              className="chSourceChip"
+                              title={`Open page ${s.pageNumber} of ${s.granthName}`}
+                              onClick={(e) => { e.preventDefault(); openSource(s); }}
+                            >
+                              p. {s.pageNumber}
+                            </button>
                           ))}
                           {t.sources.length > 4 ? <span className="chSourceChip">+{t.sources.length - 4}</span> : null}
                           <span className="chSourcesLabel">Sources</span>
@@ -448,7 +515,9 @@ export default function AskPage() {
                         <ol>
                           {t.sources.map((s) => (
                             <li key={s.index}>
-                              <strong>{s.granthName}</strong> · {s.label}
+                              <button type="button" className="chSourceOpen" onClick={() => openSource(s)}>
+                                {s.granthName} · {s.label}
+                              </button>
                               <p>{s.preview}</p>
                             </li>
                           ))}
@@ -588,6 +657,7 @@ export default function AskPage() {
           </form>
         </footer>
         </div>
+        <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
       </div>
     </>
   );

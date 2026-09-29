@@ -76,12 +76,18 @@ export function chatTitle(question: string) {
   return `${cut.slice(0, Math.max(40, cut.lastIndexOf(" ")))}…`;
 }
 
-export async function listChats(userId: string): Promise<ChatSummary[]> {
+/** The user's chats, newest first; with `query`, only those whose title or messages contain it. */
+export async function listChats(userId: string, query = ""): Promise<ChatSummary[]> {
   await ensureSchema();
+  const q = query.trim().slice(0, 100);
+  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const filter = q
+    ? ` AND (c.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM ask_messages m2 WHERE m2.chat_id = c.id AND m2.content LIKE ? ESCAPE '\\'))`
+    : "";
   const result = await getTursoClient().execute({
     sql: `SELECT c.id, c.title, c.updated_at, (SELECT COUNT(*) FROM ask_messages m WHERE m.chat_id = c.id) AS message_count
-          FROM ask_chats c WHERE c.user_id = ? ORDER BY c.updated_at DESC LIMIT 200`,
-    args: [userId],
+          FROM ask_chats c WHERE c.user_id = ?${filter} ORDER BY c.updated_at DESC LIMIT 200`,
+    args: q ? [userId, like, like] : [userId],
   });
   return result.rows.map((row) => ({
     id: String(row.id),
