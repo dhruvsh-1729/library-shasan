@@ -837,28 +837,20 @@ export default function GranthExtractorPage() {
       <div className="extractorFrame">
         <header className="extractorHeader">
           <div className="extractorHeaderText">
-            <h1>Granth Page Extractor</h1>
+            <h1>Extract pages</h1>
             <div className="extractorNav">
               <Link href="/library">Library</Link>
               <Link href="/">Search</Link>
               <Link href="/scannable-documents">Scan status</Link>
             </div>
           </div>
-          <div className="extractorHeaderStats">
-            <span>{isPageMode ? `${pageSources.length} PDF` : `${context?.meta.file_count ?? 0} PDF`}</span>
-            <span>
-              {isPageMode
-                ? selectedPageSource?.page_count
-                  ? `${selectedPageSource.page_count} pages`
-                  : "Page source"
-                : `${context?.meta.total_gathas ?? 0} gathas`}
-            </span>
-            <span>
-              {segments.length
-                ? `${segments.length} output PDF / ${combinedDownloadPages} download pages`
-                : "No output yet"}
-            </span>
-          </div>
+          {segments.length ? (
+            <div className="extractorHeaderStats">
+              <span>
+                {segments.length} PDF{segments.length === 1 ? "" : "s"} · {combinedDownloadPages} page{combinedDownloadPages === 1 ? "" : "s"}
+              </span>
+            </div>
+          ) : null}
         </header>
 
         {bookError ? <div className="extractorError" role="alert">{bookError}</div> : null}
@@ -880,8 +872,8 @@ export default function GranthExtractorPage() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search granth name or PDF"
-              aria-label="Search granth name or PDF"
+              placeholder="Find a granth"
+              aria-label="Find a granth"
               className="extractorInput"
             />
 
@@ -1201,7 +1193,7 @@ export default function GranthExtractorPage() {
                 <p>
                   {isPageMode
                     ? selectedPageSource?.file_name || selectedPageSource?.original_rel_path || "Uploaded PDF"
-                    : selectedBook?.author_text || selectedBook?.details_text || "Mapped granth selection"}
+                    : selectedBook?.author_text || selectedBook?.details_text || ""}
                 </p>
                 <div className="extractorBookMeta">
                   <span>
@@ -1218,18 +1210,16 @@ export default function GranthExtractorPage() {
                         : selectedPageSource?.subcollection || "PDF"
                       : `${context?.meta.mapped_row_count ?? 0} mapped gathas`}
                   </span>
-                  <span>
-                    {isPageMode ? (
-                      selectedPageSource?.mapping_book_id ? "Mapping available" : "Ready"
-                    ) : contextLoading ? (
+                  {!isPageMode && contextLoading ? (
+                    <span>
                       <span className="buttonSpinnerLabel">
                         <span className="loadingSpinner" aria-hidden="true" />
-                        Loading context
+                        Loading
                       </span>
-                    ) : (
-                      contextError || "Context ready"
-                    )}
-                  </span>
+                    </span>
+                  ) : !isPageMode && contextError ? (
+                    <span>{contextError}</span>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -1312,7 +1302,7 @@ export default function GranthExtractorPage() {
                       </div>
                     ) : null}
                     {!selectedPageSource?.ocr_granth_key && !selectedPageSource?.mapping_book_id ? (
-                      <div className="extractorMuted">No linked OCR or mapping data.</div>
+                      <div className="extractorMuted">Nothing linked.</div>
                     ) : null}
                   </div>
                 </section>
@@ -1344,14 +1334,14 @@ export default function GranthExtractorPage() {
                       </button>
                     ))}
                     {!contextLoading && !context?.identifiers.length ? (
-                      <div className="extractorMuted">No identifier map available.</div>
+                      <div className="extractorMuted">No identifiers.</div>
                     ) : null}
                   </div>
                 </section>
 
                 <section className="extractorInfoPanel">
                   <div className="extractorPanelHeader">
-                    <span>Mapped Page Ranges</span>
+                    <span>Page ranges</span>
                     <strong>{visibleRanges.length}</strong>
                   </div>
                   <div className="extractorRangeList">
@@ -1362,7 +1352,7 @@ export default function GranthExtractorPage() {
                       </div>
                     ))}
                     {!contextLoading && visibleRanges.length === 0 ? (
-                      <div className="extractorMuted">No mapped page ranges available.</div>
+                      <div className="extractorMuted">No page ranges.</div>
                     ) : null}
                   </div>
                 </section>
@@ -1371,7 +1361,7 @@ export default function GranthExtractorPage() {
 
             <section className="extractorResultPanel">
               <div className="extractorPanelHeader">
-                <span>Resolved Output</span>
+                <span>Pages</span>
                 <strong>
                   {segments.length
                     ? `${totalPages} ${isPageMode ? "selected" : "mapped"} / ${combinedDownloadPages} combined pages`
@@ -1442,14 +1432,14 @@ export default function GranthExtractorPage() {
                   })}
                 </div>
               ) : (
-                <div className="extractorMuted">No pages resolved yet.</div>
+                <div className="extractorMuted">Nothing chosen yet.</div>
               )}
             </section>
 
             {previewMode ? (
               <section className="extractorPreviewPanel">
                 <div className="extractorPanelHeader">
-                  <span>Processed Download Preview</span>
+                  <span>Preview</span>
                   <strong>
                     {activePreviewPages} selected page{activePreviewPages === 1 ? "" : "s"}
                   </strong>
@@ -1476,7 +1466,7 @@ export default function GranthExtractorPage() {
                     ) : previewObjectUrl ? (
                       "Regenerate preview"
                     ) : (
-                      "Generate limited preview"
+                      "Preview"
                     )}
                   </button>
                   <button

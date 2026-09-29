@@ -72,12 +72,13 @@ export default function PdfViewerPage() {
   const renderTokenRef = useRef(0);
 
   const pageTitle = useMemo(() => {
-    if (!pdfUrl) return "PDF Viewer";
+    if (!pdfUrl) return "PDF · Shasan Library";
     try {
-      const name = decodeURIComponent(new URL(pdfUrl).pathname.split("/").pop() || "PDF");
-      return `${name} | PDF Viewer`;
+      // Stored files are named by an opaque key; only a real file name makes a title.
+      const name = decodeURIComponent(new URL(pdfUrl).pathname.split("/").pop() || "");
+      return /\.pdf$/i.test(name) ? `${name.replace(/\.pdf$/i, "").replace(/_/g, " ")} · Shasan Library` : "PDF · Shasan Library";
     } catch {
-      return "PDF Viewer";
+      return "PDF · Shasan Library";
     }
   }, [pdfUrl]);
 
@@ -318,201 +319,80 @@ export default function PdfViewerPage() {
         <title>{pageTitle}</title>
       </Head>
 
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "radial-gradient(circle at 16% 0%, #f7ebdd 0%, #eef2e7 34%, #e8edf3 100%)",
-          color: "#1f2120",
-          padding: "16px 12px 28px",
-          fontFamily: '"Noto Sans Gujarati","Noto Serif Devanagari","Segoe UI",sans-serif',
-        }}
-      >
-        <div style={{ width: "100%", margin: "0 auto" }}>
-          <header
-            style={{
-              border: "1px solid #d0d6df",
-              borderRadius: 12,
-              background: "#fffefb",
-              padding: 12,
-              boxShadow: "0 8px 20px rgba(35, 42, 51, 0.08)",
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div className="appPillNav" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <Link href="/library">Library</Link>
-              <Link href="/">Search</Link>
-              {originalHref ? (
-                <a href={originalHref} target="_blank" rel="noreferrer">
-                  Original PDF URL
-                </a>
-              ) : null}
-            </div>
+      <main className="lt pv">
+        <header className="pvBar">
+          <nav className="ltNav" aria-label="Pages">
+            <Link href="/">Search</Link>
+            <Link href="/library">Library</Link>
+            {originalHref ? (
+              <a href={originalHref} target="_blank" rel="noreferrer">
+                Original
+              </a>
+            ) : null}
+          </nav>
 
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={!canGoPrev}
-                style={{
-                  padding: "7px 11px",
-                  borderRadius: 8,
-                  border: "1px solid #c7cfd9",
-                  background: "#fff",
-                  cursor: canGoPrev ? "pointer" : "default",
-                }}
-              >
-                Prev
+          <div className="pvTools">
+            <div className="pvGroup">
+              <button type="button" className="pvBtn" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={!canGoPrev} aria-label="Previous page">
+                ‹
               </button>
-              <span style={{ fontWeight: 700, minWidth: 84, textAlign: "center" }}>
-                {pageCount > 0 ? `Page ${currentPage}/${pageCount}` : "Page -"}
-              </span>
-              <form onSubmit={submitPage} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <form onSubmit={submitPage} className="pvPageForm">
                 <input
                   value={pageEntry}
                   onChange={(event) => setPageEntry(event.target.value)}
+                  onBlur={() => setPageEntry(String(currentPage))}
                   type="number"
                   min={1}
                   max={pageCount || undefined}
                   inputMode="numeric"
                   aria-label="Page number"
-                  style={{
-                    width: 82,
-                    padding: "7px 8px",
-                    borderRadius: 8,
-                    border: "1px solid #c7cfd9",
-                    background: "#fff",
-                  }}
                 />
-                <button
-                  type="submit"
-                  style={{
-                    padding: "7px 11px",
-                    borderRadius: 8,
-                    border: "1px solid #c7cfd9",
-                    background: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  Go
-                </button>
+                <span>/ {pageCount || "–"}</span>
               </form>
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.min(pageCount, p + 1))}
-                disabled={!canGoNext}
-                style={{
-                  padding: "7px 11px",
-                  borderRadius: 8,
-                  border: "1px solid #c7cfd9",
-                  background: "#fff",
-                  cursor: canGoNext ? "pointer" : "default",
-                }}
-              >
-                Next
+              <button type="button" className="pvBtn" onClick={() => setCurrentPage((p) => Math.min(pageCount, p + 1))} disabled={!canGoNext} aria-label="Next page">
+                ›
               </button>
+            </div>
 
-              <button
-                type="button"
-                onClick={() => setZoom((z) => Math.max(0.7, Number((z - 0.15).toFixed(2))))}
-                disabled={!canZoomOut}
-                style={{
-                  padding: "7px 11px",
-                  borderRadius: 8,
-                  border: "1px solid #c7cfd9",
-                  background: "#fff",
-                  cursor: canZoomOut ? "pointer" : "default",
-                }}
-              >
-                -
+            <div className="pvGroup">
+              <button type="button" className="pvBtn" onClick={() => setZoom((z) => Math.max(0.7, Number((z - 0.15).toFixed(2))))} disabled={!canZoomOut} aria-label="Zoom out">
+                −
               </button>
-              <span style={{ minWidth: 62, textAlign: "center", fontSize: 13 }}>{Math.round(zoom * 100)}%</span>
-              <button
-                type="button"
-                onClick={() => setZoom((z) => Math.min(2.8, Number((z + 0.15).toFixed(2))))}
-                disabled={!canZoomIn}
-                style={{
-                  padding: "7px 11px",
-                  borderRadius: 8,
-                  border: "1px solid #c7cfd9",
-                  background: "#fff",
-                  cursor: canZoomIn ? "pointer" : "default",
-                }}
-              >
+              <span className="pvZoom">{Math.round(zoom * 100)}%</span>
+              <button type="button" className="pvBtn" onClick={() => setZoom((z) => Math.min(2.8, Number((z + 0.15).toFixed(2))))} disabled={!canZoomIn} aria-label="Zoom in">
                 +
               </button>
-
-              <button
-                type="button"
-                onClick={() => setShowTextLayer((prev) => !prev)}
-                style={{
-                  padding: "7px 11px",
-                  borderRadius: 8,
-                  border: "1px solid #c7cfd9",
-                  background: showTextLayer ? "#1f2120" : "#fff",
-                  color: showTextLayer ? "#fff" : "#222",
-                  cursor: "pointer",
-                }}
-              >
-                Text Layer {showTextLayer ? "On" : "Off"}
-              </button>
             </div>
-          </header>
 
-          {router.isReady && !pdfUrl ? (
-            <div style={{ marginTop: 14, color: "#9f1f1f", fontWeight: 700 }}>
-              Invalid or missing <code>pdf</code> query parameter.
-            </div>
-          ) : null}
-
-          {error ? (
-            <div style={{ marginTop: 14, color: "#9f1f1f", fontWeight: 700 }}>
-              {error}
-            </div>
-          ) : null}
-
-          {(docLoading || pageLoading) && !error ? (
-            <div style={{ marginTop: 14, opacity: 0.82 }}>
-              {docLoading ? "Loading PDF..." : `Rendering page ${currentPage}...`}
-            </div>
-          ) : null}
-
-          {pdfDoc && !docLoading && !pageLoading && !error && showTextLayer && textDivCount === 0 ? (
-            <div style={{ marginTop: 14, color: "#8a4b00", fontWeight: 700 }}>
-              This page has no embedded text layer, so direct select/copy is not available here.
-            </div>
-          ) : null}
-
-          <section style={{ marginTop: 14, overflowX: "auto" }}>
-            <div
-              className="pdfOverlayRoot"
-              data-show-text-layer={showTextLayer ? "true" : "false"}
-              style={{
-                position: "relative",
-                width: "fit-content",
-                minHeight: 320,
-                margin: "0 auto",
-                border: "1px solid #d4dae4",
-                borderRadius: 8,
-                background: "#fff",
-                boxShadow: "0 8px 22px rgba(25, 33, 44, 0.1)",
-              }}
+            <button
+              type="button"
+              className={`pvBtn pvToggle${showTextLayer ? " isOn" : ""}`}
+              aria-pressed={showTextLayer}
+              onClick={() => setShowTextLayer((prev) => !prev)}
+              title="Lets you select and copy the text on the page"
             >
-              <canvas
-                ref={canvasRef}
-                style={{ display: "block", maxWidth: "100%" }}
-              />
-              <div
-                ref={textLayerContainerRef}
-                className="textLayer"
-                aria-label="Extracted text layer"
-              />
-            </div>
-          </section>
-        </div>
+              Select text
+            </button>
+          </div>
+        </header>
+
+        {router.isReady && !pdfUrl ? <p className="ltError pvNote" role="alert">No PDF to show.</p> : null}
+        {error ? <p className="ltError pvNote" role="alert">{error}</p> : null}
+        {(docLoading || pageLoading) && !error ? (
+          <p className="ltLoading pvNote" role="status">
+            <span className="ltSpinner" aria-hidden="true" /> {docLoading ? "Opening PDF…" : `Page ${currentPage}…`}
+          </p>
+        ) : null}
+        {pdfDoc && !docLoading && !pageLoading && !error && showTextLayer && textDivCount === 0 ? (
+          <p className="ltMuted pvNote">This page has no text to select.</p>
+        ) : null}
+
+        <section className="pvStage">
+          <div className="pdfOverlayRoot pvSheet" data-show-text-layer={showTextLayer ? "true" : "false"}>
+            <canvas ref={canvasRef} />
+            <div ref={textLayerContainerRef} className="textLayer" aria-label="Page text" />
+          </div>
+        </section>
       </main>
     </>
   );

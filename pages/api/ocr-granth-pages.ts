@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getTursoClient } from "@/lib/turso";
+import { describeGranth, getGranthCatalog } from "@/lib/granth-catalog";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 
@@ -48,8 +49,15 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       return res.status(404).json({ error: "Granth not found" });
     }
 
+    // The catalog's clean name, and the PDF to open alongside when there is one.
+    const described = await getGranthCatalog()
+      .then((catalog) => describeGranth(catalog, toStr(granth.granth_key)))
+      .catch(() => null);
     return res.status(200).json({
       granth: {
+        display_name: described?.displayName ?? null,
+        native_title: described?.entry.native_title || null,
+        pdf_url: described?.pdfUrl || null,
         granth_key: toStr(granth.granth_key),
         book_number: toStr(granth.book_number),
         library_code: granth.library_code == null ? null : toStr(granth.library_code),

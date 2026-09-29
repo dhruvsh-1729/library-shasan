@@ -66,9 +66,18 @@ function parseCsvRows(input: string) {
   return rows.filter((r) => !(r.length === 1 && r[0] === ""));
 }
 
+/** The first of the column names this sheet has: gatha sheets and OCR sheets name them differently. */
+function firstColumn(headers: string[], names: string[]) {
+  for (const name of names) {
+    const index = headers.indexOf(name);
+    if (index >= 0) return index;
+  }
+  return -1;
+}
+
 export default function CsvViewerPage() {
   const router = useRouter();
-  const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
+  const rowRefs = useRef<Record<number, HTMLElement | null>>({});
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +93,7 @@ export default function CsvViewerPage() {
   useEffect(() => {
     if (!router.isReady) return;
     if (!csvUrl) {
-      setError("Missing csvUrl query parameter.");
+      setError("No spreadsheet to show.");
       return;
     }
 
@@ -97,19 +106,19 @@ export default function CsvViewerPage() {
         const res = await fetch(`/api/csv-proxy?url=${encodeURIComponent(csvUrl)}`);
         const body = await res.text();
         if (!res.ok) {
-          throw new Error(body || `Failed to load CSV (${res.status})`);
+          throw new Error(body || `Could not open the spreadsheet (${res.status}).`);
         }
 
         const matrix = parseCsvRows(body);
         if (matrix.length === 0) {
-          throw new Error("CSV appears to be empty.");
+          throw new Error("This spreadsheet is empty.");
         }
 
         const [headerRow, ...dataRows] = matrix;
         const normalizedHeaders = headerRow.map((h) => String(h ?? "").trim());
 
         let foundIndex: number | null = null;
-        const customIdIdx = normalizedHeaders.indexOf("custom_id");
+        const customIdIdx = firstColumn(normalizedHeaders, ["custom_id", "granth_key"]);
         const pageIdx = normalizedHeaders.indexOf("page_number");
 
         if (customId && Number.isFinite(targetPage) && customIdIdx >= 0 && pageIdx >= 0) {
@@ -144,142 +153,68 @@ export default function CsvViewerPage() {
   }, [router.isReady, csvUrl, customId, targetPage]);
 
   useEffect(() => {
-    if (targetRowIndex == null) return;
-    const el = rowRefs.current[targetRowIndex];
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [rows.length, targetRowIndex]);
+    if (targetRowIndex == null || loading) return;
+    rowRefs.current[targetRowIndex]?.scrollIntoView({ block: "start" });
+  }, [loading, rows.length, targetRowIndex]);
 
   const pageNumberIndex = useMemo(() => headers.indexOf("page_number"), [headers]);
-  const textIndex = useMemo(() => headers.indexOf("text"), [headers]);
+  const textIndex = useMemo(() => firstColumn(headers, ["text", "content"]), [headers]);
 
   function getValueByIndex(row: string[], index: number) {
     return index >= 0 ? String(row[index] ?? "") : "";
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background:
-          "radial-gradient(circle at 8% 0%, #f8efe0 0%, #f2f4ec 40%, #e9edf2 100%)",
-        color: "#1f2120",
-        padding: "20px 16px 28px",
-        fontFamily: '"Noto Sans Gujarati","Noto Serif Devanagari","Segoe UI",sans-serif',
-      }}
-    >
-      <div style={{ width: "100%", margin: "0 auto" }}>
-        <header style={{ marginBottom: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 24 }}>CSV Row Viewer</h1>
-          <div className="appPillNav" style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", fontSize: 14 }}>
-            <Link href="/">Back to search</Link>
-            {csvUrl ? (
-              <a href={csvUrl} target="_blank" rel="noreferrer">
-                Open raw CSV
-              </a>
+    <main className="lt tv">
+      <div className="tvFrame">
+        <header className="tvTop">
+          <div className="tvTitle">
+            <h1>Spreadsheet</h1>
+            {rows.length ? (
+              <p className="tvSummary">
+                {rows.length} row{rows.length === 1 ? "" : "s"}
+                {targetPage != null && targetRowIndex == null && !loading ? ` · page ${pageRaw} not found` : ""}
+              </p>
             ) : null}
           </div>
-          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
-            Target: <strong>{customId || "-"}</strong> page <strong>{pageRaw || "-"}</strong>
-          </div>
+          <nav className="ltNav" aria-label="Pages">
+            <Link href="/">Search</Link>
+            <Link href="/library">Library</Link>
+            {csvUrl ? (
+              <a href={csvUrl} target="_blank" rel="noreferrer">
+                Download
+              </a>
+            ) : null}
+          </nav>
         </header>
 
-        {loading ? <p>Loading CSV...</p> : null}
-        {error ? <p style={{ color: "#9f1f1f", fontWeight: 700 }}>{error}</p> : null}
+        {loading ? (
+          <p className="ltLoading" role="status">
+            <span className="ltSpinner" aria-hidden="true" /> Loading…
+          </p>
+        ) : null}
+        {error ? <p className="ltError" role="alert">{error}</p> : null}
 
         {!loading && !error && rows.length > 0 ? (
-          <section
-            style={{
-              border: "1px solid #d4d9e2",
-              borderRadius: 12,
-              background: "#fff",
-              overflow: "hidden",
-              boxShadow: "0 8px 20px rgba(35, 42, 51, 0.08)",
-            }}
-          >
-            <div style={{ padding: "10px 12px", borderBottom: "1px solid #e0e4ec", fontSize: 13 }}>
-              Rows: {rows.length}.{" "}
-              {targetRowIndex != null
-                ? `Jumped to CSV row ${targetRowIndex + 2}.`
-                : "Matching row not found for the requested custom_id/page."}
-            </div>
-
-            <div style={{ maxHeight: "78vh", overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-                <thead>
-                  <tr style={{ background: "#f7f9fc" }}>
-                    <th
-                      style={{
-                        borderBottom: "1px solid #d9deea",
-                        padding: "8px 10px",
-                        textAlign: "left",
-                        width: 88,
-                        fontSize: 12,
-                      }}
-                    >
-                      Page
-                    </th>
-                    <th
-                      style={{
-                        borderBottom: "1px solid #d9deea",
-                        padding: "8px 10px",
-                        textAlign: "left",
-                        fontSize: 12,
-                      }}
-                    >
-                      Text
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {rows.map((row, idx) => {
-                    const isTarget = idx === targetRowIndex;
-                    const pageValue = getValueByIndex(row, pageNumberIndex);
-                    const textValue = getValueByIndex(row, textIndex);
-                    return (
-                      <tr
-                        key={idx}
-                        ref={(el) => {
-                          rowRefs.current[idx] = el;
-                        }}
-                        style={{
-                          background: isTarget ? "#fff0c4" : idx % 2 === 0 ? "#fff" : "#fcfdff",
-                        }}
-                      >
-                        <td
-                          style={{
-                            borderBottom: "1px solid #eef1f6",
-                            padding: "8px 10px",
-                            verticalAlign: "top",
-                            fontSize: 12,
-                            fontWeight: isTarget ? 700 : 500,
-                            color: "#2d3748",
-                          }}
-                        >
-                          {pageValue || "-"}
-                        </td>
-
-                        <td
-                          style={{
-                            borderBottom: "1px solid #eef1f6",
-                            padding: "8px 10px",
-                            verticalAlign: "top",
-                            fontSize: 13,
-                            lineHeight: 1.35,
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
-                          }}
-                        >
-                          {textValue}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <section className="tvPages" aria-label="Rows">
+            {rows.map((row, idx) => {
+              const pageValue = getValueByIndex(row, pageNumberIndex);
+              return (
+                <article
+                  key={idx}
+                  ref={(el) => {
+                    rowRefs.current[idx] = el;
+                  }}
+                  className={`tvPage${idx === targetRowIndex ? " isOn" : ""}`}
+                >
+                  <div className="tvFolio">
+                    <span>Page</span>
+                    <strong>{pageValue || "–"}</strong>
+                  </div>
+                  <div className="tvText indic">{getValueByIndex(row, textIndex)}</div>
+                </article>
+              );
+            })}
           </section>
         ) : null}
       </div>
