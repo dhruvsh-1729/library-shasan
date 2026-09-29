@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
 import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { warmPdfIndex } from "@/lib/pdf-highlight-builder";
 import {
   MAX_COMBINED_PDF_GRANTHS,
   MAX_CSV_GRANTHS,
@@ -82,6 +83,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const sources = await resolveSearchPdfSources(
         targets.map((target) => ({ customId: target.custom_id, sourceRelPath: target.source_rel_path }))
       );
+      // Warm the first few PDFs a combined export would read.
+      for (const entry of sources.slice(0, 8)) if (entry.ok) warmPdfIndex(entry.source.pdfUrl);
 
       const items = granths.map((granth, index) => {
         const target = targets[index];

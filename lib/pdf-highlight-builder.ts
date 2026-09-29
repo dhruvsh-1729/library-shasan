@@ -6,8 +6,11 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
-import { PDFDocument } from "pdf-lib";
-import type { OCRSearchMode } from "@/lib/ocr-search";
+import { PDFDict, PDFDocument, PDFName, type PDFPage, PDFRawStream, PDFStream, degrees, rgb } from "pdf-lib";
+import { extractPdfPagesByRange } from "@/lib/pdf-range-subset.mjs";
+import { findGlyphWordBoxes } from "@/lib/pdf-glyph-boxes";
+import { type PdfTextItem, type WordBox, findWordBoxes } from "@/lib/pdf-word-boxes";
+import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
 import { availableMemoryMB } from "@/lib/available-memory";
 
 type HighlightBuildOptions = {
@@ -16,6 +19,7 @@ type HighlightBuildOptions = {
   query?: string;
   queries?: string[];
   matchMode?: OCRSearchMode;
+  scripts?: OCRSearchScripts;
 };
 
 export type CombinedPdfSource = {
@@ -115,111 +119,217 @@ async function downloadSourcePdf(pdfUrl: string) {
   return cachePath;
 }
 
+/** Red of the grease-pencil ring used on the search page. */
+const RING_COLOR = rgb(0.776, 0.184, 0.11);
+/** Books read at once in a combined export. */
+const SOURCE_PARALLEL = 4;
+
+/**
+ * The wanted pages of a source PDF as a small standalone PDF. Normally only
+ * those pages' bytes are fetched (HTTP ranges); a file the range reader cannot
+ * handle is downloaded whole (disk-cached) and its pages copied, as before.
+ */
+async function sourcePagesPdf(pdfUrl: string, pages: number[]) {
+  try {
+    const subset = await extractPdfPagesByRange(pdfUrl, pages);
+    return { bytes: subset.bytes, pages: subset.pages };
+  } catch (error) {
+    console.warn("range subset fell back to a full download", error instanceof Error ? error.message : error);
+    const sourcePath = await downloadSourcePdf(pdfUrl);
+    await ensureFreeMemory("load source PDF");
+    const sourceDoc = await PDFDocument.load(await readFile(sourcePath), { ignoreEncryption: true, updateMetadata: false });
+    const valid = pages.filter((page) => page <= sourceDoc.getPageCount());
+    const out = await PDFDocument.create();
+    for (const page of await out.copyPages(sourceDoc, valid.map((page) => page - 1))) out.addPage(page);
+    return { bytes: await out.save(), pages: valid };
+  }
+}
+
+type MarkOptions = { queries: string[]; matchMode: OCRSearchMode; scripts?: OCRSearchScripts };
+
+/**
+ * The same pages without their images. Finding words only needs the text
+ * operators, and pdf.js would otherwise decode every full-page scan while
+ * building the operator list, which is most of the time spent.
+ */
+async function withoutImages(bytes: Uint8Array) {
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  for (const page of doc.getPages()) {
+    const resources = page.node.Resources();
+    const xobjects = resources?.lookupMaybe(PDFName.of("XObject"), PDFDict);
+    if (!xobjects) continue;
+    for (const key of xobjects.keys()) {
+      const target = xobjects.lookup(key);
+      const subtype = target instanceof PDFRawStream || target instanceof PDFStream ? target.dict.get(PDFName.of("Subtype")) : null;
+      if (subtype === PDFName.of("Image")) xobjects.delete(key);
+    }
+  }
+  return doc.save({ useObjectStreams: false });
+}
+
+/** Where the searched word is on each page of a PDF, from its text layer. */
+async function wordBoxesPerPage(bytes: Uint8Array, mark: MarkOptions): Promise<WordBox[][]> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({
+    data: await withoutImages(bytes),
+    disableFontFace: true,
+    isEvalSupported: false,
+    useSystemFonts: false,
+    fontExtraProperties: true,
+    verbosity: 0,
+  }).promise;
+  try {
+    const boxes: WordBox[][] = [];
+    for (let i = 1; i <= doc.numPages; i += 1) {
+      const page = await doc.getPage(i);
+      // Exact glyph positions first; the text-content estimate if the page cannot be replayed.
+      const exact = await findGlyphWordBoxes(page, pdfjs.OPS, mark.queries, mark.matchMode, mark.scripts ?? null);
+      if (exact) {
+        boxes.push(exact);
+        continue;
+      }
+      const content = await page.getTextContent();
+      boxes.push(findWordBoxes(content.items as PdfTextItem[], mark.queries, mark.matchMode, mark.scripts ?? null));
+    }
+    return boxes;
+  } finally {
+    await doc.destroy();
+  }
+}
+
+/** Draws a red ellipse around each box; the ring becomes part of the page. */
+function drawRings(page: PDFPage, boxes: WordBox[]) {
+  for (const box of boxes) {
+    page.drawEllipse({
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+      xScale: box.width / 2 + box.fontSize * 0.35,
+      yScale: box.height / 2 + box.fontSize * 0.12,
+      borderColor: RING_COLOR,
+      borderWidth: Math.max(1.1, box.fontSize * 0.09),
+      borderOpacity: 0.95,
+      rotate: degrees(-2),
+    });
+  }
+}
+
+/** Fetches, rings and returns one source's pages, ready to append. */
+async function markedSource(source: CombinedPdfSource, mark: MarkOptions | null) {
+  const { bytes, pages } = await sourcePagesPdf(source.pdfUrl, uniqueSortedPagesKeepOrder(source.pages));
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  let rings = 0;
+  if (mark?.queries.length) {
+    try {
+      const boxes = await wordBoxesPerPage(bytes, mark);
+      doc.getPages().forEach((page, i) => {
+        drawRings(page, boxes[i] ?? []);
+        rings += boxes[i]?.length ?? 0;
+      });
+    } catch (error) {
+      // A page that cannot be read for positions still exports, unmarked.
+      console.warn("word rings skipped", error instanceof Error ? error.message : error);
+    }
+  }
+  return { doc, pages, rings };
+}
+
+/** Pages in the order asked for, duplicates dropped (the cover page 1 comes first). */
+function uniqueSortedPagesKeepOrder(pages: number[]) {
+  return [...new Set(pages.map((page) => Math.floor(Number(page))).filter((page) => page > 0))];
+}
+
+async function writeOutput(doc: PDFDocument, name: string) {
+  const workDir = await mkdtemp(path.join(tmpdir(), "ndms-search-pages-"));
+  const outPath = path.join(workDir, name);
+  await writeFile(outPath, await doc.save({ useObjectStreams: true }));
+  return { filePath: outPath, cleanupDir: workDir };
+}
+
 export async function buildHighlightedSearchPdf(options: HighlightBuildOptions) {
   await ensureFreeMemory("start selected-page PDF build");
-
-  const pages = uniqueSortedPages(options.pages);
+  const pages = uniqueSortedPagesKeepOrder(options.pages);
   if (pages.length === 0) throw new Error("No pages selected.");
-
-  const workDir = await mkdtemp(path.join(tmpdir(), "ndms-search-pages-"));
-
-  try {
-    const sourcePath = await downloadSourcePdf(options.pdfUrl);
-
-    await ensureFreeMemory("load source PDF");
-    const sourceDoc = await PDFDocument.load(await readFile(sourcePath), { ignoreEncryption: true });
-    const pageCount = sourceDoc.getPageCount();
-    const validPages = pages.filter((page) => page <= pageCount);
-    if (validPages.length === 0) throw new Error("Selected pages are outside the PDF page range.");
-
-    const outputDoc = await PDFDocument.create();
-    const copiedPages = await outputDoc.copyPages(
-      sourceDoc,
-      validPages.map((page) => page - 1)
-    );
-    for (const page of copiedPages) outputDoc.addPage(page);
-
-    const outPath = path.join(workDir, "selected-pages.pdf");
-    await ensureFreeMemory("save selected-page PDF");
-    await writeFile(outPath, await outputDoc.save());
-
-    return { filePath: outPath, cleanupDir: workDir };
-  } catch (error) {
-    await rm(workDir, { recursive: true, force: true });
-    throw error;
-  }
+  const queries = options.queries?.length ? options.queries : options.query ? [options.query] : [];
+  const { doc, pages: kept } = await markedSource(
+    { pdfUrl: options.pdfUrl, pages, label: "" },
+    { queries, matchMode: options.matchMode ?? "sanskrit_forms", scripts: options.scripts ?? null }
+  );
+  if (kept.length === 0) throw new Error("Selected pages are outside the PDF page range.");
+  return writeOutput(doc, "selected-pages.pdf");
 }
 
 /**
  * Merges matched pages from many granths into one PDF, keeping each granth's
- * pages together and in order. Sources are processed one at a time so a large
- * multi-granth export does not hold every source PDF in memory at once.
+ * pages together and in order, with the searched word ringed in red. Books are
+ * fetched a few at a time, and only the pages needed.
  */
-export async function buildCombinedSearchPdf(options: { sources: CombinedPdfSource[] }) {
+export async function buildCombinedSearchPdf(options: {
+  sources: CombinedPdfSource[];
+  queries?: string[];
+  matchMode?: OCRSearchMode;
+  scripts?: OCRSearchScripts;
+}) {
   await ensureFreeMemory("start combined granth PDF build");
+  const mark = options.queries?.length
+    ? { queries: options.queries, matchMode: options.matchMode ?? "sanskrit_forms", scripts: options.scripts ?? null }
+    : null;
 
-  const workDir = await mkdtemp(path.join(tmpdir(), "ndms-search-combined-"));
+  const results: Array<Awaited<ReturnType<typeof markedSource>> | { error: string }> = new Array(options.sources.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(SOURCE_PARALLEL, options.sources.length) }, async () => {
+      while (next < options.sources.length) {
+        const index = next++;
+        try {
+          results[index] = await markedSource(options.sources[index], mark);
+        } catch (error) {
+          results[index] = { error: error instanceof Error ? error.message : String(error) };
+        }
+      }
+    })
+  );
+
+  const outputDoc = await PDFDocument.create();
   const included: CombinedPdfSourceResult[] = [];
   const failed: Array<{ label: string; error: string }> = [];
-
-  try {
-    const outputDoc = await PDFDocument.create();
-
-    for (const source of options.sources) {
-      const pages = uniqueSortedPages(source.pages);
-      if (pages.length === 0) continue;
-
-      try {
-        const sourcePath = await downloadSourcePdf(source.pdfUrl);
-        await ensureFreeMemory(`load source PDF for ${source.label}`);
-        const sourceDoc = await PDFDocument.load(await readFile(sourcePath), { ignoreEncryption: true });
-        const pageCount = sourceDoc.getPageCount();
-        const validPages = pages.filter((page) => page <= pageCount);
-        const skippedPages = pages.filter((page) => page > pageCount);
-
-        if (validPages.length === 0) {
-          failed.push({ label: source.label, error: "Matched pages are outside the PDF page range." });
-          continue;
-        }
-
-        const copiedPages = await outputDoc.copyPages(
-          sourceDoc,
-          validPages.map((page) => page - 1)
-        );
-        for (const page of copiedPages) outputDoc.addPage(page);
-
-        included.push({
-          label: source.label,
-          pdfUrl: source.pdfUrl,
-          included_pages: validPages,
-          skipped_pages: skippedPages,
-        });
-      } catch (sourceError) {
-        failed.push({
-          label: source.label,
-          error: sourceError instanceof Error ? sourceError.message : String(sourceError),
-        });
-      }
+  for (const [index, source] of options.sources.entries()) {
+    const result = results[index];
+    if (!result || "error" in result) {
+      failed.push({ label: source.label, error: result?.error ?? "Not built." });
+      continue;
     }
-
-    if (outputDoc.getPageCount() === 0) {
-      const detail = failed.length > 0 ? ` ${failed[0].error}` : "";
-      throw new Error(`No pages could be copied from the selected granths.${detail}`);
+    if (result.pages.length === 0) {
+      failed.push({ label: source.label, error: "Matched pages are outside the PDF page range." });
+      continue;
     }
-
-    const outPath = path.join(workDir, "combined-pages.pdf");
-    await ensureFreeMemory("save combined granth PDF");
-    await writeFile(outPath, await outputDoc.save());
-
-    return {
-      filePath: outPath,
-      cleanupDir: workDir,
-      included,
-      failed,
-      totalPages: included.reduce((sum, entry) => sum + entry.included_pages.length, 0),
-    };
-  } catch (error) {
-    await rm(workDir, { recursive: true, force: true });
-    throw error;
+    for (const page of await outputDoc.copyPages(result.doc, result.doc.getPageIndices())) outputDoc.addPage(page);
+    const requested = uniqueSortedPagesKeepOrder(source.pages);
+    included.push({
+      label: source.label,
+      pdfUrl: source.pdfUrl,
+      included_pages: result.pages,
+      skipped_pages: requested.filter((page) => !result.pages.includes(page)),
+    });
   }
+
+  if (outputDoc.getPageCount() === 0) {
+    const detail = failed.length > 0 ? ` ${failed[0].error}` : "";
+    throw new Error(`No pages could be copied from the selected granths.${detail}`);
+  }
+  const written = await writeOutput(outputDoc, "combined-pages.pdf");
+  return {
+    ...written,
+    included,
+    failed,
+    totalPages: included.reduce((sum, entry) => sum + entry.included_pages.length, 0),
+  };
+}
+
+/**
+ * Starts reading a PDF's cross-reference data in the background, so a
+ * download pressed a moment later only fetches its pages. Errors are ignored.
+ */
+export function warmPdfIndex(pdfUrl: string) {
+  if (!pdfUrl) return;
+  void extractPdfPagesByRange(pdfUrl, [1]).catch(() => undefined);
 }

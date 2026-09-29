@@ -8,6 +8,8 @@ import {
   type OCRSearchScripts,
 } from "@/lib/ocr-search";
 import { openPdf } from "@/lib/pdf-range-source";
+import { findGlyphWordBoxes, type GlyphPage } from "@/lib/pdf-glyph-boxes";
+import { type PdfTextItem, type WordBox, findWordBoxes } from "@/lib/pdf-word-boxes";
 
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 type PDFDocumentLoadingTask = import("pdfjs-dist").PDFDocumentLoadingTask;
@@ -114,6 +116,10 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerContainerRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
+  // Red rings around the searched word, in page pixels, drawn over the canvas.
+  const [rings, setRings] = useState<Array<{ cx: number; cy: number; rx: number; ry: number }>>([]);
+  const [ringFrame, setRingFrame] = useState({ width: 0, height: 0 });
+  const ringsRef = useRef<SVGSVGElement | null>(null);
   const textLayerRef = useRef<TextLayer | null>(null);
   const renderTokenRef = useRef(0);
   // The open document and the URL it came from: moving to another page of the
@@ -303,6 +309,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
     setError(null);
     setTextDivCount(0);
     setHighlightCount(0);
+    setRings([]);
 
     void (async () => {
       try {
@@ -373,7 +380,32 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
             `"Nirmala UI", "Mangal", "Kohinoor Devanagari", sans-serif`;
           textDiv.style.unicodeBidi = "plaintext";
         }
-        setHighlightCount(applySearchHighlights(textLayer.textDivs, highlightTerms, highlightMode, highlightScripts));
+        // Ring the word where the page draws it: exact glyph positions first,
+        // the text-content estimate next, and the old text highlight last.
+        let boxes: WordBox[] = [];
+        if (highlightTerms.length) {
+          const exact = await findGlyphWordBoxes(page as unknown as GlyphPage, pdfModule.OPS, highlightTerms, highlightMode, highlightScripts);
+          if (!active || token !== renderTokenRef.current) return;
+          boxes = exact ?? findWordBoxes(textContent.items as PdfTextItem[], highlightTerms, highlightMode, highlightScripts);
+        }
+        if (boxes.length) {
+          setRingFrame({ width: viewport.width, height: viewport.height });
+          setRings(
+            boxes.map((box) => {
+              const [x1, y1, x2, y2] = viewport.convertToViewportRectangle([box.x, box.y, box.x + box.width, box.y + box.height]);
+              const pad = box.fontSize * zoom * 0.3;
+              return {
+                cx: (x1 + x2) / 2,
+                cy: (y1 + y2) / 2,
+                rx: Math.abs(x2 - x1) / 2 + pad,
+                ry: Math.abs(y2 - y1) / 2 + pad * 0.35,
+              };
+            })
+          );
+          setHighlightCount(boxes.length);
+        } else {
+          setHighlightCount(applySearchHighlights(textLayer.textDivs, highlightTerms, highlightMode, highlightScripts));
+        }
         setTextDivCount(textLayer.textDivs.length);
 
         const endOfContent = document.createElement("div");
@@ -408,6 +440,12 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
       }
     };
   }, [currentPage, highlightMode, highlightScripts, highlightTerms, pageCount, pdfDoc, pdfModule, target, zoom]);
+
+  // Bring the first ring into view when a page's rings appear.
+  useEffect(() => {
+    const first = ringsRef.current?.querySelector("ellipse");
+    if (first) first.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  }, [rings]);
 
   function goToPage(page: number) {
     const maxPage = pageCount || Math.max(1, page);
@@ -533,6 +571,27 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
           >
             <canvas ref={canvasRef} />
             <div ref={textLayerContainerRef} className="textLayer" aria-label="Extracted text layer" />
+            {rings.length ? (
+              <svg
+                ref={ringsRef}
+                className="pdfRings"
+                width={ringFrame.width}
+                height={ringFrame.height}
+                viewBox={`0 0 ${ringFrame.width} ${ringFrame.height}`}
+                aria-hidden="true"
+              >
+                {rings.map((ring, i) => (
+                  <ellipse
+                    key={i}
+                    cx={ring.cx}
+                    cy={ring.cy}
+                    rx={ring.rx}
+                    ry={ring.ry}
+                    transform={`rotate(-2 ${ring.cx} ${ring.cy})`}
+                  />
+                ))}
+              </svg>
+            ) : null}
             {!error && isPdfLoading ? (
               <div className="pdfDialogPageLoading" aria-hidden="true">
                 <span className="loadingSpinner" />

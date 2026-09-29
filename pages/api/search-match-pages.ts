@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
 import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { warmPdfIndex } from "@/lib/pdf-highlight-builder";
 import {
   MAX_MATCH_PAGE_DOWNLOAD,
   SearchMatchError,
@@ -33,6 +34,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const cacheKey = buildCacheKey(req, "search-match-pages");
     const { value: payload, status } = await getCachedJson(cacheKey, 60, async () => {
       const source = await resolveSearchPdfSource(customId, sourceRelPath);
+      // The reader is looking at this granth's matched pages and may download
+      // them next: read the PDF's index now so the download fetches pages only.
+      warmPdfIndex(source.pdfUrl);
       const { pages, truncated } = await loadSearchMatchPages(
         sourceRelPath || source.sourceRelPath,
         queries,

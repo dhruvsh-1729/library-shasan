@@ -495,3 +495,18 @@ body {
     padding: 18px 16px 48px;
   }
 }
+
+/* Red rings around the searched word on a rendered PDF page. */
+.pdfRings {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.pdfRings ellipse {
+  fill: rgba(198, 47, 28, 0.06);
+  stroke: #c62f1c;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}

@@ -212,7 +212,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         throw new SearchMatchError(404, `None of the selected granths could be exported.${detail}`);
       }
 
-      const combined = await buildCombinedSearchPdf({ sources: combinedSources });
+      const combined = await buildCombinedSearchPdf({ sources: combinedSources, queries, matchMode, scripts });
       built = { filePath: combined.filePath, cleanupDir: combined.cleanupDir };
       const granthLabel = combinedSources.length === 1 ? safeFileName(combinedSources[0].label, "granth") : `${combinedSources.length}_granths`;
       filename = `granth_search_${queryLabel}_${granthLabel}_matched_pages.pdf`;
@@ -254,6 +254,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         pages: orderedPages,
         queries,
         matchMode,
+        scripts,
       });
       const title = safeFileName(String(body.title || source.pdfName || customId), "matched_pages");
       filename = `${title}_${queryLabel}_matched_pages.pdf`;
