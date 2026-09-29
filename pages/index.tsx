@@ -105,6 +105,10 @@ type GranthOption = {
 
 type SearchSummary = {
   total: number;
+  /** Hit pages the result list pages through (the index's count past the check cap). */
+  listTotal: number;
+  /** A full count is running in the background for a total marked "+". */
+  counting: boolean;
   totalIsExact: boolean;
   occurrences: number;
   occurrencesExact: boolean;
@@ -540,8 +544,11 @@ export default function SearchPage() {
 
       setResults(json.results ?? []);
       setExpandedPages(new Set());
+      const exact = json.total_occurrences_exact !== false;
       setSummary({
         total: Number(json.total ?? 0),
+        listTotal: Number(json.total ?? 0),
+        counting: !exact,
         totalIsExact: json.total_is_exact !== false,
         occurrences: Number(json.total_occurrences ?? 0),
         occurrencesExact: json.total_occurrences_exact !== false,
@@ -558,6 +565,36 @@ export default function SearchPage() {
       });
       setLastRequest({ ...request, forms });
       setPhase("done");
+      // More hit pages than /api/search checks at once: count them all in the
+      // background and replace the "+" totals when that is done.
+      if (!exact) {
+        const countParams = new URLSearchParams(params);
+        countParams.delete("limit");
+        countParams.delete("page");
+        void (async () => {
+          try {
+            const res = await fetch(`/api/search-count?${countParams.toString()}`);
+            const count = (await res.json()) as { pages?: number; occurrences?: number; formCounts?: Array<{ form: string; count: number }>; error?: string };
+            if (seq !== searchSeqRef.current) return;
+            if (!res.ok) throw new Error(count.error || "count failed");
+            setSummary((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    counting: false,
+                    total: Number(count.pages ?? prev.total),
+                    totalIsExact: true,
+                    occurrences: Number(count.occurrences ?? prev.occurrences),
+                    occurrencesExact: true,
+                    formCounts: count.formCounts ?? prev.formCounts,
+                  }
+                : prev
+            );
+          } catch {
+            if (seq === searchSeqRef.current) setSummary((prev) => (prev ? { ...prev, counting: false } : prev));
+          }
+        })();
+      }
     } catch (e) {
       if (seq !== searchSeqRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
@@ -715,7 +752,7 @@ export default function SearchPage() {
   }
 
   // ---------------------------------------------------------------- render helpers
-  const totalPages = summary ? Math.max(1, Math.ceil(summary.total / RESULTS_PER_PAGE)) : 1;
+  const totalPages = summary ? Math.max(1, Math.ceil(summary.listTotal / RESULTS_PER_PAGE)) : 1;
 
   function textViewerHref(result: SearchResult) {
     if (!summary || !result.granth_key) return "";
@@ -1070,7 +1107,15 @@ export default function SearchPage() {
                 </div>
               ) : null}
               {!summary.occurrencesExact && summary.total > 0 ? (
-                <p className="ltWarn">Counted in the first {nf.format(summary.scannedPages)} pages</p>
+                <p className="ltWarn">
+                  {summary.counting ? (
+                    <>
+                      <span className="ltSpinner" aria-hidden="true" /> Counting every page…
+                    </>
+                  ) : (
+                    `Counted in the first ${nf.format(summary.scannedPages)} pages`
+                  )}
+                </p>
               ) : null}
               {summary.missingGranths.length ? (
                 <p className="ltWarn">{plural(summary.missingGranths.length, "chosen book")} could not be found and were left out.</p>
