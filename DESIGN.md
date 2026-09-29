@@ -155,7 +155,7 @@ components:
 
 # Design System: Granth Search
 
-> **Scope.** This system currently governs `/` (search) only (`pages/index.tsx`, `styles/search.css`, `components/LightTableIcon.tsx`). Every token lives under the `.lt` class; the shared dialogs (PdfPageDialog, SearchExportDialog, DownloadDeliveryDialog, PageJumpPager) take this world only when rendered inside `.lt`. The rest of the app (the library at `/library`, admin, auth, viewers) still uses the older `styles/globals.css` look and is **not** part of this system yet. Treat that look as legacy, not as a second system to reconcile; new surfaces that join the Light Table do so by adopting these tokens under `.lt`.
+> **Scope.** The Light Table governs the whole app. Search (`/`, `pages/index.tsx`, `styles/search.css`) is its fullest form; `styles/theme.css` carries it to every other shell: the library (`/library`), Ask (`/ask`, with `styles/ask.css`), the OCR text viewer (`tv*`), the PDF viewer (`pv*`), the spreadsheet viewer, the extractor, admin and auth. Tokens live under `.lt`; fonts resolve on the `.ltFonts` wrapper in `pages/_app.tsx`. `styles/globals.css` still holds structural rules (the pdf.js text layer, legacy shells) and is overridden, not extended.
 
 ## Overview
 
@@ -288,6 +288,9 @@ White, 3px radius, slip shadow, crop marks, laid down with a 520ms settle (from 
 ### Loupe (signature)
 A 148px circle (96px on phones): 3px Ink rim with a 2px white outer ring, white lens, the hit centred at 40px Indic with 24 characters of context either side clipped by the lens. A small Ink pill below reads "+N forms" when the page holds more than one form.
 
+### Viewers
+The text, PDF and spreadsheet viewers reuse the slip. A viewer page is a `tvPage` slip (white, 4px radius, slip shadow) with a condensed folio at the left and the text at Indic 20px, 1.8; the current page gets a 2px Cobalt ring. The OCR viewer adds a sticky 280px hits column of `tvHit` cards (the ringed excerpt, page and count), which becomes a horizontal strip under 860px. The PDF viewer has one sticky glass toolbar (`pvBar`): text nav left, then grouped page and zoom trays and a single "Select text" toggle that goes solid Ink when on; the page sits centred on the glass as a slip. Opening a viewer jumps straight to the hit, instantly the first time (a background tab never runs a smooth scroll).
+
 ### Tally
 The occurrence count at display size and the page count at headline size, side by side, then the searched forms in Indic 22px with a one-line scope ("Sanskrit forms · Devanagari + Gujarati · in all granths"). Below: a row of form tallies (6px radius, 60% white, Indic 18px plus a right-aligned count), the amber scan tape when counts are partial, then the pager and "Export all matches". When the settings no longer match the results, the figures dim to 55% and a "Search again" line appears.
 
@@ -308,4 +311,5 @@ The occurrence count at display size and the page count at headline size, side b
 - **Don't** use Grease-Pencil Red for buttons, errors or decoration; it belongs to the ring and to chosen spellings.
 - **Don't** use hard or offset shadows; depth is soft and lit from below.
 - **Don't** set Latin labels in uppercase with wide tracking; condense with Archivo's width axis instead.
-- **Don't** apply these tokens to the library, admin or auth pages piecemeal; those still run on `globals.css` until they are moved into the Light Table deliberately.
+- **Don't** add explanatory copy. A label names the thing ("Select text", "Fix OCR text"); a status says only what changed ("page 10 not found"). No intros, helper paragraphs or badges for the normal case: show a state only when something is not ready.
+- **Don't** add inline `style` to pages; give the element a class in `theme.css` under its surface prefix.
