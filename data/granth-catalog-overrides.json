@@ -75,6 +75,31 @@
       "title": "Vyakhya Pragnapti Sutram",
       "part": "3"
     },
+    "453_B011182": {
+      "native_title": "त्रिषष्टिशलाकापुरुषचरितम्",
+      "document_custom_id": "Shrirang_Library_5-9-2024_OCR__ed__453_B011182_trishashti_shalaka_purush_charitam_mahakavyam_parv_1_001455_hr.pdf__OCR_033277bdb9f0",
+      "_why": "PDF from the ARYAYUG OCR folder (Kingston SSD); 254-page scan (253 indexed; the extra is the last page), 5 OCR-sampled pages match at offset 0"
+    },
+    "454_B011184": {
+      "native_title": "त्रिषष्टिशलाकापुरुषचरितम्",
+      "document_custom_id": "Shrirang_Library_5-9-2024_OCR__ed__454_B011184_trishashti_shalaka_purush_charitam_mahakavyam_parv_2_3_4_001456_hr.pdf__OCR_84504488171b",
+      "_why": "PDF from the ARYAYUG OCR folder (Kingston SSD); 370 pages both; 7 OCR-sampled pages match at offset 0"
+    },
+    "455_B011190": {
+      "native_title": "त्रिषष्टिशलाकापुरुषचरितम्",
+      "document_custom_id": "Shrirang_Library_5-9-2024_OCR__ed__455_B011190_trishashti_shalaka_purush_charitam_mahakavyam_parv_5_6_7_001457_hr.pdf__OCR_42dda9fbd9e4",
+      "_why": "PDF from the ARYAYUG OCR folder (Kingston SSD); 338 pages both; 6 OCR-sampled pages match at offset 0"
+    },
+    "456_B036844": {
+      "native_title": "त्रिषष्टिशलाकापुरुषचरितम्",
+      "document_custom_id": "Shrirang_Library_5-9-2024_OCR__ed__456_B036844_trishashti_shalaka_purush_charitam_mahakavyam_parv_8_9_001458_hr.pdf__OCR_c0e396028a74",
+      "_why": "PDF from the ARYAYUG OCR folder (Kingston SSD); 282 pages both; 6 OCR-sampled pages match at offset 0"
+    },
+    "457_B043629": {
+      "native_title": "त्रिषष्टिशलाकापुरुषचरितम्",
+      "document_custom_id": "Shrirang_Library_5-9-2024_OCR__ed__457_B043629_trishashti_shalaka_purush_charitam_mahakavyam_parv_10_001459_std.pdf__OCR_bfcf026b4265",
+      "_why": "PDF from the ARYAYUG OCR folder (Kingston SSD); 280 pages both; 6 OCR-sampled pages match at offset 0"
+    },
     "459_B018244": {
       "duplicate_of": "x510a74028d",
       "_why": "49-page spreadsheet copy of mitra_dwatrinshika (96 pages); 76% of its text is in the PDF"
