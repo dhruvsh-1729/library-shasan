@@ -1,0 +1,7 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    "paths": { "@/lib/auth-guard": ["tests/auth-guard-stub.ts"], "@/*": ["./*"] }
+  }
+}

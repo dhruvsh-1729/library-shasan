@@ -6,10 +6,12 @@
     "node": "22.x"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --tsconfig tests/tsconfig.json --test tests/*.test.ts",
+    "test:live": "LIVE=1 tsx --tsconfig tests/tsconfig.json --test tests/*.test.ts",
     "covers:granth": "node scripts/generate_granth_covers.mjs",
     "index:granth:stream": "node scripts/index_granth_from_db_pdftotext_stream.mjs",
     "index:granth:ocr500": "node scripts/index_granth_from_db_ocr500.mjs",
@@ -46,6 +48,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   },
   "overrides": {
