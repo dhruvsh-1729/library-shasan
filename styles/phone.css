@@ -1,0 +1,277 @@
+/*
+ * Phones. Loaded last, so these rules settle what the older page styles
+ * leave cramped on a narrow screen: filter tabs become one row that swipes,
+ * lists scroll with the page instead of inside a box, and tables become
+ * cards whose actions stay in view.
+ */
+
+/* Placeholders read as hints, not as filled-in values. */
+.adminInput::placeholder,
+.adminTextarea::placeholder {
+  font-weight: 400;
+  color: var(--lt-ink-3);
+  opacity: 0.8;
+}
+
+@media (max-width: 760px) {
+  /* ---------------------------------------------------------- tab rows */
+
+  .adminTabs,
+  .scanTabs {
+    display: flex !important;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin: 0;
+    padding: 2px 0 6px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .adminTabs::-webkit-scrollbar,
+  .scanTabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .adminTab,
+  .scanTab {
+    flex: none;
+    width: auto !important;
+    min-height: 40px;
+    gap: 8px;
+    padding: 0 14px !important;
+    border-radius: 999px !important;
+    scroll-snap-align: start;
+    white-space: nowrap;
+    justify-content: center !important;
+  }
+
+  .scanTab span,
+  .adminTab {
+    font-size: 14.5px;
+  }
+
+  /* ---------------------------------------------------------- scan status */
+
+  .scanShell,
+  .scanFrame {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow: visible !important;
+  }
+
+  .scanList {
+    max-height: none !important;
+    overflow: visible !important;
+    display: grid;
+    gap: 8px;
+  }
+
+  .scanRow {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "primary primary"
+      "meta links";
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px 14px !important;
+  }
+
+  .scanPrimary {
+    grid-area: primary;
+    display: grid;
+    gap: 6px;
+    justify-items: start;
+  }
+
+  .scanPrimary strong {
+    font-size: 15px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .scanMetaBlock {
+    grid-area: meta;
+    display: flex !important;
+    gap: 6px;
+    align-items: baseline;
+    font-size: 13px;
+    color: var(--lt-ink-2);
+  }
+
+  .scanMetaBlock {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .scanMetaLabel {
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+
+  .scanLinks {
+    grid-area: links;
+    display: flex;
+    gap: 8px;
+  }
+
+  .scanLinks > * {
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* ---------------------------------------------------------- admin tables */
+
+  .adminTableWrap {
+    overflow: visible !important;
+  }
+
+  .adminTable,
+  .adminTable tbody,
+  .adminTable tr,
+  .adminTable td {
+    display: block;
+    width: 100%;
+  }
+
+  .adminTable {
+    min-width: 0 !important;
+    table-layout: auto !important;
+  }
+
+  .adminTable tr,
+  .adminTable td {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  .adminTable td[data-label="Status"] > span {
+    justify-self: start;
+  }
+
+  .adminTable thead {
+    display: none;
+  }
+
+  .adminTable tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .adminTable tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 12px;
+    padding: 14px;
+    border: 1px solid var(--lt-glass-edge);
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  .adminTable td {
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  .adminTable td[data-label="User"],
+  .adminTable td[data-label="Actions"] {
+    grid-column: 1 / -1;
+  }
+
+  .adminTable td[data-label="Role"],
+  .adminTable td[data-label="Status"],
+  .adminTable td[data-label="Requested"] {
+    display: grid;
+    gap: 4px;
+    align-content: start;
+  }
+
+  .adminTable td[data-label="Role"]::before,
+  .adminTable td[data-label="Status"]::before,
+  .adminTable td[data-label="Requested"]::before {
+    content: attr(data-label);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--lt-ink-3);
+  }
+
+  .adminTable td[data-label="Role"] {
+    grid-column: 1 / -1;
+  }
+
+  .adminTable .adminSelect {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .adminTable .adminUserText {
+    min-width: 0;
+  }
+
+  .adminTable .adminUserEmail {
+    overflow-wrap: anywhere;
+  }
+
+  .adminRowActions {
+    display: flex !important;
+    gap: 8px;
+  }
+
+  .adminRowActions:empty {
+    display: none !important;
+  }
+
+  .adminRowActions button {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  /* ---------------------------------------------------------- page chrome */
+
+  .adminHeader,
+  .scanHeader {
+    gap: 10px;
+  }
+
+  .adminNav,
+  .scanNav {
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+}
+
+/* The roles page: a count and the New role button above the list. */
+.adminListHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lt-ink-3);
+}
+
+.adminListHead .adminPrimaryButton {
+  min-height: 42px;
+  padding: 0 18px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 14.5px;
+}
+
+.sheet .adminEditGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.sheet .adminFieldGrid {
+  grid-template-columns: minmax(0, 1fr);
+}

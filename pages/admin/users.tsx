@@ -269,7 +269,7 @@ export default function AdminUsersPage({ currentUser }: UsersPageProps) {
 
                     return (
                       <tr key={user.id} className={busy ? "isBusy" : undefined}>
-                        <td>
+                        <td data-label="User">
                           <div className="adminUserCell">
                             {user.image ? (
                               /* eslint-disable-next-line @next/next/no-img-element */
@@ -291,7 +291,7 @@ export default function AdminUsersPage({ currentUser }: UsersPageProps) {
                             </span>
                           </div>
                         </td>
-                        <td>
+                        <td data-label="Role">
                           {canManageRoles ? (
                             <select
                               className="adminSelect"
@@ -317,13 +317,13 @@ export default function AdminUsersPage({ currentUser }: UsersPageProps) {
                             <span className="adminRoleText">{roleLabel}</span>
                           )}
                         </td>
-                        <td>
+                        <td data-label="Status">
                           <span className={STATUS_BADGE[user.status]}>{STATUS_LABEL[user.status]}</span>
                         </td>
-                        <td>
+                        <td data-label="Requested">
                           <span className="adminWhen">{formatWhen(user.requested_at)}</span>
                         </td>
-                        <td>
+                        <td data-label="Actions">
                           <div className="adminRowActions">
                             {user.status !== "approved" ? (
                               <button
@@ -345,7 +345,8 @@ export default function AdminUsersPage({ currentUser }: UsersPageProps) {
                                 Reject
                               </button>
                             ) : null}
-                            {user.status === "approved" ? (
+                            {/* Revoking your own access would lock you out of this page. */}
+                            {user.status === "approved" && user.id !== currentUser.id ? (
                               <button
                                 type="button"
                                 className="adminDangerButton"

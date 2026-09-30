@@ -161,13 +161,20 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   const [pageCount, setPageCount] = useState(pageCountHint);
   const [currentPage, setCurrentPage] = useState(requestedPage);
   const [pageEntry, setPageEntry] = useState(String(requestedPage));
-  const [zoom, setZoom] = useState(1.25);
+  // null: fit the page to the viewer's width, which is how a phone opens it;
+  // the − and + buttons then zoom from whatever that came to.
+  const [zoom, setZoom] = useState<number | null>(1.25);
+  const [fitScale, setFitScale] = useState(1);
+  const viewportRef = useRef<HTMLElement | null>(null);
   const [showTextLayer, setShowTextLayer] = useState(true);
   const [textDivCount, setTextDivCount] = useState(0);
   const [highlightCount, setHighlightCount] = useState(0);
   const requestedPageRef = useRef(requestedPage);
   requestedPageRef.current = requestedPage;
   const isOpen = Boolean(target);
+  useEffect(() => {
+    if (isOpen && window.innerWidth < 760) setZoom(null);
+  }, [isOpen]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -331,7 +338,13 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
         const page = await pdfDoc.getPage(pageNumber);
         if (!active || token !== renderTokenRef.current) return;
 
-        const viewport = page.getViewport({ scale: zoom });
+        let scale = zoom ?? 1;
+        if (zoom === null) {
+          const room = (viewportRef.current?.clientWidth ?? window.innerWidth) - 28;
+          scale = Math.max(0.3, Math.min(2.8, room / page.getViewport({ scale: 1 }).width));
+          setFitScale(scale);
+        }
+        const viewport = page.getViewport({ scale });
         const canvas = canvasRef.current;
         const textLayerContainer = textLayerContainerRef.current;
         if (!canvas || !textLayerContainer) return;
@@ -423,7 +436,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
           setRings(
             boxes.map((box) => {
               const [x1, y1, x2, y2] = viewport.convertToViewportRectangle([box.x, box.y, box.x + box.width, box.y + box.height]);
-              const pad = box.fontSize * zoom * 0.3;
+              const pad = box.fontSize * scale * 0.3;
               return {
                 cx: (x1 + x2) / 2,
                 cy: (y1 + y2) / 2,
@@ -494,8 +507,9 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
 
   const canGoPrev = currentPage > 1;
   const canGoNext = pageCount > 0 && currentPage < pageCount;
-  const canZoomOut = zoom > 0.7;
-  const canZoomIn = zoom < 2.8;
+  const shownZoom = zoom ?? fitScale;
+  const canZoomOut = shownZoom > 0.35;
+  const canZoomIn = shownZoom < 2.8;
   const isPdfLoading = Boolean(target && !error && (engineLoading || docLoading || pageLoading));
   const loadingLabel = engineLoading
     ? "Loading PDF viewer..."
@@ -514,7 +528,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
       }}
     >
       <div className="pdfDialogPanel">
-        <header className="pdfDialogHeader">
+        <header className="pdfDialogHeader pvHead">
           <div className="pdfDialogTitleBlock">
             <div className="pdfDialogTitle" title={dialogTitle}>
               {dialogTitle}
@@ -554,17 +568,25 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
               <button
                 type="button"
                 className="pvBtn"
-                onClick={() => setZoom((value) => Math.max(0.7, Number((value - 0.15).toFixed(2))))}
+                onClick={() => setZoom((value) => Math.max(0.35, Number(((value ?? fitScale) - 0.15).toFixed(2))))}
                 disabled={!canZoomOut}
                 aria-label="Zoom out"
               >
                 −
               </button>
-              <span className="pvZoom">{Math.round(zoom * 100)}%</span>
+              <button
+                type="button"
+                className="pvZoom pvZoomFit"
+                onClick={() => setZoom(null)}
+                title="Fit the page to the width"
+                aria-label={`Zoom ${Math.round(shownZoom * 100)}%. Fit to width`}
+              >
+                {zoom === null ? "Fit" : `${Math.round(shownZoom * 100)}%`}
+              </button>
               <button
                 type="button"
                 className="pvBtn"
-                onClick={() => setZoom((value) => Math.min(2.8, Number((value + 0.15).toFixed(2))))}
+                onClick={() => setZoom((value) => Math.min(2.8, Number(((value ?? fitScale) + 0.15).toFixed(2))))}
                 disabled={!canZoomIn}
                 aria-label="Zoom in"
               >
@@ -588,10 +610,11 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
               </a>
             ) : null}
 
-            <button type="button" className="pvBtn pdfDialogClose" onClick={onClose} aria-label="Close">
-              ×
-            </button>
           </div>
+
+          <button type="button" className="pvBtn pdfDialogClose" onClick={onClose} aria-label="Close">
+            ×
+          </button>
         </header>
 
         {error ? <div className="pdfDialogError">{error}</div> : null}
@@ -599,7 +622,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
           <div className="pdfDialogNotice">This page has no text to select.</div>
         ) : null}
 
-        <section className="pdfDialogViewport" aria-busy={isPdfLoading}>
+        <section ref={viewportRef} className="pdfDialogViewport" aria-busy={isPdfLoading}>
           {!error && isPdfLoading ? (
             <div className="pdfDialogLoading" role="status" aria-live="polite">
               <span className="loadingSpinner" aria-hidden="true" />

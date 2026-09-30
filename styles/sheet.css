@@ -700,3 +700,24 @@
   line-height: 1.5;
   color: var(--lt-ink-3, #526270);
 }
+
+/* On a wide screen the actions sit at the right, More at the left. */
+@media (min-width: 720px) {
+  .sheetActionsRow {
+    justify-content: flex-end;
+  }
+
+  .sheetActionsRow > .sheetAction {
+    flex: none;
+    min-width: 150px;
+  }
+
+  .sheetMore {
+    margin-right: auto;
+  }
+
+  .sheet.is-narrow .sheetBody > .sheetAction,
+  .sheet.is-narrow .sheetField .sheetAction {
+    width: 100%;
+  }
+}

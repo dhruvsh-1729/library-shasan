@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { signOut } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 import { authOptions } from "@/lib/auth-options";
+import { Sheet } from "@/components/Sheet";
 import {
   ALL_PERMISSIONS,
   PERMISSIONS,
@@ -80,6 +81,7 @@ export default function AdminRolesPage({ currentUser }: RolesPageProps) {
   const [createName, setCreateName] = useState("");
   const [createDraft, setCreateDraft] = useState<RoleDraft>(EMPTY_DRAFT);
   const [nameTouched, setNameTouched] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<RoleDraft>(EMPTY_DRAFT);
@@ -154,6 +156,7 @@ export default function AdminRolesPage({ currentUser }: RolesPageProps) {
       const created = payload.role;
       setRoles((previous) => [created, ...previous.filter((role) => role.name !== created.name)]);
       resetCreateForm();
+      setCreateOpen(false);
     } catch (createError) {
       setError(errorMessage(createError, "Could not create the role."));
     } finally {
@@ -247,12 +250,38 @@ export default function AdminRolesPage({ currentUser }: RolesPageProps) {
 
         {error ? <div className="adminError">{error}</div> : null}
 
-        <section className="adminPanel">
-          <div className="adminPanelHeader">
-            <span>Create role</span>
-          </div>
+        <div className="adminListHead">
+          <span>{loading ? "Roles" : `${roles.length} ${roles.length === 1 ? "role" : "roles"}`}</span>
+          <button type="button" className="adminPrimaryButton" onClick={() => setCreateOpen(true)}>
+            New role
+          </button>
+        </div>
 
+        <Sheet
+          open={createOpen}
+          title="New role"
+          subtitle="Name it and choose what it may do."
+          onClose={() => setCreateOpen(false)}
+          busy={busyKey === "create"}
+          footer={
+            <div className="sheetActionsRow">
+              <button
+                type="button"
+                className="sheetAction is-quiet"
+                disabled={busyKey === "create"}
+                onClick={resetCreateForm}
+              >
+                Reset
+              </button>
+              <button type="submit" form="create-role" className="sheetAction is-primary" disabled={busyKey === "create"}>
+                {busyKey === "create" ? "Creating…" : "Create role"}
+              </button>
+            </div>
+          }
+        >
+          {error && createOpen ? <p className="sheetNote is-error" role="alert">{error}</p> : null}
           <form
+            id="create-role"
             className="adminEditGrid"
             onSubmit={(event) => {
               event.preventDefault();
@@ -329,21 +358,8 @@ export default function AdminRolesPage({ currentUser }: RolesPageProps) {
               </div>
             </div>
 
-            <div className="adminFormActions">
-              <button type="submit" className="adminPrimaryButton" disabled={busyKey === "create"}>
-                {busyKey === "create" ? "Creating…" : "Create role"}
-              </button>
-              <button
-                type="button"
-                className="adminGhostButton"
-                disabled={busyKey === "create"}
-                onClick={resetCreateForm}
-              >
-                Reset
-              </button>
-            </div>
           </form>
-        </section>
+        </Sheet>
 
         {loading ? (
           <div className="adminPanel">

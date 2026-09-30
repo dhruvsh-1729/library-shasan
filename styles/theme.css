@@ -917,3 +917,73 @@ div.tvFolio { cursor: default; }
     display: none;
   }
 }
+
+/* ------------------------------------------------------------ PDF viewer header
+   Title and close on one line; the page and zoom controls under them on a
+   phone, beside them on a wide screen. */
+
+.pdfDialogHeader.pvHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "title tools close";
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.pvHead .pdfDialogTitleBlock {
+  grid-area: title;
+}
+
+.pvHead .pdfDialogTools {
+  grid-area: tools;
+}
+
+.pvHead .pdfDialogClose {
+  grid-area: close;
+}
+
+.pvZoomFit {
+  min-width: 50px;
+  height: 34px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pvZoomFit:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+@media (max-width: 760px) {
+  .pdfDialogHeader.pvHead {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title close"
+      "tools tools";
+    padding: 8px 10px 10px 14px;
+  }
+
+  .pvHead .pdfDialogTools {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .pvHead .pdfDialogTools .pvToggle {
+    height: 38px;
+    justify-content: center;
+    font-size: 13.5px;
+  }
+
+  .pvHead .pdfDialogClose.pvBtn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .pvHead .pvPageForm input {
+    width: 52px;
+  }
+}
