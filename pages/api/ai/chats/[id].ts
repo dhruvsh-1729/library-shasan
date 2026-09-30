@@ -24,7 +24,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: SessionU
           message.meta.sources = sources.map((source: { granthKey?: string; granthName?: string; pdfUrl?: string | null }) => {
             const info = source.granthKey ? describeGranth(catalog, source.granthKey) : null;
             if (!info) return source;
-            return { ...source, granthName: info.displayName, pdfUrl: source.pdfUrl !== undefined ? source.pdfUrl : info.pdfUrl || null };
+            // The PDF as it is now: a book's file is replaced when its text layer is rebuilt.
+            return { ...source, granthName: info.displayName, pdfUrl: info.pdfUrl || source.pdfUrl || null };
           });
         }
       }

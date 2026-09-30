@@ -348,7 +348,10 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
         textLayerContainer.innerHTML = "";
         textLayerContainer.style.width = `${viewport.width}px`;
         textLayerContainer.style.height = `${viewport.height}px`;
-        textLayerContainer.style.setProperty("--scale-factor", "1");
+        // pdf.js lays the text layer out at this scale; "1" put every word at
+        // 1/zoom of its place (selection landed lines above the text at 125%).
+        textLayerContainer.style.setProperty("--scale-factor", String(viewport.scale));
+        textLayerContainer.style.setProperty("--total-scale-factor", String(viewport.scale));
         textLayerContainer.setAttribute("data-main-rotation", String(viewport.rotation));
         textLayerContainer.classList.remove("selecting");
 
@@ -388,13 +391,13 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
         await textLayer.render();
         if (!active || token !== renderTokenRef.current) return;
 
-        for (const textDiv of textLayer.textDivs) {
-          const existing = textDiv.style.fontFamily || "";
-          textDiv.style.fontFamily =
-            `${existing}, "Noto Sans Gujarati", "Noto Serif Devanagari", ` +
-            `"Nirmala UI", "Mangal", "Kohinoor Devanagari", sans-serif`;
-          textDiv.style.unicodeBidi = "plaintext";
-        }
+        // No font swap after rendering: pdf.js sizes each span to its text in the
+
+        // font it measured with, and a different font afterwards stretches every
+
+        // span off the words (selection landed beside the text).
+
+        for (const textDiv of textLayer.textDivs) textDiv.style.unicodeBidi = "plaintext";
         // Ring the word where it is printed: our OCR's line boxes when the book
         // has them, else the PDF's own text layer (exact glyph positions, then
         // the text-content estimate), else the old text highlight.

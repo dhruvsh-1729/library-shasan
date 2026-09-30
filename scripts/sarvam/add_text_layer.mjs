@@ -10,7 +10,7 @@
 //    before it loads, or every embedFont call throws.
 import "regenerator-runtime/runtime.js";
 import { readFile, writeFile } from "node:fs/promises";
-import { PDFDocument, PDFName, PDFHexString, PDFOperator, PDFDict } from "pdf-lib";
+import { PDFDocument, PDFName, PDFHexString, PDFOperator, PDFDict, PDFNumber } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
 const FONTS = {
@@ -142,14 +142,24 @@ export async function addTextLayer({ srcPdf, metaByPage, outPdf, onPage }) {
       );
       page.pushOperators(PDFOperator.of("BDC", [PDFName.of("Span"), dict]));
 
+      // Stretch or squeeze the line to the printed line's width (horizontal
+      // scaling, Tz), so the invisible text lies over the print: selection,
+      // Ctrl+F highlights and word positions then match what is on the page.
+      // Drawn at the font's own widths, a line ran long or short of the print,
+      // sometimes past the page edge.
+      const runs = scriptRuns(logical)
+        .map((run) => ({ font: fonts[run.script], text: sanitise(fonts[run.script], run.text) }))
+        .filter((run) => run.text.trim());
+      const natural = runs.reduce((sum, run) => sum + run.font.widthOfTextAtSize(run.text, size), 0);
+      const boxW = Math.max(1, (c.x2 - c.x1) * sx);
+      const scale = natural > 0 ? Math.min(400, Math.max(20, (boxW / natural) * 100)) : 100;
+      page.pushOperators(PDFOperator.of("Tz", [PDFNumber.of(scale)]));
       let x = x0;
-      for (const run of scriptRuns(logical)) {
-        const font = fonts[run.script];
-        const safe = sanitise(font, run.text);
-        if (!safe.trim()) continue;
-        page.drawText(safe, { x, y: yTop - size, size, font, opacity: 0 });
-        x += font.widthOfTextAtSize(safe, size);
+      for (const run of runs) {
+        page.drawText(run.text, { x, y: yTop - size, size, font: run.font, opacity: 0 });
+        x += run.font.widthOfTextAtSize(run.text, size) * (scale / 100);
       }
+      page.pushOperators(PDFOperator.of("Tz", [PDFNumber.of(100)]));
 
       page.pushOperators(PDFOperator.of("EMC", []));
       blocksDrawn += 1;
