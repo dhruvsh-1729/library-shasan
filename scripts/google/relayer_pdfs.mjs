@@ -36,6 +36,10 @@ const [workDir] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const only = process.argv.find((a) => a.startsWith("--only="))?.split("=")[1];
 const [shardK, shardN] = (process.argv.find((a) => a.startsWith("--shard="))?.split("=")[1] ?? "0/1").split("/").map(Number);
 const noDelete = process.argv.includes("--no-delete");
+// Only delete the old PDFs of books swapped and verified at least this long
+// ago (the site caches PDF links for 10 minutes); nothing else is touched.
+const deleteOnly = process.argv.includes("--delete-only");
+const DELETE_AFTER_MS = 15 * 60_000;
 const alignedArg = process.argv.find((a) => a.startsWith("--aligned="))?.split("=")[1];
 if (!workDir) throw new Error("usage: relayer_pdfs.mjs <workDir> [--only=key] [--shard=k/n] [--no-delete]");
 
@@ -174,6 +178,20 @@ async function relayer(book) {
     return value;
   };
   if (st.steps["delete-old"]?.done || (noDelete && st.steps.verify?.done)) return "done before";
+  if (deleteOnly) {
+    const verified = st.steps.verify?.done ? Date.parse(st.steps.verify.at) : NaN;
+    if (!(Date.now() - verified > DELETE_AFTER_MS)) return "not ready to delete";
+    const live = st.steps.resolve.value;
+    const up = st.steps.upload.value;
+    const { data } = await sb.from("documents").select("pdf_url").eq("custom_id", book.customId).single();
+    if (data?.pdf_url !== up.url) return "live link is not the new PDF; kept the old one";
+    await step("delete-old", async () => {
+      if (!live.oldPdfKey || live.oldPdfKey === up.key) return { skipped: true };
+      const res = await ut.deleteFiles([live.oldPdfKey]);
+      return { key: live.oldPdfKey, success: res?.success ?? null };
+    });
+    return "old PDF deleted";
+  }
 
   const live = await step("resolve", async () => {
     const { data, error } = await sb.from("documents").select("pdf_url").eq("custom_id", book.customId).single();
