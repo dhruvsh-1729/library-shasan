@@ -1,0 +1,81 @@
+Books whose PDF text layer is not rebuilt yet (see RUNBOOK section below)
+
+== Published books (29): scripts/google/relayer_pdfs.mjs
+384	Abhidhan Rajendra kosh · Part 1
+387	Abhidhan Rajendra kosh · Part 4
+389	Abhidhan Rajendra kosh · Part 6
+390	Abhidhan Rajendra kosh · Part 7
+391	Dharmtirth · Part 1
+395	Aagamik vyutpattikosh
+unnum_18f6a1643350	Suygadanga Sutra Gujarati Anuwad · Part 2
+unnum_37efd6e27bec	Dharmratna Prakaran · Part 1
+unnum_4876995746e6	Dharmratna Prakaran · Part 2
+unnum_7349cca07784	Acharanga Sutra Gujarati Anuwad · Part 2
+unnum_7d81e403b64e	Dharmratna Prakaran · Part 3
+unnum_c51eb41d51f3	Acharanga Sutra Gujarati Anuwad · Part 1
+unnum_d1cdbeab50e2	Dashvaikalik Sutram
+x007de34d61	Nandi Sutram
+x1574d5baef	Vairagya Kalpalata (Gujarati Shlokarth) · Part 3
+x3eba0f9134	Vitrag Stotra Pray Shabdasha Vivechan
+x510a74028d	Mitra Dwatrinshika
+x586e16ef59	Pind Niryukti
+x8ee836d908	Vairagya Kalpalata (Gujarati Shlokarth) · Part 4
+x9cc0a40b5c	Vairagya Kalpalata (Gujarati Shlokarth) · Part 2
+xa394adae9f	Yogvinshika
+xac86f09582	Vairagya Kalpalata (Gujarati Shlokarth) · Part 5
+xad300bade9	Vairagya Kalpalata (Gujarati Shlokarth) · Part 9
+xc0d2d853c3	Vairagya Kalpalata (Gujarati Shlokarth) · Part 8
+xca1fd503d6	Sirimaransamahi Payana
+xee0399ffef	Hinsa Shtakama
+xf169c804f6	Vairagya Kalpalata (Gujarati Shlokarth) · Part 6
+xf2124260bd	Vairagya Kalpalata (Gujarati Shlokarth)
+xf2a21cf100	Vairagya Kalpalata (Gujarati Shlokarth) · Part 7
+
+== Aligned books (7): relayer_pdfs.mjs --aligned=...
+212	Patanjalyog Sutra · Part 2
+284	Vyavahar Sutram · Part 3
+286	Vyavahar Sutram · Part 5
+453_B011182	Trishashti Shalaka Purush Charitam Mahakavyam Parv 1
+455_B011190	Trishashti Shalaka Purush Charitam Mahakavyam Parv 5–7
+456_B036844	Trishashti Shalaka Purush Charitam Mahakavyam Parv 8–9
+unnum_a7c4367f576e	Dravya Gun Paryayno Ras · Part 1
+
+== Rebuilt and live, old PDF still kept on UploadThing (17)
+023	Abhaykumar Charitra
+264	Vitrag Stotra
+276	Vairagya Kalpalata · Part 4
+282	Vyavahar Sutram Pithika · Part 1
+285	Vyavahar Sutram · Part 4
+301	Shad Darshan Samucchay Satik Sanuwad · Part 2
+304	Shodashak Prakaran Shabdasha Vivechan · Part 2
+314	Samyaktva Saptati
+328	सूत्रकृतांग सूत्र · Part 4
+336	Sthanang Sutra · Part 2
+381	Shabdaratnamahodadhi · Part 2
+385	Abhidhan Rajendra kosh · Part 2
+386	Abhidhan Rajendra kosh · Part 3
+392	Dharmatirh · Part 3
+393	Dharmatirh · Part 4
+unnum_6f7955f30d65	Acharang Sutra Bhavanuvad · Part 2
+unnum_f8936e240e4a	Uttaradhyanan Sutra Gujarati Anuwad · Part 3
+
+== RUNBOOK (run from the library repo folder, with the Kingston SSD plugged in)
+
+Every step is checkpointed per book under ocr_work/relayer and ocr_work/relayer_aligned:
+finished books are skipped, a stopped book resumes where it stopped. --no-delete keeps
+the old PDFs on UploadThing.
+
+1) Published books (29): three parallel runs
+   W=/media/dell/KINGSTON/ocr_work
+   for k in 0 1 2; do nohup node --env-file=.env scripts/google/relayer_pdfs.mjs $W/relayer --shard=$k/3 --no-delete > $W/relayer/run3_$k.log 2>&1 & done
+
+2) Aligned books (7; 453, 455 and 456 will fail the safety check on purpose, keep their PDF)
+   A="$W/g144/books_deva.json+$W/g144/books_guj.json+$W/g144/books_old.json,$W/g144/custom_ids.json,$W/g144/work_deva/out,$W/g144/work_guj/out,$W/g144/work_453/out,$W/modern/out,$W/ld/out"
+   nohup node --env-file=.env scripts/google/relayer_pdfs.mjs $W/relayer_aligned --aligned=$A --no-delete > $W/relayer_aligned3.log 2>&1 &
+
+3) Progress:   bash $W/status_all.sh      Logs: grep -h "relayered\|FAILED" $W/relayer/run3_*.log $W/relayer_aligned3.log
+
+4) Optional, only if you want the superseded PDFs removed (permanent on UploadThing;
+   the originals stay on this SSD). Waits 15 min after each swap so no cached link breaks:
+   node --env-file=.env scripts/google/relayer_pdfs.mjs $W/relayer --delete-only
+   node --env-file=.env scripts/google/relayer_pdfs.mjs $W/relayer_aligned --aligned=$A --delete-only
