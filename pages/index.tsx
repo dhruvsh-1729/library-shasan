@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
 import { LightTableIcon } from "@/components/LightTableIcon";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
-import { SearchExportDialog, type ExportFormat } from "@/components/SearchExportDialog";
+import { EXPORT_ENDPOINTS, SearchExportDialog, type ExportFormat } from "@/components/SearchExportDialog";
 import { downloadBlob, fileSafe, filenameFromResponse } from "@/lib/download-file";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
 import {
@@ -818,7 +818,7 @@ export default function SearchPage() {
     const preview = downloadPreview.preview;
     setDownloadPreview((prev) => (prev ? { ...prev, downloading: true, error: null, notice: null } : prev));
     try {
-      const res = await fetch(format === "pdf" ? "/api/search-match-pdf" : "/api/search-match-csv", {
+      const res = await fetch(EXPORT_ENDPOINTS[format], {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -838,7 +838,7 @@ export default function SearchPage() {
       });
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(json.error || `${format === "pdf" ? "PDF" : "CSV"} export failed (${res.status})`);
+        throw new Error(json.error || `${{ pdf: "PDF", csv: "CSV", wordlist: "Word list", linelist: "Line list" }[format]} export failed (${res.status})`);
       }
       if (delivery === "email") {
         const json = (await res.json()) as { email?: string; row_count?: number };
@@ -848,7 +848,7 @@ export default function SearchPage() {
             ? {
                 ...prev,
                 downloading: false,
-                notice: `Sent to ${json.email || email}${typeof json.row_count === "number" ? ` with ${plural(json.row_count, "CSV row")}` : ""}.`,
+                notice: `Sent to ${json.email || email}${typeof json.row_count === "number" ? ` with ${plural(json.row_count, format === "wordlist" ? "word" : format === "linelist" ? "line" : "CSV row")}` : ""}.`,
               }
             : prev
         );
@@ -856,7 +856,13 @@ export default function SearchPage() {
       }
       const blob = await res.blob();
       const base = `${fileSafe(downloadPreview.title)}_${fileSafe(downloadPreview.queries.join("_"))}`;
-      downloadBlob(blob, filenameFromResponse(res, format === "pdf" ? `${base}_matched_pages.pdf` : `${base}_page_lines.csv`));
+      const fallbackName = {
+        pdf: `${base}_matched_pages.pdf`,
+        csv: `${base}_page_lines.csv`,
+        wordlist: `${base}_word_list.pdf`,
+        linelist: `${base}_line_list.pdf`,
+      }[format];
+      downloadBlob(blob, filenameFromResponse(res, fallbackName));
       setDeliveryFormat(null);
       setDownloadPreview(null);
     } catch (e) {
@@ -1465,6 +1471,22 @@ export default function SearchPage() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => setDeliveryFormat("wordlist")}
+                          disabled={downloadPreview.downloading || selectedCount === 0}
+                          title="PDF table of every matched word with the granth's printed page number"
+                        >
+                          <LightTableIcon name="text" size={16} /> Word list PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeliveryFormat("linelist")}
+                          disabled={downloadPreview.downloading || selectedCount === 0}
+                          title="PDF table of every matched line: granth page, line number, the line and the word"
+                        >
+                          <LightTableIcon name="table" size={16} /> Line list PDF
+                        </button>
+                        <button
+                          type="button"
                           className="isPrimary"
                           onClick={() => setDeliveryFormat("pdf")}
                           disabled={downloadPreview.downloading || selectedCount === 0 || tooManyPages}
@@ -1474,11 +1496,23 @@ export default function SearchPage() {
                       </footer>
                       <DownloadDeliveryDialog
                         open={deliveryFormat !== null}
-                        title={deliveryFormat === "csv" ? "Deliver the CSV" : "Deliver the PDF"}
+                        title={
+                          deliveryFormat === "csv"
+                            ? "Deliver the CSV"
+                            : deliveryFormat === "wordlist"
+                              ? "Deliver the word list"
+                              : deliveryFormat === "linelist"
+                                ? "Deliver the line list"
+                                : "Deliver the PDF"
+                        }
                         fileLabel={
                           deliveryFormat === "csv"
                             ? `${plural(selectedCount, "matched page")}, one row per matched line`
-                            : `${plural(finalPageCount, "PDF page")}, cover first`
+                            : deliveryFormat === "wordlist"
+                              ? `${plural(selectedCount, "matched page")}, one row per matched word with its granth page`
+                              : deliveryFormat === "linelist"
+                                ? `${plural(selectedCount, "matched page")}, one row per matched line with its granth page`
+                                : `${plural(finalPageCount, "PDF page")}, cover first`
                         }
                         busy={downloadPreview.downloading}
                         error={downloadPreview.error}

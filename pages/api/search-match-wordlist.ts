@@ -1,20 +1,23 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { createReadStream } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setNoStore } from "@/lib/api-cache";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
 import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
-import { CsvFileWriter, granthPageLabel } from "@/lib/search-csv";
 import {
   MAX_CSV_GRANTHS,
   MAX_CSV_ROWS,
   SearchMatchError,
   loadSearchMatchLines,
+  loadSearchMatchOccurrences,
   resolveSearchPdfSources,
   validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
+import { type LineListSection, type WordListSection, buildLineListPdf, buildWordListPdf } from "@/lib/word-list-pdf";
+
+/** The line list keeps whole lines (the CSV cuts them at 400 characters). */
+const LINE_LIST_MAX_LINE_CHARS = 2000;
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 
@@ -31,7 +34,7 @@ type GranthSelection = {
   pages: number[] | null;
 };
 
-type CsvBody = {
+type WordListBody = {
   customId?: string | null;
   sourceRelPath?: string | null;
   granthName?: string | null;
@@ -45,7 +48,7 @@ type CsvBody = {
   granths?: unknown;
 };
 
-function safeFileName(value: string, fallback = "search_matches") {
+function safeFileName(value: string, fallback = "word_list") {
   const cleaned = String(value || "")
     .replace(/\.(pdf|csv|xlsx)$/i, "")
     .replace(/[^a-z0-9._\-\u0900-\u097f\u0a80-\u0aff]+/gi, "_")
@@ -55,7 +58,7 @@ function safeFileName(value: string, fallback = "search_matches") {
 }
 
 function contentDisposition(filename: string) {
-  const ascii = filename.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_") || "download.csv";
+  const ascii = filename.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_") || "download.pdf";
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
@@ -84,8 +87,7 @@ function parseGranthSelections(value: unknown): GranthSelection[] {
     if (!entry || typeof entry !== "object") continue;
     const candidate = entry as Record<string, unknown>;
     const sourceRelPath = String(candidate.sourceRelPath || "").trim();
-    if (!sourceRelPath) continue;
-    if (seen.has(sourceRelPath)) continue;
+    if (!sourceRelPath || seen.has(sourceRelPath)) continue;
     seen.add(sourceRelPath);
     selections.push({
       customId: String(candidate.customId || "").trim(),
@@ -98,18 +100,9 @@ function parseGranthSelections(value: unknown): GranthSelection[] {
   return selections;
 }
 
-function streamFile(res: NextApiResponse, filePath: string, filename: string, cleanupDir: string) {
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", contentDisposition(filename));
-  res.setHeader("Cache-Control", "no-store");
-
-  const cleanup = () => {
-    void rm(cleanupDir, { recursive: true, force: true });
-  };
-
-  res.on("finish", cleanup);
-  res.on("close", cleanup);
-  createReadStream(filePath).pipe(res);
+/** The word shown in the PDF heading: the first query written in an Indian script, else the query itself. */
+function headingWord(queries: string[]) {
+  return queries.find((query) => /[\u0900-\u097F\u0A80-\u0AFF]/.test(query)) ?? queries[0];
 }
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -121,7 +114,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   let workDir: string | null = null;
 
   try {
-    const body = (req.body || {}) as CsvBody;
+    // ?layout=lines: one row per matched line (granth page, line number, the
+    // line with the words marked, the words); otherwise one row per word.
+    const lineLayout = String(req.query.layout || "") === "lines";
+    const body = (req.body || {}) as WordListBody;
     const delivery = body.delivery === "email" ? "email" : "download";
     const matchMode = parseOCRSearchMode(body.matchMode);
     const scripts = parseOCRSearchScripts(body.scripts);
@@ -142,85 +138,103 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (selections.length > MAX_CSV_GRANTHS) {
       throw new SearchMatchError(
         413,
-        `Select up to ${MAX_CSV_GRANTHS} granths for one CSV export. ${selections.length} were selected.`
+        `Select up to ${MAX_CSV_GRANTHS} granths for one word list. ${selections.length} were selected.`
       );
     }
 
-    // A CSV only needs OCR page and line data, so granths without an uploaded
-    // PDF are still exported; the PDF lookup only supplies nicer file names.
+    // Like the CSV, the word list needs only OCR page data, so granths without
+    // an uploaded PDF are included; the PDF lookup only supplies names.
     const sources = await resolveSearchPdfSources(
       selections.map((selection) => ({ customId: selection.customId, sourceRelPath: selection.sourceRelPath }))
     );
-    const resolvedRelPaths = selections.map((selection, index) => {
+    const entries = selections.map((selection, index) => {
       const source = sources[index];
       const relPath = selection.sourceRelPath || (source.ok ? source.source.sourceRelPath : "");
       return {
         relPath,
         granthName: selection.granthName || (source.ok ? source.source.pdfName : selection.customId) || relPath,
-        pdfName: source.ok ? source.source.pdfName : "",
         pages: selection.pages,
       };
     });
 
-    if (resolvedRelPaths.every((entry) => !entry.relPath)) {
+    if (entries.every((entry) => !entry.relPath)) {
       throw new SearchMatchError(404, "These results are not linked to searchable granth page metadata.");
     }
 
-    workDir = await mkdtemp(path.join(tmpdir(), "ndms-search-csv-"));
-    const csvPath = path.join(workDir, "search-matches.csv");
-    const writer = new CsvFileWriter(csvPath);
+    const sections: WordListSection[] = [];
+    const lineSections: LineListSection[] = [];
+    let rowCount = 0;
     let truncated = false;
-    let granthsWithRows = 0;
 
-    for (const entry of resolvedRelPaths) {
+    for (const entry of entries) {
       if (!entry.relPath) continue;
-      if (writer.rowCount >= MAX_CSV_ROWS) {
+      if (rowCount >= MAX_CSV_ROWS) {
         truncated = true;
         break;
       }
-
-      const { lines, truncated: granthTruncated } = await loadSearchMatchLines(entry.relPath, queries, matchMode, {
+      if (lineLayout) {
+        const { lines, truncated: granthTruncated } = await loadSearchMatchLines(entry.relPath, queries, matchMode, {
+          pages: entry.pages,
+          maxRows: MAX_CSV_ROWS - rowCount,
+          scripts,
+          maxLineChars: LINE_LIST_MAX_LINE_CHARS,
+        });
+        if (granthTruncated) truncated = true;
+        if (lines.length === 0) continue;
+        rowCount += lines.length;
+        lineSections.push({
+          granthName: entry.granthName,
+          rows: lines.map((line) => ({
+            printedPage: line.printed_page,
+            pdfPage: line.page_number,
+            lineNumber: line.line_number,
+            lineText: line.line_text,
+            words: line.matched_words,
+          })),
+        });
+        continue;
+      }
+      const { occurrences, truncated: granthTruncated } = await loadSearchMatchOccurrences(entry.relPath, queries, matchMode, {
         pages: entry.pages,
-        maxRows: MAX_CSV_ROWS - writer.rowCount,
+        maxRows: MAX_CSV_ROWS - rowCount,
         scripts,
       });
       if (granthTruncated) truncated = true;
-      if (lines.length > 0) granthsWithRows += 1;
-
-      for (const line of lines) {
-        await writer.writeRow([
-          entry.granthName,
-          entry.pdfName,
-          granthPageLabel(line.printed_page, line.page_number),
-          line.line_number,
-          line.occurrence_count,
-          line.matched_words.join(" | "),
-          line.line_text,
-          line.page_number,
-        ]);
-      }
+      if (occurrences.length === 0) continue;
+      rowCount += occurrences.length;
+      sections.push({
+        granthName: entry.granthName,
+        rows: occurrences.map((occurrence) => ({
+          word: occurrence.word,
+          printedPage: occurrence.printed_page,
+          pdfPage: occurrence.page_number,
+        })),
+      });
     }
 
-    const rowCount = await writer.close();
     if (rowCount === 0) {
-      throw new SearchMatchError(404, "No matching page lines were found for this search.");
+      throw new SearchMatchError(404, "No matching words were found for this search.");
     }
 
-    const queryLabel = safeFileName(queries.join("_"), "search");
-    const scopeLabel =
-      resolvedRelPaths.length === 1
-        ? safeFileName(resolvedRelPaths[0].granthName, "granth")
-        : `${granthsWithRows || resolvedRelPaths.length}_granths`;
-    const filename = `granth_search_${queryLabel}_${scopeLabel}_page_lines.csv`;
+    const word = headingWord(queries);
+    const bytes = lineLayout ? await buildLineListPdf({ word, sections: lineSections }) : await buildWordListPdf({ word, sections });
+
+    const named = lineLayout ? lineSections : sections;
+    const queryLabel = safeFileName(word, "search");
+    const scopeLabel = named.length === 1 ? safeFileName(named[0].granthName, "granth") : `${named.length}_granths`;
+    const filename = `granth_search_${queryLabel}_${scopeLabel}_${lineLayout ? "line" : "word"}_list.pdf`;
 
     if (delivery === "email") {
+      workDir = await mkdtemp(path.join(tmpdir(), "ndms-word-list-"));
+      const pdfPath = path.join(workDir, "word-list.pdf");
+      await writeFile(pdfPath, bytes);
       const recipientClientKey = getDownloadRecipientClientKey(req, res);
       const sent = await sendDownloadEmail({
         to: String(body.email || ""),
-        filePath: csvPath,
+        filePath: pdfPath,
         filename,
-        contentType: "text/csv",
-        title: `${queries.join(", ")} page and line list`,
+        contentType: "application/pdf",
+        title: `${word} ${lineLayout ? "line" : "word"} list`,
         recipientClientKey,
       });
       await rm(workDir, { recursive: true, force: true });
@@ -231,18 +245,18 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         size_bytes: sent.sizeBytes,
         file_name: filename,
         row_count: rowCount,
-        granth_count: granthsWithRows,
+        granth_count: named.length,
         truncated,
       });
     }
 
-    res.setHeader("X-Library-Csv-Rows", String(rowCount));
-    res.setHeader("X-Library-Csv-Granths", String(granthsWithRows));
-    if (truncated) res.setHeader("X-Library-Csv-Truncated", "1");
-    const cleanupDir = workDir;
-    workDir = null;
-    streamFile(res, csvPath, filename, cleanupDir);
-    return undefined;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", contentDisposition(filename));
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Library-Wordlist-Rows", String(rowCount));
+    res.setHeader("X-Library-Wordlist-Granths", String(named.length));
+    if (truncated) res.setHeader("X-Library-Wordlist-Truncated", "1");
+    return res.status(200).send(Buffer.from(bytes));
   } catch (error) {
     if (workDir) await rm(workDir, { recursive: true, force: true });
     setNoStore(res);

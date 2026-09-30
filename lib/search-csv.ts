@@ -7,12 +7,18 @@ const UTF8_BOM = "\uFEFF";
 export const SEARCH_CSV_HEADERS = [
   "Granth name",
   "PDF file",
-  "PDF page number",
+  "Granth page number",
   "Line number on page",
   "Matches on line",
   "Matched words",
   "Line text",
+  "PDF page number",
 ];
+
+/** The page as printed in the granth; "PDF 123" where the printed number is unknown. */
+export function granthPageLabel(printedPage: string | null | undefined, pdfPage: number) {
+  return printedPage ? printedPage : `PDF ${pdfPage}`;
+}
 
 export function csvCell(value: unknown) {
   const text = value == null ? "" : String(value);

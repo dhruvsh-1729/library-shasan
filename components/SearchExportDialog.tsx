@@ -4,7 +4,19 @@ import { downloadBlob, filenameFromResponse } from "@/lib/download-file";
 import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
 import { MAX_CONTEXT_PAGE_RADIUS, normalizeContextPageRadius } from "@/lib/page-context";
 
-export type ExportFormat = "pdf" | "csv";
+/**
+ * pdf: matched pages; csv: page and line list; wordlist: PDF table of each word
+ * and its granth page; linelist: PDF table of each matched line (granth page,
+ * line number, the line with the words marked, the words).
+ */
+export type ExportFormat = "pdf" | "csv" | "wordlist" | "linelist";
+
+export const EXPORT_ENDPOINTS: Record<ExportFormat, string> = {
+  pdf: "/api/search-match-pdf",
+  csv: "/api/search-match-csv",
+  wordlist: "/api/search-match-wordlist",
+  linelist: "/api/search-match-wordlist?layout=lines",
+};
 
 type ExportGranth = {
   granth_key: string;
@@ -180,7 +192,7 @@ export function SearchExportDialog({
     : selectedGranths.length === 0
       ? "Select at least one granth."
       : selectedGranths.length > maxCsvGranths
-        ? `Select up to ${maxCsvGranths} granths for one CSV.`
+        ? `Select up to ${maxCsvGranths} granths for one CSV or word list.`
         : null;
   const pdfPagesOverLimit = !tooManyPdfPages && pdfEstimate.max > maxDownloadPages;
 
@@ -238,7 +250,7 @@ export function SearchExportDialog({
     setNotice(null);
 
     try {
-      const endpoint = format === "pdf" ? "/api/search-match-pdf" : "/api/search-match-csv";
+      const endpoint = EXPORT_ENDPOINTS[format];
       const granths =
         format === "pdf"
           ? pdfGranths.map((granth) => ({
@@ -276,26 +288,36 @@ export function SearchExportDialog({
         setDeliveryFormat(null);
         setNotice(
           `Email sent to ${json.email || email}${
-            typeof json.row_count === "number" ? ` with ${json.row_count} CSV row(s)` : ""
+            typeof json.row_count === "number"
+              ? ` with ${json.row_count} ${format === "wordlist" ? "word" : format === "linelist" ? "line" : "CSV row"}(s)`
+              : ""
           }.`
         );
         return;
       }
 
       const blob = await res.blob();
-      const rowCount = res.headers.get("X-Library-Csv-Rows");
-      const csvTruncated = res.headers.get("X-Library-Csv-Truncated") === "1";
-      downloadBlob(
-        blob,
-        filenameFromResponse(res, format === "pdf" ? "granth_search_matched_pages.pdf" : "granth_search_page_lines.csv")
-      );
+      const listPdf = format === "wordlist" || format === "linelist";
+      const rowCount = res.headers.get(listPdf ? "X-Library-Wordlist-Rows" : "X-Library-Csv-Rows");
+      const rowsTruncated =
+        res.headers.get(listPdf ? "X-Library-Wordlist-Truncated" : "X-Library-Csv-Truncated") === "1";
+      const fallbackName = {
+        pdf: "granth_search_matched_pages.pdf",
+        csv: "granth_search_page_lines.csv",
+        wordlist: "granth_search_word_list.pdf",
+        linelist: "granth_search_line_list.pdf",
+      }[format];
+      downloadBlob(blob, filenameFromResponse(res, fallbackName));
       setDeliveryFormat(null);
+      const cutOff = rowsTruncated ? `, cut off at the ${preview.max_csv_rows} row limit` : "";
       setNotice(
         format === "pdf"
           ? "Combined PDF downloaded."
-          : `CSV downloaded${rowCount ? ` with ${rowCount} row(s)` : ""}${
-              csvTruncated ? `, cut off at the ${preview.max_csv_rows} row limit` : ""
-            }.`
+          : format === "wordlist"
+            ? `Word list downloaded${rowCount ? ` with ${rowCount} word(s)` : ""}${cutOff}.`
+            : format === "linelist"
+              ? `Line list downloaded${rowCount ? ` with ${rowCount} line(s)` : ""}${cutOff}.`
+              : `CSV downloaded${rowCount ? ` with ${rowCount} row(s)` : ""}${cutOff}.`
       );
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : String(exportError));
@@ -345,7 +367,7 @@ export function SearchExportDialog({
               selected. Combined PDF: about {pdfEstimate.max > pdfEstimate.min ? `${pdfEstimate.min}–${pdfEstimate.max}` : pdfEstimate.min} pages
               (up to {maxDownloadPages} pages from {maxCombinedGranths} books).
               {preview.total_granths > preview.exportable_granths ? (
-                <span> {preview.total_granths - preview.exportable_granths} books have no PDF, so they go only into the CSV.</span>
+                <span> {preview.total_granths - preview.exportable_granths} books have no PDF, so they go only into the CSV, word list and line list.</span>
               ) : null}
               {preview.truncated ? (
                 <span> Only the first {preview.max_export_granth_preview} books are listed; narrow the search.</span>
@@ -418,7 +440,7 @@ export function SearchExportDialog({
                     <span className="searchExportGranthMeta">
                       {granth.matched_pages} page(s)
                       {granth.exportable ? null : (
-                        <em title={granth.unavailable_reason || "No uploaded PDF"}>CSV only</em>
+                        <em title={granth.unavailable_reason || "No uploaded PDF"}>CSV / word list only</em>
                       )}
                     </span>
                   </label>
@@ -449,6 +471,36 @@ export function SearchExportDialog({
               </button>
               <button
                 type="button"
+                onClick={() => setDeliveryFormat("wordlist")}
+                title={csvBlockedReason || "PDF table of every matched word with its granth page number"}
+                disabled={busyFormat !== null || csvBlockedReason !== null}
+              >
+                {busyFormat === "wordlist" ? (
+                  <span className="buttonSpinnerLabel">
+                    <span className="loadingSpinner" aria-hidden="true" />
+                    Building word list
+                  </span>
+                ) : (
+                  "Export word list (PDF)"
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeliveryFormat("linelist")}
+                title={csvBlockedReason || "PDF table of every matched line: granth page, line number, the line and the word"}
+                disabled={busyFormat !== null || csvBlockedReason !== null}
+              >
+                {busyFormat === "linelist" ? (
+                  <span className="buttonSpinnerLabel">
+                    <span className="loadingSpinner" aria-hidden="true" />
+                    Building line list
+                  </span>
+                ) : (
+                  "Export line list (PDF)"
+                )}
+              </button>
+              <button
+                type="button"
                 onClick={() => setDeliveryFormat("pdf")}
                 title={pdfBlockedReason || "Download one PDF with matched pages from every selected granth"}
                 disabled={busyFormat !== null || pdfBlockedReason !== null}
@@ -470,9 +522,17 @@ export function SearchExportDialog({
 
             <DownloadDeliveryDialog
               open={deliveryFormat !== null}
-              title={deliveryFormat === "csv" ? "Choose CSV delivery" : "Choose PDF delivery"}
-              fileLabel={
+              title={
                 deliveryFormat === "csv"
+                  ? "Choose CSV delivery"
+                  : deliveryFormat === "wordlist"
+                    ? "Choose word list delivery"
+                    : deliveryFormat === "linelist"
+                      ? "Choose line list delivery"
+                      : "Choose PDF delivery"
+              }
+              fileLabel={
+                deliveryFormat === "csv" || deliveryFormat === "wordlist" || deliveryFormat === "linelist"
                   ? `${selectedGranths.length} granth(s), ${selectedMatchedPages} matching page(s)`
                   : `${pdfGranths.length} granth(s), about ${pdfEstimate.min}${
                       pdfEstimate.max > pdfEstimate.min ? `-${pdfEstimate.max}` : ""

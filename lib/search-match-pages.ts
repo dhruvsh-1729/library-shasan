@@ -45,6 +45,8 @@ export type SearchMatchGranthSummary = {
 
 export type SearchMatchLine = {
   page_number: number;
+  /** The number printed on the page ("91", "73-74"), or null when unknown or unverified. */
+  printed_page: string | null;
   line_number: number;
   occurrence_count: number;
   matched_words: string[];
@@ -283,10 +285,10 @@ function normalizeLineBreaks(value: string) {
   return String(value ?? "").replace(/\r\n?/g, "\n");
 }
 
-function collapseLineText(value: string) {
+function collapseLineText(value: string, maxChars = MAX_CSV_LINE_TEXT_CHARS) {
   const cleaned = String(value ?? "").replace(/\s+/g, " ").trim();
-  if (cleaned.length <= MAX_CSV_LINE_TEXT_CHARS) return cleaned;
-  return `${cleaned.slice(0, MAX_CSV_LINE_TEXT_CHARS - 1).trimEnd()}…`;
+  if (cleaned.length <= maxChars) return cleaned;
+  return `${cleaned.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
 /**
@@ -297,8 +299,9 @@ export function findMatchLinesInPageContent(
   content: string,
   queries: string[],
   matchMode: OCRSearchMode,
-  scripts: OCRSearchScripts = null
-): Array<Omit<SearchMatchLine, "page_number">> {
+  scripts: OCRSearchScripts = null,
+  maxLineChars = MAX_CSV_LINE_TEXT_CHARS
+): Array<Omit<SearchMatchLine, "page_number" | "printed_page">> {
   const normalized = normalizeLineBreaks(content);
   const matches = findOCRSearchMatchesForQueries(normalized, queries, matchMode, scripts);
   if (matches.length === 0) return [];
@@ -318,7 +321,8 @@ export function findMatchLinesInPageContent(
     while (lineIndex + 1 < lineStarts.length && lineStarts[lineIndex + 1] <= match.start) lineIndex += 1;
     const entry = byLine.get(lineIndex) ?? { occurrences: 0, words: new Set<string>() };
     entry.occurrences += 1;
-    const matchedText = normalized.slice(match.start, match.end).replace(/\s+/g, " ").trim();
+    // the whole word the match sits in, as printed (हिंसायां, not just हिंसा)
+    const matchedText = wholeWordAt(normalized, match.start, match.end).replace(/\s+/g, " ").trim();
     if (matchedText) entry.words.add(matchedText);
     byLine.set(lineIndex, entry);
   }
@@ -329,7 +333,7 @@ export function findMatchLinesInPageContent(
       line_number: index + 1,
       occurrence_count: entry.occurrences,
       matched_words: [...entry.words],
-      line_text: collapseLineText(lines[index] ?? ""),
+      line_text: collapseLineText(lines[index] ?? "", maxLineChars),
     }));
 }
 
@@ -439,6 +443,8 @@ export async function loadSearchMatchLines(
     maxRows?: number;
     queryVariants?: string | string[] | null;
     scripts?: OCRSearchScripts;
+    /** Longest line text kept (the CSV keeps 400 characters). */
+    maxLineChars?: number;
   } = {}
 ) {
   const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
@@ -455,9 +461,14 @@ export async function loadSearchMatchLines(
             )
           SELECT
             p.page_number,
-            p.content
+            p.content,
+            pp.printed_page
           FROM unique_hits
           JOIN ocr_pages p ON p.id = unique_hits.page_id
+          LEFT JOIN ocr_printed_pages pp
+            ON pp.granth_key = p.granth_key AND pp.page_number = p.page_number
+            -- a page whose text and image readings disagree shows its PDF page instead
+            AND (pp.verified IS NULL OR pp.verified <> 'conflict')
           ORDER BY p.page_number ASC
           LIMIT ?`,
     args: [...hits.args, MAX_MATCH_PAGE_PREVIEW + 1],
@@ -472,21 +483,129 @@ export async function loadSearchMatchLines(
     if (pageNumber <= 0) continue;
     if (pageFilter && !pageFilter.has(pageNumber)) continue;
 
-    const pageLines = findMatchLinesInPageContent(String(row.content ?? ""), queries, matchMode, options.scripts ?? null);
+    const pageLines = findMatchLinesInPageContent(
+      String(row.content ?? ""),
+      queries,
+      matchMode,
+      options.scripts ?? null,
+      options.maxLineChars
+    );
     if (pageLines.length === 0) continue;
     matchedPages.add(pageNumber);
+    const printedPage = String(row.printed_page ?? "").trim() || null;
 
     for (const line of pageLines) {
       if (lines.length >= maxRows) {
         truncated = true;
         break;
       }
-      lines.push({ page_number: pageNumber, ...line });
+      lines.push({ page_number: pageNumber, printed_page: printedPage, ...line });
     }
     if (truncated) break;
   }
 
   return { lines, matched_pages: [...matchedPages].sort((a, b) => a - b), truncated, queries };
+}
+
+export type SearchMatchOccurrence = {
+  page_number: number;
+  /** The number printed on the page ("91", "73-74" for a two-page scan), or null when unknown. */
+  printed_page: string | null;
+  /** The whole word the match sits in, as printed (a compound stays whole). */
+  word: string;
+};
+
+const WORD_CHAR = /[\p{L}\p{M}‌‍]/u;
+// A word printed across a line break: "हिंसाद्यष्ट-\nदशपापस्थान".
+const BREAK_AFTER = /^-[ \t]*\n[ \t]*/;
+const BREAK_BEFORE = /-[ \t]*\n[ \t]*$/;
+
+/** Widens a match to the whole word around it, joining a word hyphenated across lines. */
+function wholeWordAt(text: string, start: number, end: number) {
+  const pieces: Array<[number, number]> = [[start, end]];
+  for (;;) {
+    const first = pieces[0];
+    while (first[0] > 0 && WORD_CHAR.test(text[first[0] - 1])) first[0] -= 1;
+    const brk = text.slice(Math.max(0, first[0] - 8), first[0]).match(BREAK_BEFORE);
+    const prevEnd = brk ? first[0] - brk[0].length : 0;
+    if (!brk || prevEnd <= 0 || !WORD_CHAR.test(text[prevEnd - 1])) break;
+    pieces.unshift([prevEnd, prevEnd]);
+  }
+  for (;;) {
+    const last = pieces[pieces.length - 1];
+    while (last[1] < text.length && WORD_CHAR.test(text[last[1]])) last[1] += 1;
+    const brk = text.slice(last[1], last[1] + 8).match(BREAK_AFTER);
+    const nextStart = brk ? last[1] + brk[0].length : 0;
+    if (!brk || !WORD_CHAR.test(text[nextStart] ?? "")) break;
+    pieces.push([nextStart, nextStart]);
+  }
+  return pieces.map(([a, b]) => text.slice(a, b)).join("");
+}
+
+/**
+ * One row per match, in page order, with the granth's printed page number
+ * (ocr_printed_pages, from scripts/backfill_printed_pages.mjs) for the word-list PDF.
+ */
+export async function loadSearchMatchOccurrences(
+  sourceRelPath: string,
+  query: string | string[],
+  matchMode: OCRSearchMode,
+  options: {
+    pages?: number[] | null;
+    maxRows?: number;
+    queryVariants?: string | string[] | null;
+    scripts?: OCRSearchScripts;
+  } = {}
+) {
+  const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
+  const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
+  const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
+  const hits = await buildHitQuery(queries, matchMode, [sourceRelPath]);
+
+  const result = await getTursoClient().execute({
+    sql: `WITH hits AS (${hits.sql}),
+            unique_hits AS (
+              SELECT page_id
+              FROM hits
+              GROUP BY page_id
+            )
+          SELECT
+            p.page_number,
+            p.content,
+            pp.printed_page
+          FROM unique_hits
+          JOIN ocr_pages p ON p.id = unique_hits.page_id
+          LEFT JOIN ocr_printed_pages pp
+            ON pp.granth_key = p.granth_key AND pp.page_number = p.page_number
+            -- a page whose text and image readings disagree shows its PDF page instead
+            AND (pp.verified IS NULL OR pp.verified <> 'conflict')
+          ORDER BY p.page_number ASC
+          LIMIT ?`,
+    args: [...hits.args, MAX_MATCH_PAGE_PREVIEW + 1],
+  });
+
+  const occurrences: SearchMatchOccurrence[] = [];
+  let truncated = result.rows.length > MAX_MATCH_PAGE_PREVIEW;
+
+  for (const row of result.rows.slice(0, MAX_MATCH_PAGE_PREVIEW)) {
+    const pageNumber = toInt(row.page_number);
+    if (pageNumber <= 0) continue;
+    if (pageFilter && !pageFilter.has(pageNumber)) continue;
+
+    const content = normalizeLineBreaks(String(row.content ?? ""));
+    const printed = String(row.printed_page ?? "").trim() || null;
+    for (const match of findOCRSearchMatchesForQueries(content, queries, matchMode, options.scripts ?? null)) {
+      if (occurrences.length >= maxRows) {
+        truncated = true;
+        break;
+      }
+      const word = wholeWordAt(content, match.start, match.end).trim();
+      if (word) occurrences.push({ page_number: pageNumber, printed_page: printed, word });
+    }
+    if (truncated) break;
+  }
+
+  return { occurrences, truncated, queries };
 }
 
 export async function loadSearchMatchPages(
