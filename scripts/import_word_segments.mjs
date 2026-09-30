@@ -16,6 +16,20 @@ const only = process.argv.find((a) => a.startsWith("--only="))?.split("=")[1];
 const parallel = Number(process.argv.find((a) => a.startsWith("--parallel="))?.split("=")[1] ?? 8);
 const redo = process.argv.includes("--redo");
 const db = createClient({ url: process.env.TURSO_URL, authToken: process.env.TURSO_AUTH_TOKEN });
+// Turso drops a connection now and then under load; every write here is an
+// upsert or a plain update, so a retry is safe.
+async function retry(fn, tries = 5) {
+  for (let a = 1; ; a += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      const msg = String(error?.message ?? error) + String(error?.cause ?? "");
+      if (a >= tries || !/ECONNRESET|EPIPE|ECONNREFUSED|socket hang up|ETIMEDOUT|fetch failed|EAI_AGAIN|502|503|504/i.test(msg)) throw error;
+      await new Promise((r) => setTimeout(r, 1000 * a));
+    }
+  }
+}
+
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 // granth key -> local original PDF
@@ -55,7 +69,7 @@ function segment(pdf, pages) {
 }
 
 const locals = localOriginals();
-const keys = (await db.execute(`SELECT granth_key, COUNT(*) n, SUM(words IS NULL) todo FROM ocr_line_boxes GROUP BY granth_key`)).rows
+const keys = (await retry(() => db.execute(`SELECT granth_key, COUNT(*) n, SUM(words IS NULL) todo FROM ocr_line_boxes GROUP BY granth_key`))).rows
   .map((r) => ({ key: String(r.granth_key), todo: Number(r.todo) }))
   .filter((r) => (!only || r.key === only) && (redo || r.todo > 0));
 log(`books ${keys.length}, with a local original ${keys.filter((k) => locals.has(k.key)).length}`);
@@ -68,14 +82,14 @@ async function worker() {
     const pdf = locals.get(key);
     if (!pdf) { log(key, "no local original"); continue; }
     try {
-      const rows = (await db.execute({ sql: `SELECT page_number, boxes FROM ocr_line_boxes WHERE granth_key = ?${redo ? "" : " AND words IS NULL"}`, args: [key] })).rows;
+      const rows = (await retry(() => db.execute({ sql: `SELECT page_number, boxes FROM ocr_line_boxes WHERE granth_key = ?${redo ? "" : " AND words IS NULL"}`, args: [key] }))).rows;
       const pages = Object.fromEntries(rows.map((r) => [String(r.page_number), JSON.parse(String(r.boxes))]));
       const result = await segment(pdf, pages);
       const statements = Object.entries(result).map(([page, words]) => ({
         sql: "UPDATE ocr_line_boxes SET words = ? WHERE granth_key = ? AND page_number = ?",
         args: [JSON.stringify(words), key, Number(page)],
       }));
-      for (let i = 0; i < statements.length; i += 200) await db.batch(statements.slice(i, i + 200), "write");
+      for (let i = 0; i < statements.length; i += 200) await retry(() => db.batch(statements.slice(i, i + 200), "write"));
       done += 1;
       log(`${key} ${statements.length} pages (${done}/${keys.length})`);
     } catch (error) {

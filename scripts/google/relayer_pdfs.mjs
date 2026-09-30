@@ -11,7 +11,13 @@
 // hold the PDF link are repointed, the new file is checked live, and only then
 // is the old file deleted. Every step is checkpointed per book.
 //
-//   node --env-file=.env scripts/google/relayer_pdfs.mjs <workDir> [--only=key] [--shard=k/n] [--no-delete]
+// With --aligned=<books.json>,<custom ids.json>,<ocr out dir>...: books whose
+// Google OCR was not published but whose stored lines were aligned to it
+// (scripts/align_line_boxes.mjs). Their pages carry the stored text on the
+// aligned boxes; a page that did not align carries the Google lines instead,
+// so no page loses its text layer.
+//
+//   node --env-file=.env scripts/google/relayer_pdfs.mjs <workDir> [--only=key] [--shard=k/n] [--no-delete] [--aligned=...]
 import { readFile, writeFile, mkdir, unlink, stat } from "node:fs/promises";
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
@@ -30,6 +36,7 @@ const [workDir] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const only = process.argv.find((a) => a.startsWith("--only="))?.split("=")[1];
 const [shardK, shardN] = (process.argv.find((a) => a.startsWith("--shard="))?.split("=")[1] ?? "0/1").split("/").map(Number);
 const noDelete = process.argv.includes("--no-delete");
+const alignedArg = process.argv.find((a) => a.startsWith("--aligned="))?.split("=")[1];
 if (!workDir) throw new Error("usage: relayer_pdfs.mjs <workDir> [--only=key] [--shard=k/n] [--no-delete]");
 
 const turso = createTurso({ url: process.env.TURSO_URL, authToken: process.env.TURSO_AUTH_TOKEN });
@@ -59,6 +66,25 @@ function publishedBooks() {
     }
   }
   return [...latest.values()].sort((a, b) => a.granthKey.localeCompare(b.granthKey));
+}
+
+// Aligned books: local originals from the OCR run's books files, document
+// custom ids from a { granthKey: customId } file, Google lines from the out dirs.
+function alignedBooks() {
+  const [booksFiles, idsFile, ...outDirs] = alignedArg.split(",");
+  const ids = JSON.parse(readFileSync(idsFile, "utf8"));
+  const books = booksFiles.split("+").flatMap((f) => JSON.parse(readFileSync(f, "utf8")));
+  const parts = new Map();
+  for (const dir of outDirs) {
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      const m = f.match(/^(.+)__p\d+\.json$/);
+      if (m) (parts.get(m[1]) ?? parts.set(m[1], []).get(m[1])).push(path.join(dir, f));
+    }
+  }
+  return books
+    .filter((b) => b.local && existsSync(b.local) && ids[b.key] && parts.has(b.key))
+    .map((b) => ({ granthKey: b.key, customId: ids[b.key], local: b.local, rel: b.rel.split("/").pop(), googleParts: parts.get(b.key), aligned: true }));
 }
 
 async function uploadFile(filePath, name) {
@@ -96,6 +122,45 @@ async function sbUpdate(table, values, match) {
   if (error) throw new Error(`${table}: ${error.message}`);
 }
 
+/** The layer of an aligned book: stored lines on aligned boxes, else the Google lines. */
+async function buildAligned(book, outPdf) {
+  const google = new Map();
+  for (const f of book.googleParts) for (const p of JSON.parse(await readFile(f, "utf8")).pages ?? []) google.set(Number(p.page), (p.lines ?? []).filter((l) => l.box && String(l.text ?? "").trim()));
+  const rows = (await turso.execute({
+    sql: `SELECT p.page_number, p.content, b.boxes FROM ocr_pages p LEFT JOIN ocr_line_boxes b ON b.granth_key = p.granth_key AND b.page_number = p.page_number WHERE p.granth_key = ?`,
+    args: [book.granthKey],
+  })).rows;
+  const stored = new Map(rows.map((r) => [Number(r.page_number), String(r.content ?? "")]));
+  const meta = new Map();
+  let fromStored = 0;
+  for (const r of rows) {
+    const page = Number(r.page_number);
+    let blocks = [];
+    if (r.boxes) {
+      const boxes = JSON.parse(String(r.boxes));
+      const lines = String(r.content ?? "").split("\n").filter((l) => l.trim());
+      if (lines.length === boxes.length) {
+        blocks = lines.map((text, i) => ({ text, box: boxes[i] })).filter((b) => b.box[2] > b.box[0]);
+        fromStored += 1;
+      }
+    }
+    if (!blocks.length) blocks = (google.get(page) ?? []).map((l) => ({ text: l.text, box: l.box }));
+    meta.set(page, { image_width: 1, image_height: 1, blocks: blocks.map((b, i) => ({ text: b.text, reading_order: i, coordinates: { x1: b.box[0], y1: b.box[1], x2: b.box[2], y2: b.box[3] } })) });
+  }
+  const tmp = `${outPdf}.stripped.pdf`;
+  await stripTextLayer(book.local, tmp);
+  await addTextLayer({ srcPdf: tmp, metaByPage: meta, outPdf });
+  await unlink(tmp);
+  const n = await pdfPages(outPdf);
+  if (n !== (await pdfPages(book.local))) throw new Error(`page count changed to ${n}`);
+  const probes = [0.2, 0.5, 0.8].map((f) => Math.max(1, Math.round(n * f)));
+  const overlaps = [];
+  for (const k of probes) overlaps.push(tokenOverlap(stored.get(k) ?? "", await pdfPageText(outPdf, k)));
+  // Pages that fell back to the Google lines extract as that OCR, a little different.
+  if (Math.min(...overlaps) < 0.6) throw new Error(`text layer does not extract cleanly (${overlaps.map((x) => x.toFixed(2))})`);
+  return { pages: n, fromStored, overlaps, bytes: (await stat(outPdf)).size };
+}
+
 async function relayer(book) {
   const dir = path.join(workDir, book.granthKey);
   await mkdir(dir, { recursive: true });
@@ -119,6 +184,7 @@ async function relayer(book) {
 
   const outPdf = path.join(dir, path.basename(book.rel));
   const built = await step("build-pdf", async () => {
+    if (book.aligned) return buildAligned(book, outPdf);
     const ocrPages = JSON.parse(await readFile(book.pagesPath, "utf8"));
     const rows = (await turso.execute({ sql: "SELECT page_number, content FROM ocr_pages WHERE granth_key = ?", args: [book.granthKey] })).rows;
     const stored = new Map(rows.map((r) => [Number(r.page_number), String(r.content ?? "")]));
@@ -184,7 +250,12 @@ async function relayer(book) {
 }
 
 await mkdir(workDir, { recursive: true });
-const books = publishedBooks().filter((b, i) => (!only || b.granthKey === only) && i % shardN === shardK);
+// In aligned mode, only books whose boxes came from aligning (a published book
+// already has its layer from the publish step).
+const alignedKeys = alignedArg
+  ? new Set((await turso.execute("SELECT DISTINCT granth_key FROM ocr_line_boxes WHERE source = 'aligned'")).rows.map((r) => String(r.granth_key)))
+  : null;
+const books = (alignedArg ? alignedBooks().filter((b) => alignedKeys.has(b.granthKey)) : publishedBooks()).filter((b, i) => (!only || b.granthKey === only) && i % shardN === shardK);
 log(`books ${books.length}`);
 for (const book of books) {
   try {

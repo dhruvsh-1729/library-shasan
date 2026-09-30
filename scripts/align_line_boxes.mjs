@@ -19,6 +19,20 @@ import { foldSanskrit } from "../lib/sanskrit-fold.mjs";
 const dirs = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const only = process.argv.find((a) => a.startsWith("--only="))?.split("=")[1];
 const db = createClient({ url: process.env.TURSO_URL, authToken: process.env.TURSO_AUTH_TOKEN });
+// Turso drops a connection now and then under load; every write here is an
+// upsert or a plain update, so a retry is safe.
+async function retry(fn, tries = 5) {
+  for (let a = 1; ; a += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      const msg = String(error?.message ?? error) + String(error?.cause ?? "");
+      if (a >= tries || !/ECONNRESET|EPIPE|ECONNREFUSED|socket hang up|ETIMEDOUT|fetch failed|EAI_AGAIN|502|503|504/i.test(msg)) throw error;
+      await new Promise((r) => setTimeout(r, 1000 * a));
+    }
+  }
+}
+
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 const MIN_SIM = 0.35;
@@ -103,15 +117,16 @@ for (const dir of dirs) {
     (partsByBook.get(m[1]) ?? partsByBook.set(m[1], []).get(m[1])).push(path.join(dir, f));
   }
 }
-const have = new Set((await db.execute("SELECT DISTINCT granth_key FROM ocr_line_boxes WHERE source != 'aligned' OR source IS NULL")).rows.map((r) => String(r.granth_key)));
-const books = [...partsByBook.keys()].filter((k) => (!only || k === only) && !have.has(k));
+const have = new Set((await retry(() => db.execute("SELECT DISTINCT granth_key FROM ocr_line_boxes WHERE source != 'aligned' OR source IS NULL"))).rows.map((r) => String(r.granth_key)));
+const aligned = new Set((await retry(() => db.execute("SELECT DISTINCT granth_key FROM ocr_line_boxes WHERE source = 'aligned'"))).rows.map((r) => String(r.granth_key)));
+const books = [...partsByBook.keys()].filter((k) => (!only || k === only) && !have.has(k) && (process.argv.includes("--redo") || !aligned.has(k)));
 log(`books to align ${books.length}`);
 for (const key of books) {
   const google = new Map();
   for (const f of partsByBook.get(key)) {
     for (const p of JSON.parse(readFileSync(f, "utf8")).pages ?? []) google.set(Number(p.page), (p.lines ?? []).filter((l) => l.box && String(l.text ?? "").trim()));
   }
-  const rows = (await db.execute({ sql: "SELECT page_number, content FROM ocr_pages WHERE granth_key = ?", args: [key] })).rows;
+  const rows = (await retry(() => db.execute({ sql: "SELECT page_number, content FROM ocr_pages WHERE granth_key = ?", args: [key] }))).rows;
   if (!rows.length) { log(key, "no pages in Turso"); continue; }
   const statements = [];
   for (const row of rows) {
@@ -127,7 +142,7 @@ for (const key of books) {
       args: [key, page, JSON.stringify(boxes)],
     });
   }
-  for (let k = 0; k < statements.length; k += 200) await db.batch(statements.slice(k, k + 200), "write");
+  for (let k = 0; k < statements.length; k += 200) await retry(() => db.batch(statements.slice(k, k + 200), "write"));
   log(`${key}: ${statements.length} of ${rows.length} pages aligned`);
 }
 log("finished");
