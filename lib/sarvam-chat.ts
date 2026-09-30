@@ -26,19 +26,50 @@ export class SarvamChatError extends Error {
   }
 }
 
-export async function chat(opts: {
+const WINDOW_TOKENS = 32_000;
+/** Scripture on this corpus runs about 2.4 characters per token (see lib/ai-context). */
+const CHARS_PER_TOKEN = 2.4;
+
+/**
+ * The reasoning model thinks before it answers, and a fixed 4,000 tokens was
+ * often all spent thinking, leaving no answer at all. It gets whatever the
+ * window has left after the prompt, up to 16,000.
+ */
+function reasoningBudget(messages: ChatTurn[]) {
+  const promptTokens = Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / CHARS_PER_TOKEN) + 500;
+  return Math.max(4000, Math.min(16_000, WINDOW_TOKENS - promptTokens - 1000));
+}
+
+type ChatOpts = {
   messages: ChatTurn[];
   model?: ChatModelId;
   maxTokens?: number;
   temperature?: number;
-}) {
+};
+
+/**
+ * If the reasoning model still runs out of room before writing anything, the
+ * question is asked again of the direct model, so the reader gets an answer
+ * instead of an error.
+ */
+export async function chat(opts: ChatOpts) {
+  try {
+    return await chatOnce(opts);
+  } catch (e) {
+    if (e instanceof SarvamChatError && e.status === 502 && (opts.model ?? CHAT_MODELS.fast) === CHAT_MODELS.reasoning) {
+      console.warn("sarvam reasoning model gave no answer; retrying with", CHAT_MODELS.fast);
+      return chatOnce({ ...opts, model: CHAT_MODELS.fast, maxTokens: undefined });
+    }
+    throw e;
+  }
+}
+
+async function chatOnce(opts: ChatOpts) {
   const key = process.env.SARVAM_API_KEY;
   if (!key) throw new Error("Missing SARVAM_API_KEY");
 
   const model = opts.model ?? CHAT_MODELS.fast;
-  // The reasoning model needs headroom for its chain of thought before it
-  // writes anything the user will see.
-  const maxTokens = opts.maxTokens ?? (model === CHAT_MODELS.reasoning ? 4000 : 2000);
+  const maxTokens = opts.maxTokens ?? (model === CHAT_MODELS.reasoning ? reasoningBudget(opts.messages) : 2000);
 
   const res = await fetch(ENDPOINT, {
     method: "POST",
@@ -66,7 +97,7 @@ export async function chat(opts: {
   if (!content) {
     throw new SarvamChatError(
       choice?.finish_reason === "length"
-        ? "The model ran out of room before answering. Ask about fewer gathas at a time."
+        ? "The model ran out of room before answering. Please ask again."
         : "The model returned an empty answer.",
       502,
       body

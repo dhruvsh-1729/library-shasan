@@ -19,6 +19,9 @@ import { recentTurns, saveTurn } from "@/lib/ask-chats";
 import { describeGranth, getGranthCatalog } from "@/lib/granth-catalog";
 import type { SessionUser } from "@/lib/auth-users";
 
+// Think-harder answers read in several parts can take minutes.
+export const config = { maxDuration: 300 };
+
 type Body = {
   scope?: Record<string, unknown>;
   question?: string;
