@@ -284,7 +284,7 @@ export default function HomePage() {
                       </span>
                     ) : null}
                   </div>
-                  {row.native_title && row.native_title !== title ? (
+                  {row.native_title && !title.startsWith(row.native_title) ? (
                     <div className="libraryCardNative">{row.native_title}</div>
                   ) : null}
                   <div className="libraryCardActions">

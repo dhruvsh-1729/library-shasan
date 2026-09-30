@@ -897,7 +897,7 @@ export default function SearchPage() {
         <header className="ltCardHead">
           <div>
             <h3>{granthTitle(result)}</h3>
-            {option?.native_title ? <p className="ltCardNative">{option.native_title}</p> : null}
+            {option?.native_title && !granthTitle(result).startsWith(option.native_title) ? <p className="ltCardNative">{option.native_title}</p> : null}
             {/* Different editions can share a name; the number (or volume) tells them apart. */}
             {bookNo(option?.key) || option?.series ? (
               <p className="ltCardMeta">{bookNo(option?.key) ? `No. ${bookNo(option?.key)}` : option?.series}</p>

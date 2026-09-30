@@ -277,7 +277,7 @@ export default function OCRTextViewerPage() {
           <header className="tvTop">
             <div className="tvTitle">
               <h1>{title || "\u00a0"}</h1>
-              {granth?.native_title && granth.native_title !== title ? (
+              {granth?.native_title && !title.startsWith(granth.native_title) ? (
                 <p className="indic">{granth.native_title}</p>
               ) : null}
             </div>
