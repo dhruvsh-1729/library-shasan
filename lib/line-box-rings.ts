@@ -23,22 +23,56 @@ export type LineRuns = number[];
 
 const RUN_UNIT = 2000;
 
-/** The printed words of a line: its runs split at the n-1 widest gaps, or null if there are too few. */
-function printedWords(runs: LineRuns | undefined, n: number): Array<[number, number]> | null {
+/**
+ * The printed words of a line: its runs grouped into as many words as the
+ * line's text has. The grouping (a dynamic programme over where to cut) keeps
+ * each word near where the text puts it along the line (`expected`, fractions
+ * of the page width) and prefers cutting at wide gaps; cutting only at the
+ * widest gaps shifted every later word by one when one gap was odd (a wide
+ * space before a danda, a compound printed without its space).
+ */
+function printedWords(runs: LineRuns | undefined, expected: Array<[number, number]>): Array<[number, number]> | null {
+  const n = expected.length;
   if (!runs || runs.length < 2 || n < 1) return null;
   const spans: Array<[number, number]> = [];
   for (let i = 0; i + 1 < runs.length; i += 2) spans.push([runs[i] / RUN_UNIT, runs[i + 1] / RUN_UNIT]);
-  if (spans.length < n) return null;
-  const gaps = spans.slice(1).map((span, i) => ({ i, size: span[0] - spans[i][1] }));
-  const cuts = new Set(gaps.sort((a, b) => b.size - a.size).slice(0, n - 1).map((g) => g.i));
-  const words: Array<[number, number]> = [];
-  let start = spans[0][0];
-  spans.forEach((span, i) => {
-    if (cuts.has(i) || i === spans.length - 1) {
-      words.push([start, span[1]]);
-      if (i + 1 < spans.length) start = spans[i + 1][0];
+  const m = spans.length;
+  if (m < n) return null;
+  const lineWidth = Math.max(1e-6, spans[m - 1][1] - spans[0][0]);
+  // gap before run j, as a share of the line
+  const gap = spans.map((span, j) => (j ? (span[0] - spans[j - 1][1]) / lineWidth : 0));
+  const maxGap = Math.max(1e-6, ...gap);
+  // cost[k][j]: best cost of the first k words using the first j runs
+  const INF = Number.POSITIVE_INFINITY;
+  const cost = Array.from({ length: n + 1 }, () => new Float64Array(m + 1).fill(INF));
+  const back = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  cost[0][0] = 0;
+  for (let k = 1; k <= n; k += 1) {
+    const [ea, eb] = expected[k - 1];
+    for (let j = k; j <= m - (n - k); j += 1) {
+      for (let i = k - 1; i < j; i += 1) {
+        if (cost[k - 1][i] === INF) continue;
+        const a = spans[i][0];
+        const b = spans[j - 1][1];
+        const place = (Math.abs(a - ea) + Math.abs(b - eb)) / lineWidth;
+        // a cut at a narrow gap is unlikely to be a word break
+        const cut = k > 1 ? 0.5 * (1 - gap[i] / maxGap) : 0;
+        const c = cost[k - 1][i] + place + cut;
+        if (c < cost[k][j]) {
+          cost[k][j] = c;
+          back[k][j] = i;
+        }
+      }
     }
-  });
+  }
+  if (cost[n][m] === INF) return null;
+  const words: Array<[number, number]> = new Array(n);
+  let j = m;
+  for (let k = n; k >= 1; k -= 1) {
+    const i = back[k][j];
+    words[k - 1] = [spans[i][0], spans[j - 1][1]];
+    j = i;
+  }
   return words;
 }
 
@@ -94,28 +128,33 @@ export function lineBoxRings(
     lines.forEach((line, i) => {
       if (match.end <= line.start || match.start >= line.end) return;
       const [left, top, right, bottom] = boxes[i];
-      // A stored line that found no printed line when aligned has no box.
-      if (!(right > left && bottom > top)) return;
+      // A stored line that found no printed line when aligned has no box, and
+      // a box taller than a few lines (a joined paragraph) is not one line.
+      if (!(right > left && bottom > top) || bottom - top > 0.12) return;
       const localStart = Math.max(0, match.start - line.start);
       const localEnd = Math.min(line.text.length, match.end - line.start);
       const from = fractionAt(line.text, localStart);
       const to = fractionAt(line.text, localEnd);
       const height = (bottom - top) * page.height;
+      // The line's printed extent: its ink when measured, else its box.
+      const lineRuns = runs?.[i] ?? undefined;
+      const inkLeft = lineRuns && lineRuns.length >= 2 ? lineRuns[0] / RUN_UNIT : left;
+      const inkRight = lineRuns && lineRuns.length >= 2 ? lineRuns[lineRuns.length - 1] / RUN_UNIT : right;
       // Estimated along the line by syllable widths...
-      let fx0 = left + (right - left) * from;
-      let fx1 = left + (right - left) * to;
+      let fx0 = inkLeft + (inkRight - inkLeft) * from;
+      let fx1 = inkLeft + (inkRight - inkLeft) * to;
       // ...then put on the printed word itself when the line's ink splits into
       // as many words as its text has, and the word found is where the
       // estimate expects it (a text that differs from the print is not trusted).
-      const lineRuns = runs?.[i] ?? undefined;
       const words = textWords(line.text);
-      const printed = printedWords(lineRuns, words.length);
+      const at = (offset: number) => inkLeft + (inkRight - inkLeft) * fractionAt(line.text, offset);
+      const printed = lineRuns && lineRuns.length / 2 <= 400 ? printedWords(lineRuns, words.map((w) => [at(w.start), at(w.end)])) : null;
       const first = words.findIndex((w) => w.end > localStart);
       const last = words.findIndex((w) => w.end >= localEnd);
       if (printed && first >= 0 && last >= first) {
         const px0 = printed[first][0];
         const px1 = printed[last][1];
-        const tolerance = Math.max(0.2 * (right - left), 3 * (px1 - px0));
+        const tolerance = Math.max(0.2 * (inkRight - inkLeft), 3 * (px1 - px0));
         if (Math.abs((px0 + px1) / 2 - (fx0 + fx1) / 2) <= tolerance) {
           fx0 = px0;
           fx1 = px1;
