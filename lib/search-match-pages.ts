@@ -352,8 +352,11 @@ export async function loadSearchMatchGranths(
   return loadVerifiedGranths(hits, queries, matchMode, scripts, boundedLimit);
 }
 
-// Hit pages read and verified for the export list; the same cap as /api/search.
-const VERIFY_SCAN_CAP = 4000;
+// Every hit page is read and verified, in batches, a few at a time: capping the
+// scan (it used to stop at 4,000 pages, like the first screen of /api/search)
+// left a common word's later granths and pages out of the export.
+const VERIFY_BATCH = 500;
+const VERIFY_PARALLEL = 6;
 
 /**
  * The index is only a prefilter, so every hit page is checked against its text
@@ -368,19 +371,34 @@ async function loadVerifiedGranths(
   scripts: OCRSearchScripts,
   limit: number
 ) {
-  const result = await getTursoClient().execute({
-    sql: `WITH hits AS (${hits.sql}),
-            unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
-          SELECT g.granth_key, g.source_rel_path, g.granth_name, p.page_number, p.content
-          FROM unique_hits
-          JOIN ocr_pages p ON p.id = unique_hits.page_id
-          JOIN ocr_granths g ON g.granth_key = p.granth_key
-          LIMIT ?`,
-    args: [...hits.args, VERIFY_SCAN_CAP + 1],
-  });
+  const client = getTursoClient();
+  const ids = (
+    await client.execute({
+      sql: `WITH hits AS (${hits.sql}) SELECT DISTINCT page_id FROM hits ORDER BY page_id`,
+      args: hits.args,
+    })
+  ).rows.map((row) => Number(row.page_id));
+  const chunks: number[][] = [];
+  for (let i = 0; i < ids.length; i += VERIFY_BATCH) chunks.push(ids.slice(i, i + VERIFY_BATCH));
+  const rows: Array<Record<string, unknown>> = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(VERIFY_PARALLEL, chunks.length) }, async () => {
+      while (next < chunks.length) {
+        const chunk = chunks[next++];
+        const result = await client.execute({
+          sql: `SELECT g.granth_key, g.source_rel_path, g.granth_name, p.page_number, p.content
+                FROM ocr_pages p JOIN ocr_granths g ON g.granth_key = p.granth_key
+                WHERE p.id IN (${chunk.map(() => "?").join(",")})`,
+          args: chunk,
+        });
+        rows.push(...result.rows);
+      }
+    })
+  );
 
   const byGranth = new Map<string, SearchMatchGranthSummary>();
-  for (const row of result.rows.slice(0, VERIFY_SCAN_CAP)) {
+  for (const row of rows) {
     if (findOCRSearchMatchesForQueries(String(row.content ?? ""), queries, matchMode, scripts).length === 0) continue;
     const key = String(row.granth_key ?? "");
     const page = Math.max(1, toInt(row.page_number, 1));
@@ -404,7 +422,7 @@ async function loadVerifiedGranths(
   );
   return {
     granths: sorted.slice(0, limit),
-    truncated: sorted.length > limit || result.rows.length > VERIFY_SCAN_CAP,
+    truncated: sorted.length > limit,
     queries,
   };
 }

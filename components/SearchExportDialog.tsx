@@ -341,26 +341,14 @@ export function SearchExportDialog({
         {preview ? (
           <>
             <div className="searchDownloadSummary">
-              <strong>{selectedGranths.length}</strong> of <strong>{preview.total_granths}</strong> matched granth(s)
-              selected, <strong>{selectedMatchedPages}</strong> matching page(s).
-              <span>
-                {" "}
-                Combined PDF: {pdfGranths.length} granth(s), about {pdfEstimate.min}
-                {pdfEstimate.max > pdfEstimate.min ? `-${pdfEstimate.max}` : ""} page(s) including one cover page per
-                granth (limit {maxDownloadPages} pages, {maxCombinedGranths} granths). Use{" "}
-                <strong>Max pages per granth</strong> or <strong>Fit to PDF limit</strong> to bring a large search inside
-                the limit.
-              </span>
-              <span> CSV: one row per matched line, with the PDF page number and line number on that page.</span>
+              <strong>{selectedGranths.length}</strong> of {preview.total_granths} books · <strong>{selectedMatchedPages}</strong> pages
+              selected. Combined PDF: about {pdfEstimate.max > pdfEstimate.min ? `${pdfEstimate.min}–${pdfEstimate.max}` : pdfEstimate.min} pages
+              (up to {maxDownloadPages} pages from {maxCombinedGranths} books).
               {preview.total_granths > preview.exportable_granths ? (
-                <span>
-                  {" "}
-                  {preview.total_granths - preview.exportable_granths} granth(s) have no uploaded PDF, so they can only
-                  go into the CSV.
-                </span>
+                <span> {preview.total_granths - preview.exportable_granths} books have no PDF, so they go only into the CSV.</span>
               ) : null}
               {preview.truncated ? (
-                <span> Only the first {preview.max_export_granth_preview} granths are listed; narrow the search.</span>
+                <span> Only the first {preview.max_export_granth_preview} books are listed; narrow the search.</span>
               ) : null}
             </div>
 

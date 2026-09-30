@@ -889,3 +889,8 @@ div.tvFolio { cursor: default; }
   white-space: nowrap;
   flex: none;
 }
+
+/* Export dialog tools keep their labels on one line. */
+.searchDownloadToolbar button {
+  white-space: nowrap;
+}
