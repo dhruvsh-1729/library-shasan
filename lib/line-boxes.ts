@@ -5,7 +5,7 @@
 // caller falls back to the PDF's own text layer.
 
 import { describeGranth, getGranthCatalog, type GranthCatalog } from "@/lib/granth-catalog";
-import { type LineBox, lineBoxRings } from "@/lib/line-box-rings";
+import { type LineBox, type LineRuns, lineBoxRings } from "@/lib/line-box-rings";
 import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
 import type { WordBox } from "@/lib/pdf-word-boxes";
 import { getTursoClient } from "@/lib/turso";
@@ -46,7 +46,7 @@ export async function lineBoxRingsForPdf(
   try {
     rows = (
       await getTursoClient().execute({
-        sql: `SELECT b.page_number, b.boxes, p.content FROM ocr_line_boxes b
+        sql: `SELECT b.page_number, b.boxes, b.words, p.content FROM ocr_line_boxes b
               JOIN ocr_pages p ON p.granth_key = b.granth_key AND p.page_number = b.page_number
               WHERE b.granth_key = ? AND b.page_number IN (${pages.map(() => "?").join(",")})`,
         args: [granthKey, ...pages.map((p) => p.page)],
@@ -66,7 +66,13 @@ export async function lineBoxRingsForPdf(
     } catch {
       continue;
     }
-    out.set(page, lineBoxRings(String(row.content ?? ""), boxes, dims, mark.queries, mark.matchMode, mark.scripts ?? null));
+    let runs: Array<LineRuns | null> | null = null;
+    try {
+      runs = row.words ? JSON.parse(String(row.words)) : null;
+    } catch {
+      runs = null;
+    }
+    out.set(page, lineBoxRings(String(row.content ?? ""), boxes, dims, mark.queries, mark.matchMode, mark.scripts ?? null, runs));
   }
   return out;
 }

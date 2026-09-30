@@ -93,3 +93,16 @@ test("line boxes place a ring on the printed line, where the word falls along it
   // lines and boxes that do not line up give no rings rather than wrong ones
   assert.equal(lineBoxRings(content, boxes.slice(0, 1), { width: 400, height: 600 }, ["मोक्ष"], "exact_word"), null);
 });
+
+test("printed word runs put the ring on the word itself, split at the widest gaps", async () => {
+  const { lineBoxRings } = await import("@/lib/line-box-rings");
+  const content = "..... कज्जंति ? हे";
+  const boxes: Array<[number, number, number, number]> = [[0.1, 0.1, 0.6, 0.15]];
+  // ink runs in 1/2000ths: "....." narrow, then the word in two letter groups, "?" and "हे"
+  const runs = [[200, 260, 400, 470, 478, 560, 620, 640, 700, 760]];
+  const [ring] = lineBoxRings(content, boxes, { width: 1000, height: 1000 }, ["कज्जंति"], "exact_word", null, runs)!;
+  assert.ok(Math.abs(ring.x - 200) < 1, `starts at ${ring.x}`);
+  assert.ok(Math.abs(ring.x + ring.width - 280) < 1, `ends at ${ring.x + ring.width}`);
+  // an empty box (a line that found no printed line) is not ringed
+  assert.deepEqual(lineBoxRings("कज्जंति", [[0, 0, 0, 0]], { width: 1000, height: 1000 }, ["कज्जंति"], "exact_word"), []);
+});
