@@ -150,7 +150,9 @@ function needlePattern(needles: string[]) {
   const key = needles.join("\u0000");
   let pattern = needlePatternCache.get(key);
   if (!pattern) {
-    const sorted = [...needles].sort((a, b) => b.length - a.length).map(escapeRegExp);
+    // A phrase's words may be split by any whitespace in the text: a line
+    // break, or two spaces (queries are normalized to one space).
+    const sorted = [...needles].sort((a, b) => b.length - a.length).map((needle) => escapeRegExp(needle).replace(/ /g, "\\s+"));
     pattern = new RegExp(sorted.join("|"), "gu");
     if (needlePatternCache.size > 500) needlePatternCache.clear();
     needlePatternCache.set(key, pattern);

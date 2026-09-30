@@ -127,3 +127,9 @@ test("word forms decline n-stems and ṛ-stems, and only real n-stems", () => {
   lacks("प्रतिमा", "प्रतिमानम्");
   has("धर्म", "धर्मान्", "धर्मेण");
 });
+
+test("a phrase is found across a line break or double space", () => {
+  const text = "इति श्री\nभगवती सूत्रम्। पुनः श्री  भगवती च";
+  assert.equal(findOCRSearchMatchesForQueries(text, ["श्री भगवती"], "exact_word").length, 2);
+  assert.equal(findOCRSearchMatchesForQueries(text, ["श्री भगवती"], "sanskrit_forms").length, 2);
+});

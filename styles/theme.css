@@ -894,3 +894,26 @@ div.tvFolio { cursor: default; }
 .searchDownloadToolbar button {
   white-space: nowrap;
 }
+
+/* On a phone the library scrolls as one page (a list scrolling inside a box
+   between two pagers is hard to use with a thumb); one pager, at the end. */
+@media (max-width: 760px) {
+  .libraryShell {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .libraryFrame {
+    height: auto;
+    grid-template-rows: auto;
+  }
+
+  .libraryGrid {
+    overflow: visible;
+  }
+
+  .libraryToolbar .pageJumpPager {
+    display: none;
+  }
+}
