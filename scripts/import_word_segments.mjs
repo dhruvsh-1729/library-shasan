@@ -15,6 +15,7 @@ const HERE = path.dirname(new URL(import.meta.url).pathname);
 const only = process.argv.find((a) => a.startsWith("--only="))?.split("=")[1];
 const parallel = Number(process.argv.find((a) => a.startsWith("--parallel="))?.split("=")[1] ?? 8);
 const redo = process.argv.includes("--redo");
+const sourceFilter = process.argv.find((a) => a.startsWith("--source="))?.split("=")[1];
 const db = createClient({ url: process.env.TURSO_URL, authToken: process.env.TURSO_AUTH_TOKEN });
 // Turso drops a connection now and then under load; every write here is an
 // upsert or a plain update, so a retry is safe.
@@ -69,7 +70,7 @@ function segment(pdf, pages) {
 }
 
 const locals = localOriginals();
-const keys = (await retry(() => db.execute(`SELECT granth_key, COUNT(*) n, SUM(words IS NULL) todo FROM ocr_line_boxes GROUP BY granth_key`))).rows
+const keys = (await retry(() => db.execute(`SELECT granth_key, COUNT(*) n, SUM(words IS NULL) todo FROM ocr_line_boxes${sourceFilter ? ` WHERE source = '${sourceFilter.replace(/'/g, "")}'` : ""} GROUP BY granth_key`))).rows
   .map((r) => ({ key: String(r.granth_key), todo: Number(r.todo) }))
   .filter((r) => (!only || r.key === only) && (redo || r.todo > 0));
 log(`books ${keys.length}, with a local original ${keys.filter((k) => locals.has(k.key)).length}`);
