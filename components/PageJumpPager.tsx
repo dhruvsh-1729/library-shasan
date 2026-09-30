@@ -33,6 +33,9 @@ export function PageJumpPager({ currentPage, totalPages, loading = false, ariaLa
     if (nextPage !== safeCurrentPage) onPageChange(nextPage);
   }
 
+  // One page needs no pager.
+  if (safeTotalPages <= 1) return null;
+
   return (
     <form className="pageJumpPager" aria-label={ariaLabel} onSubmit={submitPage}>
       <button type="button" onClick={() => onPageChange(1)} disabled={loading || safeCurrentPage <= 1}>

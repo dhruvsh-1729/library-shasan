@@ -5,16 +5,17 @@ import "@/styles/search.css";
 import "@/styles/theme.css";
 import "@/styles/ask.css";
 import type { AppProps } from "next/app";
-import { Archivo, Noto_Serif_Gujarati, Tiro_Devanagari_Sanskrit } from "next/font/google";
+import { Archivo, Noto_Serif_Devanagari, Noto_Serif_Gujarati } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import type { Session } from "next-auth";
 
 // One set of faces for every page: Archivo for the interface, and faces made
-// for the scripts the granths are written in.
+// for the scripts the granths are written in. Devanagari is Noto Serif, not a
+// traditional face: Tiro Devanagari Sanskrit stacks क्त so it reads as त्त
+// (शक्ति as शत्ति) and क्त्र as क्र, and a reader checking hits cannot tell.
 const uiFont = Archivo({ subsets: ["latin"], axes: ["wdth"], variable: "--lt-font-ui", display: "swap" });
-const devanagariFont = Tiro_Devanagari_Sanskrit({
+const devanagariFont = Noto_Serif_Devanagari({
   subsets: ["devanagari", "latin"],
-  weight: "400",
   variable: "--lt-font-deva",
   display: "swap",
 });

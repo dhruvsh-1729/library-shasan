@@ -5,6 +5,7 @@ import { buildOCRSearchOccurrences, findOCRSearchMatchesForQueries, isTooShortFo
 import { romanWordReadings } from "@/lib/roman-sanskrit";
 import { composeQueries, formsFromList, isRomanQuery } from "@/lib/search-query";
 import { buildSearchUrl, parseSearchUrl, resolveGranthValues } from "@/lib/search-url";
+import { foldSanskrit, sanskritWordForms } from "@/lib/sanskrit-fold.mjs";
 
 const texts = (list: Array<{ text: string }>) => list.map((m) => m.text);
 
@@ -101,4 +102,28 @@ test("search links round-trip, and old links still resolve", () => {
   // A duplicate's old key leads to the granth searched in its place.
   const options = [{ key: "g6f79", custom_id: "acharang-pdf" }];
   assert.deepEqual(resolveGranthValues(["398_B041343"], options, { "398_B041343": "acharang-pdf" }).ids, ["acharang-pdf"]);
+});
+
+test("word forms decline n-stems and ṛ-stems, and only real n-stems", () => {
+  const has = (word: string, ...forms: string[]) => {
+    const all = new Set(sanskritWordForms(word));
+    for (const form of forms) assert.ok(all.has(foldSanskrit(form)), `${word} should find ${form}`);
+  };
+  const lacks = (word: string, ...forms: string[]) => {
+    const all = new Set(sanskritWordForms(word));
+    for (const form of forms) assert.ok(!all.has(foldSanskrit(form)), `${word} should not find ${form}`);
+  };
+  has("कर्म", "कर्मणा", "कर्मणः", "कर्मणि", "कर्माणि", "कर्मभिः", "कर्मणाम्");
+  has("आत्मा", "आत्मना", "आत्मनः", "आत्मानम्", "आत्मसु");
+  has("आत्मन्", "आत्मा", "आत्मानम्");
+  has("राजन्", "राजा", "राज्ञा", "राज्ञः", "राज्ञि", "राजानः", "राजभिः");
+  has("नाम", "नाम्ना", "नाम्नः", "नामानि");
+  has("ब्रह्मन्", "ब्रह्मणा", "ब्रह्माणम्");
+  has("पितृ", "पिता", "पित्रा", "पितुः", "पितरम्", "पितॄणाम्");
+  has("कर्तृ", "कर्ता", "कर्तारम्");
+  has("वाच्", "वाक्", "वाचा");
+  lacks("राजन्", "राज्ञी"); // the queen, not a form of राजन्
+  lacks("धर्म", "धर्मणा", "धर्माण्");
+  lacks("प्रतिमा", "प्रतिमानम्");
+  has("धर्म", "धर्मान्", "धर्मेण");
 });

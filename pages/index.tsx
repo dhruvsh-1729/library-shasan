@@ -162,6 +162,14 @@ function isValidHttpUrl(value: string | null | undefined) {
 }
 
 /** A granth's short key when it is a book number; hash keys ("g6f79…") mean nothing to a reader. */
+const DB_UNAVAILABLE = "The library did not answer just now.";
+
+/** An error a reader can act on: a dropped database connection is not worth its raw text. */
+function readableError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /turso|pipeline|socket hang up|ECONN|ETIMEDOUT|fetch failed|network/i.test(message) ? DB_UNAVAILABLE : message;
+}
+
 function bookNo(key: string | undefined) {
   return key && !/^g[0-9a-f]{6,}$/.test(key) ? key : "";
 }
@@ -259,6 +267,8 @@ export default function SearchPage() {
   const [lastRequest, setLastRequest] = useState<SearchRequest | null>(null);
   const [expandedPages, setExpandedPages] = useState<Set<string>>(new Set());
   const searchSeqRef = useRef(0);
+  /** Re-runs the background exact count of the last search, when it failed. */
+  const countRetryRef = useRef<(() => Promise<void>) | null>(null);
 
   // ---------------------------------------------------------------- catalog
   const [granthOptions, setGranthOptions] = useState<GranthOption[]>([]);
@@ -671,7 +681,7 @@ export default function SearchPage() {
         const countParams = new URLSearchParams(params);
         countParams.delete("limit");
         countParams.delete("page");
-        void (async () => {
+        const countAll = async () => {
           try {
             const res = await fetch(`/api/search-count?${countParams.toString()}`);
             const count = (await res.json()) as { pages?: number; occurrences?: number; formCounts?: Array<{ form: string; count: number }>; error?: string };
@@ -693,11 +703,13 @@ export default function SearchPage() {
           } catch {
             if (seq === searchSeqRef.current) setSummary((prev) => (prev ? { ...prev, counting: false } : prev));
           }
-        })();
+        };
+        countRetryRef.current = countAll;
+        void countAll();
       }
     } catch (e) {
       if (seq !== searchSeqRef.current) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
       setPhase(summary ? "done" : "idle");
     }
   }
@@ -886,6 +898,10 @@ export default function SearchPage() {
           <div>
             <h3>{granthTitle(result)}</h3>
             {option?.native_title ? <p className="ltCardNative">{option.native_title}</p> : null}
+            {/* Different editions can share a name; the number (or volume) tells them apart. */}
+            {bookNo(option?.key) || option?.series ? (
+              <p className="ltCardMeta">{bookNo(option?.key) ? `No. ${bookNo(option?.key)}` : option?.series}</p>
+            ) : null}
           </div>
           <div className="ltFolio">
             <span>page</span>
@@ -1236,6 +1252,14 @@ export default function SearchPage() {
           {error ? (
             <p className="ltError" role="alert">
               {error}
+              {error === DB_UNAVAILABLE ? (
+                <>
+                  {" "}
+                  <button type="button" className="ltLink" onClick={() => run(lastRequest?.page ?? 1)}>
+                    Search again
+                  </button>
+                </>
+              ) : null}
             </p>
           ) : null}
         </section>
@@ -1275,7 +1299,19 @@ export default function SearchPage() {
                       <span className="ltSpinner" aria-hidden="true" /> Counting every page…
                     </>
                   ) : (
-                    `Counted in the first ${nf.format(summary.scannedPages)} pages`
+                    <>
+                      Counted in the first {nf.format(summary.scannedPages)} pages.{" "}
+                      <button
+                        type="button"
+                        className="ltLink"
+                        onClick={() => {
+                          setSummary((prev) => (prev ? { ...prev, counting: true } : prev));
+                          void countRetryRef.current?.();
+                        }}
+                      >
+                        Count all pages
+                      </button>
+                    </>
                   )}
                 </p>
               ) : null}

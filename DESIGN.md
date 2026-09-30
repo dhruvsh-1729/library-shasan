@@ -58,17 +58,17 @@ typography:
     letterSpacing: "-0.02em"
     fontVariation: "'wdth' 80"
   indic-line:
-    fontFamily: "Tiro Devanagari Sanskrit, Noto Serif Gujarati, Noto Serif Devanagari, serif"
+    fontFamily: "Noto Serif Devanagari, Noto Serif Gujarati, serif"
     fontSize: "21px"
     fontWeight: 400
     lineHeight: 1.8
   indic-query:
-    fontFamily: "Tiro Devanagari Sanskrit, Noto Serif Gujarati, Noto Serif Devanagari, serif"
+    fontFamily: "Noto Serif Devanagari, Noto Serif Gujarati, serif"
     fontSize: "clamp(22px, 2.4vw, 28px)"
     fontWeight: 400
     lineHeight: 1.5
   indic-chip:
-    fontFamily: "Tiro Devanagari Sanskrit, Noto Serif Gujarati, Noto Serif Devanagari, serif"
+    fontFamily: "Noto Serif Devanagari, Noto Serif Gujarati, serif"
     fontSize: "20px"
     fontWeight: 400
     lineHeight: 1.4
@@ -171,7 +171,7 @@ The world refuses the category's grid of same-size result cards with a yellow hi
 - Cool backlit glass ground with 8px/40px ruler ticks; white slips with crop-mark corners.
 - One hand-drawn red ring per matched word, the only red on a healthy screen.
 - Cobalt for every action and focus; ink-black for the selected segment.
-- Archivo (variable width) for the interface; Tiro Devanagari Sanskrit and Noto Serif Gujarati for the text, always larger than the UI around it.
+- Archivo (variable width) for the interface; Noto Serif Devanagari and Noto Serif Gujarati for the text, always larger than the UI around it.
 - Tabular numerals everywhere; the tally is the headline.
 - Amber means "partial or not verified", never decoration.
 
@@ -207,7 +207,7 @@ A cool, low-chroma glass-and-ink neutral field carrying three purposeful inks: g
 ## Typography
 
 **Display / UI Font:** Archivo, variable width axis (with Segoe UI, system-ui, sans-serif)
-**Text Fonts:** Tiro Devanagari Sanskrit for Devanagari, Noto Serif Gujarati for Gujarati (with Noto Serif Devanagari / Noto Serif Gujarati, serif), applied with the `indic` class
+**Text Fonts:** Noto Serif Devanagari for Devanagari, Noto Serif Gujarati for Gujarati (serif fallback); not a traditional stacked-conjunct face, which draws क्त like त्त, applied with the `indic` class
 
 **Character:** A sturdy, slightly technical grotesque whose width axis does the hierarchy work (wide for the masthead, condensed for folios, labels and book numbers), set against calm book serifs for the scripture text. The UI is always the smaller voice.
 

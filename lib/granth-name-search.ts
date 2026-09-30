@@ -156,11 +156,58 @@ export function scoreRow(p: Prepared, q: string): number {
   return score;
 }
 
+// ---------------------------------------------------------------- aliases
+// The Agams are titled in Sanskrit on some books and in Prakrit on others
+// (आचारांग / आयारंग), so a search for one name finds the other too.
+const ALIAS_GROUPS = [
+  ["acharang", "ayarang", "aayar"],
+  ["sutrakritang", "suyagadang", "suyagad", "sutrakrut"],
+  ["sthanang", "thanang", "thananga"],
+  ["samavayang", "samavay", "samvayang"],
+  ["bhagavati", "viyahapannatti", "vyakhyaprajnapti"],
+  ["jnatadharmakatha", "gnatadharmkatha", "nayadhammakaha"],
+  ["upasakdasha", "uvasagadasa", "upasakadasa"],
+  ["antakrit", "antagad", "antagada"],
+  ["anuttaraupapatik", "anuttarovavai"],
+  ["prashnavyakaran", "panhavagaran"],
+  ["vipak", "vivag"],
+  ["aupapatik", "uvavai"],
+  ["rajprashniya", "rayapaseni"],
+  ["jivabhigam", "jivajivabhigam"],
+  ["prajnapana", "pragnapana", "pannavana"],
+  ["jambudvipprajnapti", "jambudwippragnapti", "jambuddivapannatti"],
+  ["chandraprajnapti", "chandrapragnapati", "candapannatti"],
+  ["suryaprajnapti", "suryapragnapti", "surapannatti"],
+  ["uttaradhyayan", "uttarajjhayan", "utradhyayan"],
+  ["dashvaikalik", "dashavaikalik", "dasaveyaliy"],
+  ["avashyak", "avassay", "aavashyak"],
+  ["anuyogdvar", "anuogaddar"],
+  ["kalpasutra", "kappasutt", "kalpsutra"],
+  ["nishith", "nisih"],
+  ["vyavahar", "vavahar"],
+  ["brihatkalp", "bruhatkalp", "bihakapp"],
+  ["jitkalp", "jiyakapp"],
+].map((group) => group.map(foldName));
+
+/** The query, and the query with each Agam name it holds swapped for its other names. */
+function queryVariants(q: string) {
+  const fq = foldName(q);
+  const variants = [q];
+  for (const group of ALIAS_GROUPS) {
+    const hit = group.find((name) => fq.includes(name));
+    if (!hit) continue;
+    for (const other of group) if (other !== hit) variants.push(fq.replace(hit, other));
+  }
+  return variants;
+}
+
 /** Returns the indexes of matching rows, best first; ties keep catalogue order. */
 export function rankRows(rows: Prepared[], q: string): number[] {
   const scored: Array<[number, number]> = [];
+  const variants = queryVariants(q);
   rows.forEach((p, i) => {
-    const s = scoreRow(p, q);
+    // An alias match ranks just below the name as typed.
+    const s = Math.max(scoreRow(p, q), ...variants.slice(1).map((v) => scoreRow(p, v) - 1));
     if (s > 0) scored.push([i, s]);
   });
   scored.sort((a, b) => b[1] - a[1] || a[0] - b[0]);
