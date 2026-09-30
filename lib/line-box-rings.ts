@@ -123,6 +123,10 @@ export function lineBoxRings(
 ): WordBox[] | null {
   const lines = textLines(content);
   if (!lines.length || lines.length !== boxes.length) return null;
+  // A box much taller than the page's usual line spans two printed lines (an
+  // alignment that joined them): not ringed rather than ringed in between.
+  const heights = boxes.map((b) => b[3] - b[1]).filter((h) => h > 0).sort((x, y) => x - y);
+  const usual = heights.length ? heights[Math.floor(heights.length / 2)] : 0;
   const out: WordBox[] = [];
   for (const match of findOCRSearchMatchesForQueries(content, queries, mode, scripts)) {
     lines.forEach((line, i) => {
@@ -130,7 +134,7 @@ export function lineBoxRings(
       const [left, top, right, bottom] = boxes[i];
       // A stored line that found no printed line when aligned has no box, and
       // a box taller than a few lines (a joined paragraph) is not one line.
-      if (!(right > left && bottom > top) || bottom - top > 0.12) return;
+      if (!(right > left && bottom > top) || bottom - top > 0.12 || (usual && bottom - top > usual * 1.8)) return;
       const localStart = Math.max(0, match.start - line.start);
       const localEnd = Math.min(line.text.length, match.end - line.start);
       const from = fractionAt(line.text, localStart);
