@@ -1,4 +1,6 @@
 import { useEffect, useId, useState } from "react";
+import { LightTableIcon } from "@/components/LightTableIcon";
+import { Sheet } from "@/components/Sheet";
 
 export type DeliveryMode = "download" | "email";
 
@@ -66,60 +68,54 @@ export function DownloadDeliveryDialog({
   }
 
   return (
-    <div className="downloadDeliveryOverlay" role="dialog" aria-modal="true" aria-labelledby="download-delivery-title">
-      <div className="downloadDeliveryPanel">
-        <header className="downloadDeliveryHeader">
-          <div>
-            <h2 id="download-delivery-title">{title}</h2>
-            <p>{fileLabel}</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={busy}>
-            Close
-          </button>
-        </header>
+    <Sheet open title={title} subtitle={fileLabel} onClose={onClose} busy={busy} size="narrow" layer={1}>
+      {(error || localError) ? <p className="sheetNote is-error" role="alert">{error || localError}</p> : null}
 
-        <div className="downloadDeliveryNotice">
-          If the generated file is more than 15 MB, download it on this device. Email sharing is recommended for smaller files.
-        </div>
+      <button type="button" className="sheetAction is-primary" onClick={onDownload} disabled={busy}>
+        {busy ? (
+          <>
+            <span className="sheetSpinner" aria-hidden="true" />
+            Preparing the file
+          </>
+        ) : (
+          <>
+            <LightTableIcon name="export" size={18} /> Download to this device
+          </>
+        )}
+      </button>
 
-        {(error || localError) ? <div className="downloadDeliveryError" role="alert">{error || localError}</div> : null}
+      <div className="sheetOr">or email it</div>
 
-        <div className="downloadDeliveryActions">
-          <button type="button" onClick={onDownload} disabled={busy}>
-            {busy ? (
-              <span className="buttonSpinnerLabel">
-                <span className="loadingSpinner" aria-hidden="true" />
-                Preparing
-              </span>
-            ) : (
-              "Download on device"
-            )}
-          </button>
-        </div>
+      <form
+        className="sheetField"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitEmail();
+        }}
+      >
+        <label htmlFor={inputId}>Email address</label>
+        <input
+          id={inputId}
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          list={listId}
+          placeholder={loadingEmails ? "Loading saved addresses" : "name@example.com"}
+          disabled={busy}
+        />
+        <datalist id={listId}>
+          {savedEmails.map((savedEmail) => (
+            <option key={savedEmail} value={savedEmail} />
+          ))}
+        </datalist>
+        <button type="submit" className="sheetAction is-secondary" disabled={busy}>
+          <LightTableIcon name="mail" size={18} /> {busy ? "Sending" : "Send by email"}
+        </button>
+      </form>
 
-        <div className="downloadDeliveryEmailBox">
-          <label htmlFor={inputId}>Email recipient</label>
-          <div className="downloadDeliveryEmailRow">
-            <input
-              id={inputId}
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              list={listId}
-              placeholder={loadingEmails ? "Loading saved emails" : "name@example.com"}
-              disabled={busy}
-            />
-            <datalist id={listId}>
-              {savedEmails.map((savedEmail) => (
-                <option key={savedEmail} value={savedEmail} />
-              ))}
-            </datalist>
-            <button type="button" onClick={submitEmail} disabled={busy}>
-              {busy ? "Sending" : "Email file"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      <p className="sheetSmall">Files over 15 MB are too big to email; download those instead.</p>
+    </Sheet>
   );
 }

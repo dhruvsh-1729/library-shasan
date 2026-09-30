@@ -1,7 +1,7 @@
 // Line icons for the search light table: one 1.6px stroke, round joins, drawn
 // on a 20px grid so they sit on the same optical line as Archivo's caps.
 
-type IconName = "search" | "page" | "pages" | "table" | "close" | "check" | "loupe" | "text" | "chevron" | "export";
+type IconName = "search" | "page" | "pages" | "table" | "close" | "check" | "loupe" | "text" | "chevron" | "export" | "more" | "mail" | "minus" | "plus";
 
 const PATHS: Record<IconName, string> = {
   search: "M8.8 15.1a6.3 6.3 0 1 1 0-12.6 6.3 6.3 0 0 1 0 12.6ZM13.3 13.3 17.5 17.5",
@@ -14,6 +14,10 @@ const PATHS: Record<IconName, string> = {
   check: "M4.5 10.5 8.2 14 15.5 6",
   chevron: "M7.5 5l5 5-5 5",
   export: "M10 3v9M6.3 8.5 10 12.2l3.7-3.7M4 14v3h12v-3",
+  more: "M4.5 10h.01M10 10h.01M15.5 10h.01",
+  mail: "M3 5h14v10H3ZM3.5 5.5 10 11l6.5-5.5",
+  minus: "M5 10h10",
+  plus: "M10 5v10M5 10h10",
 };
 
 export function LightTableIcon({ name, size = 18, title }: { name: IconName; size?: number; title?: string }) {

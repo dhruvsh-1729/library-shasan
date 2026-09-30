@@ -7,6 +7,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
 import { LightTableIcon } from "@/components/LightTableIcon";
+import { ExportActions, Sheet, Stepper } from "@/components/Sheet";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import { EXPORT_ENDPOINTS, SearchExportDialog, type ExportFormat } from "@/components/SearchExportDialog";
 import { downloadBlob, fileSafe, filenameFromResponse } from "@/lib/download-file";
@@ -1389,62 +1390,94 @@ export default function SearchPage() {
               setDeliveryFormat(null);
               setDownloadPreview(null);
             };
+            const busy = downloadPreview.downloading;
+            const blocked = selectedCount === 0 ? "Choose at least one page." : null;
+            const choice = (format: ExportFormat) => ({
+              onSelect: () => setDeliveryFormat(format),
+              busy: busy && deliveryFormat === format,
+              disabled: busy || blocked !== null || (format === "pdf" && tooManyPages),
+            });
             return (
-              <div className="searchDownloadOverlay" role="dialog" aria-modal="true" aria-label="Matched pages" onClick={(e) => e.target === e.currentTarget && close()}>
-                <div className="searchDownloadPanel">
-                  <header className="searchDownloadHeader">
-                    <div>
-                      <h2>Matched pages</h2>
-                      <p>{downloadPreview.title}</p>
-                    </div>
-                    <button type="button" onClick={close} aria-label="Close">
-                      <LightTableIcon name="close" />
-                    </button>
-                  </header>
+              <Sheet
+                open
+                title="Download pages"
+                subtitle={downloadPreview.title}
+                onClose={close}
+                busy={busy}
+                footer={
+                  downloadPreview.preview ? (
+                    <ExportActions
+                      hint={blocked ?? (tooManyPages ? `Full PDF: choose ${maxPages} PDF pages or fewer.` : null)}
+                      secondary={{ id: "linelist", label: "Line list", detail: "A PDF table of every matching line with its page and line number", busyLabel: "Building", ...choice("linelist") }}
+                      primary={{ id: "pdf", label: "Full PDF", detail: "The chosen pages as one PDF, cover first", busyLabel: "Building", ...choice("pdf") }}
+                      more={[
+                        { id: "wordlist", label: "Word list (PDF)", detail: "Each matching word with the book's page number", busyLabel: "Building word list", ...choice("wordlist") },
+                        { id: "csv", label: "Spreadsheet (CSV)", detail: "One row per matching line, for Excel or Sheets", busyLabel: "Building CSV", ...choice("csv") },
+                      ]}
+                    />
+                  ) : null
+                }
+              >
+                {downloadPreview.loading ? (
+                  <div className="sheetLoading" role="status">
+                    <span className="sheetSpinner" aria-hidden="true" /> Finding every matching page in this book…
+                  </div>
+                ) : null}
+                {downloadPreview.error ? <p className="sheetNote is-error" role="alert">{downloadPreview.error}</p> : null}
+                {downloadPreview.notice ? <p className="sheetNote is-ok" role="status">{downloadPreview.notice}</p> : null}
 
-                  {downloadPreview.loading ? (
-                    <div className="searchDownloadNotice" role="status">
-                      <span className="ltSpinner" aria-hidden="true" /> Finding every matched page in this granth
+                {downloadPreview.preview ? (
+                  <>
+                    <div className="sheetStats">
+                      <div className="sheetStat">
+                        <strong>{selectedCount}<small style={{ fontSize: 13, fontWeight: 500 }}> / {downloadPreview.preview.total_matched_pages}</small></strong>
+                        <span>pages chosen</span>
+                      </div>
+                      <div className="sheetStat">
+                        <strong>{finalPageCount}</strong>
+                        <span>pages in the PDF</span>
+                      </div>
                     </div>
-                  ) : null}
-                  {downloadPreview.error ? <div className="searchDownloadError" role="alert">{downloadPreview.error}</div> : null}
-                  {downloadPreview.notice ? <div className="searchDownloadNotice" role="status">{downloadPreview.notice}</div> : null}
+                    {downloadPreview.preview.truncated ? (
+                      <p className="sheetSmall">The list is capped. Narrow the search to see every page.</p>
+                    ) : null}
 
-                  {downloadPreview.preview ? (
-                    <>
-                      <div className="searchDownloadSummary">
-                        <strong>{selectedCount}</strong> of <strong>{downloadPreview.preview.total_matched_pages}</strong> matched pages
-                        chosen. The PDF holds {plural(finalPageCount, "page")}, page 1 first as the cover.
-                        {downloadPreview.preview.truncated ? " The list is capped; narrow the search to see every page." : null}
+                    <details className="sheetFold">
+                      <summary>
+                        <LightTableIcon name="chevron" size={14} /> PDF options
+                        <em>{downloadPreview.contextPages ? `±${downloadPreview.contextPages} nearby` : "Matching pages only"}</em>
+                      </summary>
+                      <div className="sheetFoldBody">
+                        <Stepper
+                          label="Nearby pages"
+                          hint="Pages before and after each match"
+                          value={downloadPreview.contextPages}
+                          max={MAX_CONTEXT_PAGE_RADIUS}
+                          onChange={(n) =>
+                            setDownloadPreview((prev) => (prev ? { ...prev, contextPages: normalizeContextPageRadius(n) } : prev))
+                          }
+                        />
+                        <p className="sheetSmall">Page 1 always comes first, as the cover.</p>
                       </div>
-                      <div className="searchDownloadToolbar">
-                        <button type="button" onClick={() => setPreviewPages((pages, preview) => preview.pages.forEach((p) => pages.add(p.page_number)))}>
-                          Choose all
-                        </button>
-                        <button type="button" onClick={() => setPreviewPages((pages) => pages.clear())}>
-                          Clear
-                        </button>
-                        <label className="searchDownloadContextInput">
-                          <span>Pages either side</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={MAX_CONTEXT_PAGE_RADIUS}
-                            inputMode="numeric"
-                            value={downloadPreview.contextPages}
-                            onChange={(event) =>
-                              setDownloadPreview((prev) =>
-                                prev ? { ...prev, contextPages: event.target.value === "" ? 0 : normalizeContextPageRadius(event.target.value) } : prev
-                              )
-                            }
-                          />
-                        </label>
+                    </details>
+
+                    <section className="sheetSection">
+                      <div className="sheetSectionHead">
+                        <h3>Pages</h3>
+                        <div className="sheetLinks">
+                          <button type="button" onClick={() => setPreviewPages((pages, preview) => preview.pages.forEach((p) => pages.add(p.page_number)))}>
+                            All
+                          </button>
+                          <button type="button" onClick={() => setPreviewPages((pages) => pages.clear())}>
+                            None
+                          </button>
+                        </div>
                       </div>
-                      <div className="searchDownloadPageList">
+                      <div className="sheetList">
                         {downloadPreview.preview.pages.map((page) => {
                           const isCover = page.page_number === 1;
                           return (
-                            <label key={page.page_number} className="searchDownloadPageRow">
+                            <label key={page.page_number} className="sheetRow">
                               <input
                                 type="checkbox"
                                 checked={isCover || selectedSet.has(page.page_number)}
@@ -1453,77 +1486,48 @@ export default function SearchPage() {
                                   setPreviewPages((pages) => (event.target.checked ? pages.add(page.page_number) : pages.delete(page.page_number)))
                                 }
                               />
-                              <span className="searchDownloadPageMeta">
-                                <b>p. {page.page_number}</b>
-                                {isCover ? " cover" : ""} · {plural(page.occurrence_count, "match", "matches")}
+                              <span className="sheetRowMain">
+                                <strong>Page {page.page_number}{isCover ? " · cover" : ""}</strong>
+                                <span className="indic">
+                                  {ringAll(page.snippet, downloadPreview.queries, downloadPreview.matchMode, downloadPreview.scripts)}
+                                </span>
                               </span>
-                              <span className="searchDownloadSnippet indic">
-                                {ringAll(page.snippet, downloadPreview.queries, downloadPreview.matchMode, downloadPreview.scripts)}
-                              </span>
+                              <span className="sheetRowSide">{plural(page.occurrence_count, "match", "matches")}</span>
                             </label>
                           );
                         })}
                       </div>
-                      <footer className="searchDownloadFooter">
-                        {tooManyPages ? <span className="searchDownloadErrorText">Choose {maxPages} PDF pages or fewer.</span> : null}
-                        <button type="button" onClick={() => setDeliveryFormat("csv")} disabled={downloadPreview.downloading || selectedCount === 0}>
-                          <LightTableIcon name="table" size={16} /> Export CSV
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeliveryFormat("wordlist")}
-                          disabled={downloadPreview.downloading || selectedCount === 0}
-                          title="PDF table of every matched word with the granth's printed page number"
-                        >
-                          <LightTableIcon name="text" size={16} /> Word list PDF
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeliveryFormat("linelist")}
-                          disabled={downloadPreview.downloading || selectedCount === 0}
-                          title="PDF table of every matched line: granth page, line number, the line and the word"
-                        >
-                          <LightTableIcon name="table" size={16} /> Line list PDF
-                        </button>
-                        <button
-                          type="button"
-                          className="isPrimary"
-                          onClick={() => setDeliveryFormat("pdf")}
-                          disabled={downloadPreview.downloading || selectedCount === 0 || tooManyPages}
-                        >
-                          <LightTableIcon name="export" size={16} /> Download PDF
-                        </button>
-                      </footer>
-                      <DownloadDeliveryDialog
-                        open={deliveryFormat !== null}
-                        title={
-                          deliveryFormat === "csv"
-                            ? "Deliver the CSV"
-                            : deliveryFormat === "wordlist"
-                              ? "Deliver the word list"
-                              : deliveryFormat === "linelist"
-                                ? "Deliver the line list"
-                                : "Deliver the PDF"
-                        }
-                        fileLabel={
-                          deliveryFormat === "csv"
-                            ? `${plural(selectedCount, "matched page")}, one row per matched line`
-                            : deliveryFormat === "wordlist"
-                              ? `${plural(selectedCount, "matched page")}, one row per matched word with its granth page`
-                              : deliveryFormat === "linelist"
-                                ? `${plural(selectedCount, "matched page")}, one row per matched line with its granth page`
-                                : `${plural(finalPageCount, "PDF page")}, cover first`
-                        }
-                        busy={downloadPreview.downloading}
-                        error={downloadPreview.error}
-                        onClose={() => setDeliveryFormat(null)}
-                        onDownload={() => void downloadMatchedPages(deliveryFormat ?? "pdf", "download")}
-                        onEmail={(email) => void downloadMatchedPages(deliveryFormat ?? "pdf", "email", email)}
-                      />
-                    </>
-                  ) : null}
-                </div>
-              </div>
+                    </section>
+
+                    <DownloadDeliveryDialog
+                      open={deliveryFormat !== null}
+                      title={
+                        deliveryFormat === "csv"
+                          ? "Spreadsheet (CSV)"
+                          : deliveryFormat === "wordlist"
+                            ? "Word list"
+                            : deliveryFormat === "linelist"
+                              ? "Line list"
+                              : "Full PDF"
+                      }
+                      fileLabel={
+                        deliveryFormat === "csv"
+                          ? `${plural(selectedCount, "matching page")}, one row per matching line`
+                          : deliveryFormat === "wordlist"
+                            ? `${plural(selectedCount, "matching page")}, one row per matching word`
+                            : deliveryFormat === "linelist"
+                              ? `${plural(selectedCount, "matching page")}, one row per matching line`
+                              : `${plural(finalPageCount, "PDF page")}, cover first`
+                      }
+                      busy={busy}
+                      error={downloadPreview.error}
+                      onClose={() => setDeliveryFormat(null)}
+                      onDownload={() => void downloadMatchedPages(deliveryFormat ?? "pdf", "download")}
+                      onEmail={(email) => void downloadMatchedPages(deliveryFormat ?? "pdf", "email", email)}
+                    />
+                  </>
+                ) : null}
+              </Sheet>
             );
           })()
         : null}

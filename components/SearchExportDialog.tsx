@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
+import { LightTableIcon } from "@/components/LightTableIcon";
+import { ExportActions, Sheet, Stepper } from "@/components/Sheet";
 import { downloadBlob, filenameFromResponse } from "@/lib/download-file";
 import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
 import { MAX_CONTEXT_PAGE_RADIUS, normalizeContextPageRadius } from "@/lib/page-context";
@@ -326,227 +328,189 @@ export function SearchExportDialog({
     }
   }
 
+  const choice = (format: ExportFormat) => ({
+    onSelect: () => setDeliveryFormat(format),
+    busy: busyFormat === format,
+    disabled: busyFormat !== null || (format === "pdf" ? pdfBlockedReason !== null : csvBlockedReason !== null),
+  });
+  const pdfRange = pdfEstimate.max > pdfEstimate.min ? `${pdfEstimate.min}–${pdfEstimate.max}` : String(pdfEstimate.min);
+  const noPdfCount = preview ? preview.total_granths - preview.exportable_granths : 0;
+
   return (
-    <div className="searchDownloadOverlay" role="dialog" aria-modal="true" aria-label="Export search results">
-      <div className="searchDownloadPanel searchExportPanel">
-        <header className="searchDownloadHeader">
-          <div>
-            <h2>Export whole search</h2>
-            <p>
-              {queries.join(", ")} | {scopeLabel}
+    <Sheet
+      open
+      title="Export results"
+      subtitle={`${queries.join(", ")} · ${scopeLabel}`}
+      onClose={onClose}
+      busy={busyFormat !== null}
+      footer={
+        preview ? (
+          <ExportActions
+            hint={
+              // The size limit already has its own note, with the fix, above the list.
+              pdfBlockedReason && !csvBlockedReason && !tooManyPdfPages && !tooManyPdfGranths
+                ? `Full PDF: ${pdfBlockedReason}`
+                : csvBlockedReason ?? (pdfPagesOverLimit ? `Nearby pages may push the PDF past ${maxDownloadPages} pages.` : null)
+            }
+            secondary={{
+              id: "linelist",
+              label: "Line list",
+              detail: "A PDF table of every matching line: page, line number, the line and the word",
+              busyLabel: "Building",
+              ...choice("linelist"),
+            }}
+            primary={{
+              id: "pdf",
+              label: "Full PDF",
+              detail: "One PDF with the matching pages of every chosen book",
+              busyLabel: "Building",
+              ...choice("pdf"),
+            }}
+            more={[
+              {
+                id: "wordlist",
+                label: "Word list (PDF)",
+                detail: "Each matching word with the book's page number",
+                busyLabel: "Building word list",
+                ...choice("wordlist"),
+              },
+              {
+                id: "csv",
+                label: "Spreadsheet (CSV)",
+                detail: "Page and line numbers, to open in Excel or Sheets",
+                busyLabel: "Building CSV",
+                ...choice("csv"),
+              },
+            ]}
+          />
+        ) : null
+      }
+    >
+      {loading ? (
+        <div className="sheetLoading" role="status">
+          <span className="sheetSpinner" aria-hidden="true" /> Finding every book that matches…
+        </div>
+      ) : null}
+      {error ? <p className="sheetNote is-error" role="alert">{error}</p> : null}
+      {notice ? <p className="sheetNote is-ok" role="status">{notice}</p> : null}
+
+      {preview ? (
+        <>
+          <div className="sheetStats">
+            <div className="sheetStat">
+              <strong>{selectedGranths.length}<small style={{ fontSize: 13, fontWeight: 500 }}> / {preview.total_granths}</small></strong>
+              <span>books chosen</span>
+            </div>
+            <div className="sheetStat">
+              <strong>{selectedMatchedPages}</strong>
+              <span>matching pages</span>
+            </div>
+            <div className="sheetStat">
+              <strong>{pdfRange}</strong>
+              <span>pages in the PDF</span>
+            </div>
+          </div>
+
+          {tooManyPdfPages || tooManyPdfGranths ? (
+            <p className="sheetNote is-warn">
+              The full PDF can hold up to {maxDownloadPages} pages from {maxCombinedGranths} books; this choice is larger.
+              <button type="button" onClick={fitSelectionToPdfLimit}>Fit to limit</button>
             </p>
-          </div>
-          <button type="button" onClick={onClose} disabled={busyFormat !== null}>
-            Close
-          </button>
-        </header>
+          ) : null}
+          {noPdfCount > 0 ? (
+            <p className="sheetSmall">
+              {noPdfCount} {noPdfCount === 1 ? "book has" : "books have"} no uploaded PDF, so {noPdfCount === 1 ? "it goes" : "they go"} only into the line list, word list and CSV.
+            </p>
+          ) : null}
+          {preview.truncated ? (
+            <p className="sheetSmall">Only the first {preview.max_export_granth_preview} books are listed. Narrow the search to see the rest.</p>
+          ) : null}
 
-        {loading ? (
-          <div className="searchDownloadNotice" role="status">
-            <span className="buttonSpinnerLabel">
-              <span className="loadingSpinner" aria-hidden="true" />
-              Finding every granth that matches
-            </span>
-          </div>
-        ) : null}
-        {error ? (
-          <div className="searchDownloadError" role="alert">
-            {error}
-          </div>
-        ) : null}
-        {notice ? (
-          <div className="searchDownloadNotice" role="status">
-            {notice}
-          </div>
-        ) : null}
-
-        {preview ? (
-          <>
-            <div className="searchDownloadSummary">
-              <strong>{selectedGranths.length}</strong> of {preview.total_granths} books · <strong>{selectedMatchedPages}</strong> pages
-              selected. Combined PDF: about {pdfEstimate.max > pdfEstimate.min ? `${pdfEstimate.min}–${pdfEstimate.max}` : pdfEstimate.min} pages
-              (up to {maxDownloadPages} pages from {maxCombinedGranths} books).
-              {preview.total_granths > preview.exportable_granths ? (
-                <span> {preview.total_granths - preview.exportable_granths} books have no PDF, so they go only into the CSV, word list and line list.</span>
-              ) : null}
-              {preview.truncated ? (
-                <span> Only the first {preview.max_export_granth_preview} books are listed; narrow the search.</span>
-              ) : null}
+          <details className="sheetFold">
+            <summary>
+              <LightTableIcon name="chevron" size={14} /> PDF options
+              <em>
+                {contextPages ? `±${contextPages} nearby` : "Matching pages only"}
+                {maxPagesPerGranth ? ` · ${maxPagesPerGranth} per book` : ""}
+              </em>
+            </summary>
+            <div className="sheetFoldBody">
+              <Stepper
+                label="Nearby pages"
+                hint="Pages before and after each match"
+                value={contextPages}
+                max={MAX_CONTEXT_PAGE_RADIUS}
+                onChange={(n) => setContextPages(normalizeContextPageRadius(n))}
+              />
+              <Stepper
+                label="Pages per book"
+                hint="0 keeps every matching page"
+                value={maxPagesPerGranth}
+                max={maxDownloadPages}
+                onChange={setMaxPagesPerGranth}
+              />
             </div>
+          </details>
 
-            <div className="searchDownloadToolbar">
-              <button type="button" onClick={() => selectAll("all")}>
-                Select all
-              </button>
-              <button type="button" onClick={() => selectAll("pdf")}>
-                Only PDF-ready
-              </button>
-              <button type="button" onClick={() => selectAll("none")}>
-                Clear
-              </button>
-              <button
-                type="button"
-                onClick={fitSelectionToPdfLimit}
-                title={`Keep the granths that fit inside ${maxDownloadPages} PDF pages`}
-              >
-                Fit to PDF limit
-              </button>
-              <label className="searchDownloadContextInput">
-                <span>Nearby pages</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={MAX_CONTEXT_PAGE_RADIUS}
-                  inputMode="numeric"
-                  value={contextPages}
-                  onChange={(event) =>
-                    setContextPages(event.target.value === "" ? 0 : normalizeContextPageRadius(event.target.value))
-                  }
-                />
-              </label>
-              <label className="searchDownloadContextInput" title="0 keeps every matched page of every granth">
-                <span>Max pages per granth</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={maxDownloadPages}
-                  inputMode="numeric"
-                  value={maxPagesPerGranth}
-                  onChange={(event) => {
-                    const parsed = Math.floor(Number(event.target.value));
-                    setMaxPagesPerGranth(
-                      Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, maxDownloadPages) : 0
-                    );
-                  }}
-                />
-              </label>
+          <section className="sheetSection">
+            <div className="sheetSectionHead">
+              <h3>Books</h3>
+              <div className="sheetLinks">
+                <button type="button" onClick={() => selectAll("all")}>All</button>
+                <button type="button" onClick={() => selectAll("pdf")}>With PDF</button>
+                <button type="button" onClick={() => selectAll("none")}>None</button>
+              </div>
             </div>
-
-            <div className="searchDownloadPageList">
+            <div className="sheetList">
               {preview.granths.length === 0 ? (
-                <div style={{ padding: 10, fontWeight: 700, opacity: 0.8 }}>No granth matched this search.</div>
+                <div className="sheetEmpty">No book matched this search.</div>
               ) : (
                 preview.granths.map((granth) => (
-                  <label key={granth.granth_key} className="searchExportGranthRow">
+                  <label key={granth.granth_key} className="sheetRow">
                     <input
                       type="checkbox"
                       checked={selectedSet.has(granth.granth_key)}
                       onChange={(event) => setGranthSelected(granth.granth_key, event.target.checked)}
                     />
-                    <span className="searchExportGranthName">
-                      {granth.granth_name || granth.pdf_name || granth.custom_id}
-                      <em>{granth.pdf_name || "No uploaded PDF"}</em>
+                    <span className="sheetRowMain">
+                      <strong>{granth.granth_name || granth.pdf_name || granth.custom_id}</strong>
                     </span>
-                    <span className="searchExportGranthMeta">
-                      {granth.matched_pages} page(s)
+                    <span className="sheetRowSide">
+                      {granth.matched_pages} {granth.matched_pages === 1 ? "page" : "pages"}
                       {granth.exportable ? null : (
-                        <em title={granth.unavailable_reason || "No uploaded PDF"}>CSV / word list only</em>
+                        <span className="sheetBadge" title={granth.unavailable_reason || "No uploaded PDF"}>No PDF</span>
                       )}
                     </span>
                   </label>
                 ))
               )}
             </div>
+          </section>
 
-            <footer className="searchDownloadFooter">
-              {pdfPagesOverLimit ? (
-                <span className="searchDownloadErrorText">
-                  Nearby pages may push this past {maxDownloadPages} pages. Lower it if the download is rejected.
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setDeliveryFormat("csv")}
-                title={csvBlockedReason || "Export page and line numbers as CSV"}
-                disabled={busyFormat !== null || csvBlockedReason !== null}
-              >
-                {busyFormat === "csv" ? (
-                  <span className="buttonSpinnerLabel">
-                    <span className="loadingSpinner" aria-hidden="true" />
-                    Building CSV
-                  </span>
-                ) : (
-                  "Export CSV"
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeliveryFormat("wordlist")}
-                title={csvBlockedReason || "PDF table of every matched word with its granth page number"}
-                disabled={busyFormat !== null || csvBlockedReason !== null}
-              >
-                {busyFormat === "wordlist" ? (
-                  <span className="buttonSpinnerLabel">
-                    <span className="loadingSpinner" aria-hidden="true" />
-                    Building word list
-                  </span>
-                ) : (
-                  "Export word list (PDF)"
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeliveryFormat("linelist")}
-                title={csvBlockedReason || "PDF table of every matched line: granth page, line number, the line and the word"}
-                disabled={busyFormat !== null || csvBlockedReason !== null}
-              >
-                {busyFormat === "linelist" ? (
-                  <span className="buttonSpinnerLabel">
-                    <span className="loadingSpinner" aria-hidden="true" />
-                    Building line list
-                  </span>
-                ) : (
-                  "Export line list (PDF)"
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeliveryFormat("pdf")}
-                title={pdfBlockedReason || "Download one PDF with matched pages from every selected granth"}
-                disabled={busyFormat !== null || pdfBlockedReason !== null}
-              >
-                {busyFormat === "pdf" ? (
-                  <span className="buttonSpinnerLabel">
-                    <span className="loadingSpinner" aria-hidden="true" />
-                    Building PDF
-                  </span>
-                ) : (
-                  "Download combined PDF"
-                )}
-              </button>
-            </footer>
-
-            {pdfBlockedReason || csvBlockedReason ? (
-              <div className="searchExportHint">{pdfBlockedReason || csvBlockedReason}</div>
-            ) : null}
-
-            <DownloadDeliveryDialog
-              open={deliveryFormat !== null}
-              title={
-                deliveryFormat === "csv"
-                  ? "Choose CSV delivery"
-                  : deliveryFormat === "wordlist"
-                    ? "Choose word list delivery"
-                    : deliveryFormat === "linelist"
-                      ? "Choose line list delivery"
-                      : "Choose PDF delivery"
-              }
-              fileLabel={
-                deliveryFormat === "csv" || deliveryFormat === "wordlist" || deliveryFormat === "linelist"
-                  ? `${selectedGranths.length} granth(s), ${selectedMatchedPages} matching page(s)`
-                  : `${pdfGranths.length} granth(s), about ${pdfEstimate.min}${
-                      pdfEstimate.max > pdfEstimate.min ? `-${pdfEstimate.max}` : ""
-                    } PDF page(s)`
-              }
-              busy={busyFormat !== null}
-              error={error}
-              onClose={() => setDeliveryFormat(null)}
-              onDownload={() => void runExport(deliveryFormat ?? "pdf", "download")}
-              onEmail={(email) => void runExport(deliveryFormat ?? "pdf", "email", email)}
-            />
-          </>
-        ) : null}
-      </div>
-    </div>
+          <DownloadDeliveryDialog
+            open={deliveryFormat !== null}
+            title={
+              deliveryFormat === "csv"
+                ? "Spreadsheet (CSV)"
+                : deliveryFormat === "wordlist"
+                  ? "Word list"
+                  : deliveryFormat === "linelist"
+                    ? "Line list"
+                    : "Full PDF"
+            }
+            fileLabel={
+              deliveryFormat === "pdf" || deliveryFormat === null
+                ? `${pdfGranths.length} ${pdfGranths.length === 1 ? "book" : "books"}, about ${pdfRange} PDF pages`
+                : `${selectedGranths.length} ${selectedGranths.length === 1 ? "book" : "books"}, ${selectedMatchedPages} matching pages`
+            }
+            busy={busyFormat !== null}
+            error={error}
+            onClose={() => setDeliveryFormat(null)}
+            onDownload={() => void runExport(deliveryFormat ?? "pdf", "download")}
+            onEmail={(email) => void runExport(deliveryFormat ?? "pdf", "email", email)}
+          />
+        </>
+      ) : null}
+    </Sheet>
   );
 }

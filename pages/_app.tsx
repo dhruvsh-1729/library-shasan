@@ -4,6 +4,7 @@ import "@/styles/admin.css";
 import "@/styles/search.css";
 import "@/styles/theme.css";
 import "@/styles/ask.css";
+import "@/styles/sheet.css";
 import type { AppProps } from "next/app";
 import { Archivo, Noto_Serif_Devanagari, Noto_Serif_Gujarati } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
