@@ -2,12 +2,21 @@
   "_about": "Checked corrections to the granth catalog (lib/granth-catalog-build.mjs). The source tables are never rewritten; these win over what is read from file names and the library book list. 'books' is keyed by granth_library_books.id, 'granths' by Turso granth_key. A granth with duplicate_of is the same edition as that granth and is kept out of search so no word is counted twice. Run `node scripts/granth_catalog_report.mjs` after editing.",
   "books": {
     "58": {
-      "_why": "title_english was copied from book 55; codes 146-152 are the Trishashti volumes",
-      "title_english": "Trishashti Shalaka Purush Charitra Mahakavya"
+      "_why": "title_english was copied from book 55; codes 146-152 are the Trishashti volumes; title_display listed every parva",
+      "title_english": "Trishashti Shalaka Purush Charitra Mahakavya",
+      "title_display": "त्रिषष्टिशलाकापुरुषचरितमहाकाव्यम्"
     },
     "107": {
       "_why": "title_display held the author's name",
       "title_display": "लोकप्रकाश"
+    },
+    "31": {
+      "title_display": "उपमितिभवप्रपञ्चा कथा",
+      "_why": "title_display listed the three parts with their sub-titles"
+    },
+    "155": {
+      "title_display": "જૈન લક્ષણાવલી",
+      "_why": "title_display read લક્ષવાળી (Jain Lakshanavali) and listed every part"
     }
   },
   "granths": {

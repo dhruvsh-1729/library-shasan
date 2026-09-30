@@ -18,6 +18,10 @@ type BookItem = {
   author_text: string | null;
   details_text: string | null;
   book_codes: string[];
+  /** Gatha rows in the book's map; 0: gathas cannot be chosen, only pages. */
+  mapped_gathas?: number;
+  /** The same per book code. */
+  mapped_by_code?: Record<string, number>;
 };
 
 type BooksResponse = {
@@ -377,12 +381,15 @@ export default function GranthExtractorPage() {
         const routeBook = Number.isFinite(routeBookId)
           ? items.find((item) => item.id === routeBookId)
           : null;
-        const initialBook = routeBook || items[0] || null;
+        // Open on a book whose gathas can be chosen.
+        const initialBook = routeBook || items.find((item) => (item.mapped_gathas ?? 0) > 0) || items[0] || null;
 
         setBooks(items);
         if (initialBook) {
           setBookId(initialBook.id);
-          setBookCode(routeBookCode || initialBook.book_codes?.[0] || "");
+          // The first of its parts that has gathas mapped.
+          const mappedCode = initialBook.book_codes?.find((code) => (initialBook.mapped_by_code?.[code] ?? 0) > 0);
+          setBookCode(routeBookCode || mappedCode || initialBook.book_codes?.[0] || "");
         }
       } catch (loadError) {
         if (active) setBookError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -903,7 +910,7 @@ export default function GranthExtractorPage() {
                   const nextId = Number(event.target.value);
                   const next = books.find((book) => book.id === nextId) || null;
                   setBookId(nextId);
-                  setBookCode(next?.book_codes?.[0] || "");
+                  setBookCode(next?.book_codes?.find((code) => (next.mapped_by_code?.[code] ?? 0) > 0) || next?.book_codes?.[0] || "");
                   setAdhikar("");
                   setIncludeAllIdentifiers(false);
                   setResult(null);
@@ -915,6 +922,7 @@ export default function GranthExtractorPage() {
                 {filteredBooks.map((book) => (
                   <option key={book.id} value={book.id}>
                     {titleForBook(book)}
+                    {book.mapped_gathas === 0 ? " — pages only" : ""}
                   </option>
                 ))}
               </select>
@@ -996,6 +1004,12 @@ export default function GranthExtractorPage() {
               aria-label={kind === "gathas" ? "Gatha numbers" : "Page numbers"}
               className="extractorInput"
             />
+            {kind === "gathas" && !isPageMode && selectedBook &&
+            (selectedBook.mapped_gathas === 0 || (bookCode && selectedBook.mapped_by_code?.[bookCode] === 0)) ? (
+              <p className="extractorNotice" role="status">
+                {selectedBook.mapped_gathas === 0 ? "This book" : "This part"} has no gatha numbers yet. Choose Pages to pick pages instead.
+              </p>
+            ) : null}
 
             {kind === "gathas" ? (
               <select
@@ -1118,7 +1132,7 @@ export default function GranthExtractorPage() {
                               resetPreviewState();
                             }}
                           >
-                            id {id}
+                            Identifier {id}
                           </button>
                         ))}
                       </div>
@@ -1159,7 +1173,7 @@ export default function GranthExtractorPage() {
                       resetPreviewState();
                     }}
                   >
-                    id {range.adhikar ?? "none"}: {range.minGatha}-{range.maxGatha}
+                    Identifier {range.adhikar ?? "none"}: {range.minGatha}-{range.maxGatha}
                   </button>
                 ))}
               </div>
@@ -1417,7 +1431,7 @@ export default function GranthExtractorPage() {
                                 aria-busy={previewingKey === rangeKey}
                               >
                                 {previewingKey === rangeKey ? "Previewing " : ""}
-                                {range.range.gatha ? `id ${range.range.adhikar ?? "none"} / gatha ${range.range.gatha}: ` : ""}
+                                {range.range.gatha ? `Identifier ${range.range.adhikar ?? "none"}, gatha ${range.range.gatha}: ` : ""}
                                 page {range.range.pageStart}
                                 {range.range.pageEnd !== range.range.pageStart ? `-${range.range.pageEnd}` : ""}
                               </button>

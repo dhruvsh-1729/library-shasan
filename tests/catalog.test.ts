@@ -56,3 +56,11 @@ test("a library-book link whose codes do not include the file's number is refuse
   assert.equal(entries.find((e) => e.granth_key === "284")!.series, null);
   assert.ok(issues.some((i) => i.problem.includes("codes do not include")));
 });
+
+test("a library title that lists every part becomes the work's name", async () => {
+  const { workTitle } = await import("@/pages/api/granth-mapping/books");
+  assert.equal(workTitle("શબ્દરત્નમહોદધિ ભાગ 1 શબ્દરત્નમહોદધિ ભાગ 2 શબ્દરત્નમહોદધિ ભાગ 3"), "શબ્દરત્નમહોદધિ");
+  assert.equal(workTitle("ધર્મસંગ્રહ ભાગ 01 (B038540) ધર્મસંગ્રહ ભાગ 02 (B038550)"), "ધર્મસંગ્રહ");
+  assert.equal(workTitle("अल्पपरिचित सिद्धांतिक शब्दकोश ભાગ ૧ अल्पपरिचित सिद्धांतिक शब्दकोश ભાગ 2-3"), "अल्पपरिचित सिद्धांतिक शब्दकोश");
+  assert.equal(workTitle("आगम सुत्ताणि"), "आगम सुत्ताणि");
+});

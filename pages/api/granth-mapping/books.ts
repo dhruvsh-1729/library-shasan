@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import overrides from "@/data/granth-catalog-overrides.json";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { protectApi } from "@/lib/auth-guard";
@@ -23,6 +24,44 @@ function parseOffset(raw: string | string[] | undefined) {
 
 function escapeIlikeTerm(value: string) {
   return value.replace(/[\\%_]/g, "\\$&").replace(/[(),]/g, " ");
+}
+
+
+const BOOK_OVERRIDES = (overrides as { books?: Record<string, Record<string, unknown>> }).books ?? {};
+
+/**
+ * The work's name from a library title that lists every part
+ * ("शब्दरत्नमहोदधि ભાગ 1 શબ્દરત્નમહોદધિ ભાગ 2 …" -> "શબ્દરત્નમહોદધિ"): the
+ * parts are chosen by their book codes in the extractor anyway.
+ */
+export function workTitle(display: string | null | undefined) {
+  const text = String(display ?? "").trim();
+  const partMark = /\s*(?:ભાગ|भाग)[-\s]*[\d૦-૯०-९]+(?:\s*-\s*[\d૦-૯०-९]+)?(?:\s*\([A-Z]\d+\))?\s*/u;
+  const pieces = text.split(partMark).map((piece) => piece.trim()).filter(Boolean);
+  return pieces.length > 1 ? pieces[0] : text;
+}
+
+/** Gatha rows in the map for each of a book's codes; a code with 0 has only pages. */
+async function mappedGathaCounts(supabase: ReturnType<typeof getSupabaseAdmin>, books: Array<{ id: number; codes: string[] }>) {
+  const jobs = books.flatMap((book) => book.codes.map((code) => ({ id: book.id, code })));
+  const counts = new Map<number, Record<string, number>>();
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(16, jobs.length) }, async () => {
+      while (next < jobs.length) {
+        const { id, code } = jobs[next++];
+        const { count } = await supabase
+          .from("granth_gatha_map")
+          .select("book_id", { count: "exact", head: true })
+          .eq("book_id", id)
+          .eq("book_code", code);
+        const entry = counts.get(id) ?? {};
+        entry[code] = count ?? 0;
+        counts.set(id, entry);
+      }
+    })
+  );
+  return counts;
 }
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -64,8 +103,18 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       if (error) throw new Error(error.message);
       const total = count ?? data?.length ?? 0;
 
+      const rows = (data ?? []).map((row) => ({ ...row, ...(BOOK_OVERRIDES[String(row.id)] ?? {}) }));
+      const counts = await mappedGathaCounts(
+        supabase,
+        rows.map((row) => ({ id: Number(row.id), codes: ((row.book_codes as string[] | null) ?? []).map(String) }))
+      );
       return {
-        items: data ?? [],
+        items: rows.map(({ _why: _unused, ...row }: Record<string, unknown>) => ({
+          ...row,
+          title_display: workTitle(row.title_display as string | null),
+          mapped_gathas: Object.values(counts.get(Number(row.id)) ?? {}).reduce((sum, n) => sum + n, 0),
+          mapped_by_code: counts.get(Number(row.id)) ?? {},
+        })),
         meta: {
           count: total,
           total,
