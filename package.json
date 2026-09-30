@@ -35,7 +35,9 @@
     "pdfjs-dist": "^4.10.38",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
     "regenerator-runtime": "^0.14.1",
+    "remark-gfm": "^4.0.1",
     "uploadthing": "^7.7.4",
     "xlsx": "^0.18.5"
   },

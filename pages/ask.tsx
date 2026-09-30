@@ -2,6 +2,9 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
+import { AskSourcePages } from "@/components/AskSourcePages";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
@@ -42,6 +45,11 @@ type Turn = {
   droppedGathas?: number[];
   needsAdhikar?: Chapter[] | null;
   error?: boolean;
+  /** The model's chain of thought (Think harder), shown folded above the answer. */
+  thinking?: string;
+  /** Still arriving: what the model is doing right now ("Reading part 2 of 3"). */
+  streaming?: boolean;
+  status?: string;
 };
 
 type ChatSummary = { id: string; title: string; updated_at: string; message_count: number };
@@ -70,7 +78,37 @@ function toTurn(message: StoredMessage): Turn {
     droppedGathas: Array.isArray(meta.droppedGathas) ? (meta.droppedGathas as number[]) : [],
     needsAdhikar: Array.isArray(meta.needsAdhikar) ? (meta.needsAdhikar as Chapter[]) : null,
     error: Boolean(meta.error),
+    thinking: typeof meta.thinking === "string" ? meta.thinking : undefined,
   };
+}
+
+/**
+ * A "**" the model opened and never closed (or has not closed yet, while the
+ * answer streams) would show as bare asterisks; the unmatched one is dropped.
+ */
+function tidyMarkdown(text: string) {
+  return text
+    .split("\n")
+    .map((line) => {
+      const marks = line.split("**").length - 1;
+      if (marks % 2 === 0) return line;
+      const at = line.lastIndexOf("**");
+      return line.slice(0, at) + line.slice(at + 2);
+    })
+    .join("\n");
+}
+
+/** One page per PDF page, in reading order: two passages from one page show it once. */
+function sourcePages(sources: SourcePassage[]) {
+  const seen = new Set<string>();
+  const pages = [];
+  for (const s of sources) {
+    const key = `${s.pdfUrl ?? s.granthKey}#${s.pageNumber}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pages.push({ key, granthName: s.granthName, pageNumber: s.pageNumber, label: `p. ${s.pageNumber}`, pdfUrl: s.pdfUrl, source: s });
+  }
+  return pages;
 }
 
 /** Reads like "57–68" but keeps a gap visible, e.g. "57–62, 64–68". */
@@ -136,7 +174,29 @@ export default function AskPage() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
+  // Follows a streaming answer down until the reader scrolls up to read;
+  // coming back to the bottom starts following again.
+  const following = useRef(true);
+  useEffect(() => {
+    const distance = () => {
+      const doc = document.scrollingElement ?? document.documentElement;
+      return doc.scrollHeight - doc.scrollTop - window.innerHeight;
+    };
+    const onUserScroll = () => {
+      window.requestAnimationFrame(() => { following.current = distance() < 120; });
+    };
+    window.addEventListener("wheel", onUserScroll, { passive: true });
+    window.addEventListener("touchmove", onUserScroll, { passive: true });
+    window.addEventListener("keydown", onUserScroll);
+    return () => {
+      window.removeEventListener("wheel", onUserScroll);
+      window.removeEventListener("touchmove", onUserScroll);
+      window.removeEventListener("keydown", onUserScroll);
+    };
+  }, []);
+  useEffect(() => {
+    if (following.current) endRef.current?.scrollIntoView({ block: "end" });
+  }, [turns, loading]);
 
   async function refreshChats(query = chatQuery) {
     try {
@@ -179,6 +239,9 @@ export default function AskPage() {
 
   // ?chat=<id> opens a saved conversation, restoring what it was reading.
   const chatParam = typeof router.query.chat === "string" ? router.query.chat : "";
+  // Only the chat asked for last may fill the page; an earlier, slower load
+  // (or an effect React ran twice) is ignored instead of leaving it spinning.
+  const openingChat = useRef("");
   useEffect(() => {
     if (!router.isReady) return;
     if (!chatParam) {
@@ -186,13 +249,14 @@ export default function AskPage() {
       return;
     }
     if (chatParam === chatId) return;
-    let cancelled = false;
+    openingChat.current = chatParam;
+    const stale = () => openingChat.current !== chatParam;
     setLoadingChat(true);
     (async () => {
       try {
         const res = await fetch(`/api/ai/chats/${encodeURIComponent(chatParam)}`);
         const json = await res.json();
-        if (cancelled) return;
+        if (stale()) return;
         if (!res.ok) throw new Error(json.error || "Could not open that chat.");
         const chat = json.chat as { id: string; scope: Record<string, unknown> | null; language: string | null; deep: boolean; messages: StoredMessage[] };
         setChatId(chat.id);
@@ -212,12 +276,11 @@ export default function AskPage() {
         setDeepMode(chat.deep);
         setError(null);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!stale()) setError(e instanceof Error ? e.message : String(e));
       } finally {
-        if (!cancelled) setLoadingChat(false);
+        if (!stale()) setLoadingChat(false);
       }
     })();
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, chatParam]);
 
@@ -307,8 +370,75 @@ export default function AskPage() {
     setError(null);
     setLoading(true);
     const history = turns.filter((t) => !t.error).slice(-6).map((t) => ({ role: t.role, content: t.content }));
+    following.current = true;
     setTurns((prev) => [...prev, { role: "user", content: q, scopeLine: scopeSummary }]);
     setQuestion("");
+
+    // The answer arrives as a stream of events (see pages/api/ai/ask.ts) into
+    // one assistant turn that fills in as they come.
+    setTurns((prev) => [...prev, { role: "assistant", content: "", streaming: true, status: deepMode ? "Thinking" : "Reading the pages" }]);
+    const patch = (fn: (t: Turn) => Turn) =>
+      setTurns((prev) => {
+        const next = prev.slice();
+        const i = next.length - 1;
+        if (i >= 0 && next[i].role === "assistant") next[i] = fn(next[i]);
+        return next;
+      });
+
+    const adoptChat = (id: unknown) => {
+      if (typeof id !== "string" || !id) return;
+      if (id !== chatId) {
+        setChatId(id);
+        void router.replace(`/ask?chat=${encodeURIComponent(id)}`, undefined, { shallow: true });
+      }
+      void refreshChats();
+    };
+
+    let finished = false;
+    const handle = (ev: Record<string, unknown>) => {
+      switch (ev.type) {
+        case "context": {
+          const ctx = ev.context as { summaryLine?: string; passages?: SourcePassage[]; truncated?: boolean; droppedGathas?: number[] };
+          patch((t) => ({
+            ...t,
+            scopeLine: ctx.summaryLine,
+            sources: ctx.passages ?? [],
+            truncated: Boolean(ctx.truncated),
+            droppedGathas: Array.isArray(ctx.droppedGathas) ? ctx.droppedGathas : [],
+          }));
+          break;
+        }
+        case "status":
+          patch((t) => ({ ...t, status: String(ev.text ?? "") }));
+          break;
+        case "thinking":
+          patch((t) => ({ ...t, thinking: (t.thinking ?? "") + String(ev.delta ?? ""), status: t.status || "Thinking" }));
+          break;
+        case "answer":
+          patch((t) => ({ ...t, content: t.content + String(ev.delta ?? ""), status: "Writing" }));
+          break;
+        case "restart":
+          patch((t) => ({ ...t, content: "", status: "Answering directly" }));
+          break;
+        case "done":
+          finished = true;
+          adoptChat(ev.chatId);
+          patch((t) => ({ ...t, content: String(ev.answer ?? t.content), streaming: false, status: undefined }));
+          break;
+        case "error":
+          finished = true;
+          adoptChat(ev.chatId);
+          patch((t) => ({
+            ...t,
+            content: String(ev.error || "Something went wrong."),
+            needsAdhikar: Array.isArray(ev.needsAdhikar) ? (ev.needsAdhikar as Chapter[]) : null,
+            error: true,
+            streaming: false,
+            status: undefined,
+          }));
+          break;
+      }
+    };
 
     try {
       const res = await fetch("/api/ai/ask", {
@@ -322,34 +452,37 @@ export default function AskPage() {
           history,
           chatId,
           scopeLine: scopeSummary,
+          stream: true,
         }),
       });
-      const json = await res.json();
-      // The first answer creates the saved chat; its link goes in the URL.
-      if (json.chatId && json.chatId !== chatId) {
-        setChatId(json.chatId);
-        void router.replace(`/ask?chat=${encodeURIComponent(json.chatId)}`, undefined, { shallow: true });
-      }
-      if (json.chatId) void refreshChats();
-      if (!res.ok || json.error) {
-        setTurns((prev) => [...prev, {
-          role: "assistant",
-          content: json.error || "Something went wrong.",
-          needsAdhikar: Array.isArray(json.needsAdhikar) ? json.needsAdhikar : null,
-          error: true,
-        }]);
+
+      // A request refused before the answer starts comes back as plain JSON.
+      if (!(res.headers.get("content-type") ?? "").includes("ndjson") || !res.body) {
+        const json = await res.json().catch(() => ({}));
+        handle({ type: "error", error: json.error || `Request failed (${res.status}).` });
       } else {
-        setTurns((prev) => [...prev, {
-          role: "assistant",
-          content: json.answer,
-          scopeLine: json.context?.summaryLine,
-          sources: json.context?.passages ?? [],
-          truncated: Boolean(json.context?.truncated),
-          droppedGathas: Array.isArray(json.context?.droppedGathas) ? json.context.droppedGathas : [],
-        }]);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        const take = (line: string) => {
+          if (!line.trim()) return;
+          try { handle(JSON.parse(line)); } catch { /* a torn line; the next ones still count */ }
+        };
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) >= 0) {
+            take(buffer.slice(0, nl));
+            buffer = buffer.slice(nl + 1);
+          }
+        }
+        take(buffer);
+        if (!finished) handle({ type: "error", error: "The connection dropped before the answer finished. Please ask again." });
       }
     } catch (err) {
-      setTurns((prev) => [...prev, { role: "assistant", content: err instanceof Error ? err.message : "Request failed.", error: true }]);
+      handle({ type: "error", error: err instanceof Error ? err.message : "Request failed." });
     } finally {
       setLoading(false);
     }
@@ -478,7 +611,27 @@ export default function AskPage() {
                   {t.role === "assistant" ? <span className="chAvatar" aria-hidden="true">ग्र</span> : null}
                   <div className="chBubble">
                     {t.role === "user" && t.scopeLine ? <div className="chTurnScope">{t.scopeLine}</div> : null}
-                    <div className="chText">{t.content}</div>
+                    {t.thinking ? (
+                      <details className="chThinking" open={t.streaming && !t.content ? true : undefined}>
+                        <summary>{t.streaming && !t.content ? (t.status || "Thinking") + "…" : "Thought process"}</summary>
+                        <div className="chThinkingText">{t.thinking}</div>
+                      </details>
+                    ) : null}
+                    {t.streaming && !t.content ? (
+                      <div className="chStatus"><span className="chTyping" aria-hidden="true"><span /><span /><span /></span>{t.thinking ? null : <span>{t.status}…</span>}</div>
+                    ) : (
+                      t.role === "assistant" && !t.error ? (
+                        // Answers come as Markdown: headings, bold, lists and tables are drawn,
+                        // not shown as asterisks. Raw HTML in an answer is never rendered.
+                        <div className={`chText chMd${t.streaming ? " isStreaming" : ""}`}>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                            a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+                          }}>{tidyMarkdown(t.content)}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <div className="chText">{t.content}</div>
+                      )
+                    )}
                     {t.needsAdhikar?.length ? (
                       <div className="chChapters">
                         <span>Which chapter?</span>
@@ -494,6 +647,12 @@ export default function AskPage() {
                       <p className="chNote">Gatha {[...new Set(t.droppedGathas)].join(", ")} was not read. Ask about it separately.</p>
                     ) : t.truncated ? (
                       <p className="chNote">Only part of this was read. Choose fewer gathas or pages for a fuller answer.</p>
+                    ) : null}
+                    {t.role === "assistant" && t.sources?.length ? (
+                      <AskSourcePages
+                        pages={sourcePages(t.sources)}
+                        onOpen={(p) => openSource((p as ReturnType<typeof sourcePages>[number]).source)}
+                      />
                     ) : null}
                     {t.sources?.length ? (
                       <details className="chSources">
@@ -527,14 +686,6 @@ export default function AskPage() {
                   </div>
                 </article>
               ))}
-              {loading ? (
-                <article className="chTurn isAssistant">
-                  <span className="chAvatar" aria-hidden="true">ग्र</span>
-                  <div className="chBubble chTyping" aria-label="Reading the pages">
-                    <span /><span /><span />
-                  </div>
-                </article>
-              ) : null}
               <div ref={endRef} />
             </section>
           )}

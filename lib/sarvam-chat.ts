@@ -106,3 +106,109 @@ async function chatOnce(opts: ChatOpts) {
 
   return { content, model, usage, finishReason: choice?.finish_reason ?? "stop" };
 }
+
+export type StreamHandlers = {
+  /** The model's chain of thought, as it arrives (reasoning model only). */
+  onThinking?: (delta: string) => void;
+  /** The answer, as it arrives. */
+  onAnswer?: (delta: string) => void;
+  /** The reasoning model gave nothing, and the direct model is being asked instead. */
+  onRestart?: () => void;
+};
+
+/**
+ * chat(), streamed: the same budget and the same fallback to the direct model,
+ * with each piece of thinking and answer handed on as it arrives.
+ */
+export async function chatStream(opts: ChatOpts & StreamHandlers) {
+  try {
+    return await chatStreamOnce(opts);
+  } catch (e) {
+    if (e instanceof SarvamChatError && e.status === 502 && (opts.model ?? CHAT_MODELS.fast) === CHAT_MODELS.reasoning) {
+      console.warn("sarvam reasoning model gave no answer; retrying with", CHAT_MODELS.fast);
+      opts.onRestart?.();
+      return chatStreamOnce({ ...opts, model: CHAT_MODELS.fast, maxTokens: undefined });
+    }
+    throw e;
+  }
+}
+
+type StreamChunk = {
+  choices?: Array<{ finish_reason?: string | null; delta?: { content?: string | null; reasoning_content?: string | null } }>;
+  usage?: Record<string, unknown> | null;
+};
+
+async function chatStreamOnce(opts: ChatOpts & StreamHandlers) {
+  const key = process.env.SARVAM_API_KEY;
+  if (!key) throw new Error("Missing SARVAM_API_KEY");
+
+  const model = opts.model ?? CHAT_MODELS.fast;
+  const maxTokens = opts.maxTokens ?? (model === CHAT_MODELS.reasoning ? reasoningBudget(opts.messages) : 2000);
+
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "api-subscription-key": key, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: opts.messages,
+      max_tokens: maxTokens,
+      temperature: opts.temperature ?? 0.2,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    let body: unknown;
+    try { body = JSON.parse(text); } catch { body = text; }
+    const msg = (body as { error?: { message?: string } })?.error?.message ?? `Sarvam chat failed (${res.status})`;
+    throw new SarvamChatError(msg, res.status || 502, body);
+  }
+
+  let content = "";
+  let thinking = "";
+  let finishReason = "stop";
+  let usage: Record<string, unknown> = {};
+  const decoder = new TextDecoder();
+  const reader = res.body.getReader();
+  let buffer = "";
+
+  const take = (line: string) => {
+    const data = line.startsWith("data:") ? line.slice(5).trim() : "";
+    if (!data || data === "[DONE]") return;
+    let chunk: StreamChunk;
+    try { chunk = JSON.parse(data) as StreamChunk; } catch { return; }
+    if (chunk.usage) usage = chunk.usage;
+    const choice = chunk.choices?.[0];
+    if (!choice) return;
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+    const r = choice.delta?.reasoning_content;
+    if (r) { thinking += r; opts.onThinking?.(r); }
+    const c = choice.delta?.content;
+    if (c) { content += c; opts.onAnswer?.(c); }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      take(buffer.slice(0, nl).trim());
+      buffer = buffer.slice(nl + 1);
+    }
+  }
+  take(buffer.trim());
+
+  if (!content.trim()) {
+    throw new SarvamChatError(
+      finishReason === "length"
+        ? "The model ran out of room before answering. Please ask again."
+        : "The model returned an empty answer.",
+      502,
+      { finishReason, usage }
+    );
+  }
+
+  return { content, thinking, model, usage, finishReason };
+}
