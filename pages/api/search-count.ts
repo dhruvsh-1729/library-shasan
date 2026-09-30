@@ -3,7 +3,7 @@ import { setNoStore } from "@/lib/api-cache";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import { getGranthCatalog, relPathsForIds } from "@/lib/granth-catalog";
-import { normalizeOCRSearchQueries, parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { MAX_SEARCH_QUERIES, normalizeOCRSearchQueries, parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
 import { countSearch } from "@/lib/search-count";
 
 // Exact totals for a search whose /api/search totals carry a "+" (more hit
@@ -24,7 +24,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const scripts = parseOCRSearchScripts(req.query.scripts);
     const queries = normalizeOCRSearchQueries(String(req.query.q ?? "").trim(), list(req.query.queryVariant ?? req.query.queryVariants))
       .filter((query) => Array.from(query).length >= 2)
-      .slice(0, 8);
+      .slice(0, MAX_SEARCH_QUERIES);
     if (!queries.length) return res.status(400).json({ error: "Enter a word to count." });
     const granths = String(req.query.granths ?? "").split(",").map((v) => v.trim()).filter(Boolean).slice(0, 250);
     const relPaths = granths.length ? relPathsForIds(await getGranthCatalog(), granths).relPaths : [];

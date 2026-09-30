@@ -291,6 +291,44 @@
   color: var(--lt-pencil);
 }
 
+/* The words a compound query is made of: each a chip that adds it to the search. */
+.ltParts {
+  display: grid;
+  gap: 6px;
+}
+
+.ltPartsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ltPartsLabel {
+  color: var(--lt-ink-3);
+  font-size: 14.5px;
+}
+
+.ltPartsLabel .indic {
+  color: var(--lt-ink-2);
+  font-size: 17px;
+}
+
+/* A part no kosh lists (a vishay term, or unknown letters): still searchable. */
+.ltSpelling.ltPart.isOutsideKosh {
+  border-style: dashed;
+}
+
+.ltPartFixed {
+  color: var(--lt-ink-3);
+  font-size: 18px;
+  padding: 0 2px;
+}
+
+.ltPartsKosh {
+  justify-self: start;
+}
+
 .ltMoreToggle {
   justify-self: start;
   display: inline-flex;
@@ -848,7 +886,8 @@
 .lt mark.ltRing::after {
   content: "";
   position: absolute;
-  inset: -0.2em -0.12em -0.12em;
+  /* Room above and below: an arc that touches the letters reads as a Devanagari headline over Gujarati. */
+  inset: -0.42em -0.2em -0.3em;
   background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='1.8' numOctaves='2' seed='7'/><feDisplacementMap in='SourceGraphic' scale='1.6'/></filter><g fill='none' stroke='%23c62f1c' stroke-linecap='round' filter='url(%23w)'><path d='M22 5.5C44 1.5 80 2.5 93 12.5C101 20 93 33.5 67 36.5C41 39.5 10 37 4.5 26.5C0.5 17.5 12 8.5 34 4.8L47 3.8' stroke-width='2.6' vector-effect='non-scaling-stroke' opacity='.92'/><path d='M30 4.6C50 2 84 4.5 94 14' stroke-width='1.2' vector-effect='non-scaling-stroke' opacity='.55'/></g></svg>") center / 100% 100% no-repeat;
   pointer-events: none;
 }

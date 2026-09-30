@@ -206,10 +206,16 @@ function queryValues(value: string | string[] | null | undefined) {
   return [value];
 }
 
+/**
+ * Strings one search may look for at once: a word's spellings, or a compound
+ * and its parts (/api/compound-parts). All are one OR'd index MATCH.
+ */
+export const MAX_SEARCH_QUERIES = 12;
+
 export function normalizeOCRSearchQueries(
   primary: string | string[] | null | undefined,
   variants?: string | string[] | null,
-  maxQueries = 8
+  maxQueries = MAX_SEARCH_QUERIES
 ) {
   const seen = new Set<string>();
   const queries: string[] = [];

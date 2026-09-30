@@ -46,3 +46,56 @@ export function formsFromList(words: QueryFormsWord[], list: string[] | null) {
     return picked.length ? picked : defaultForms(words)[index];
   });
 }
+
+// A Devanagari compound is also searched as the words it is made of
+// (/api/compound-parts): अकर्कशप्रशस्तवचनविनय… adds प्रशस्त, वचन, विनय … Each
+// chosen part is searched as its kosh spelling and, when the vishay spells it
+// differently, that spelling too (मनस् and मन, कर्मन् and कर्म).
+
+export type CompoundPart = {
+  text: string;
+  kind: "word" | "prefix" | "ending" | "unknown";
+  term?: string;
+  alias?: string;
+  koshes?: string[];
+  vishayOnly?: boolean;
+  pages?: number;
+};
+export type CompoundWord = { word: string; inKosh: string[]; parts: CompoundPart[] };
+
+/** Parts that can be searched: words, and stretches no word list knows. */
+export function searchablePartTerms(words: CompoundWord[]) {
+  const terms: string[] = [];
+  for (const word of words) {
+    for (const part of word.parts) {
+      if ((part.kind === "word" || part.kind === "unknown") && part.term && !terms.includes(part.term)) terms.push(part.term);
+    }
+  }
+  return terms;
+}
+
+/** Parts searched when the reader has not chosen: every known word. */
+export function defaultParts(words: CompoundWord[]) {
+  const known = new Set(words.flatMap((w) => w.parts.filter((p) => p.kind === "word").map((p) => p.term)));
+  return searchablePartTerms(words).filter((term) => known.has(term));
+}
+
+/** The chosen parts from a link ("parts=वचन,विनय"; [] is none), kept to those offered. */
+export function partsFromList(words: CompoundWord[], list: string[] | null) {
+  if (list === null) return defaultParts(words);
+  const offered = new Set(searchablePartTerms(words));
+  return list.filter((term) => offered.has(term));
+}
+
+/** The query strings the chosen parts add. */
+export function partQueries(words: CompoundWord[], chosen: string[]) {
+  const wanted = new Set(chosen);
+  const out: string[] = [];
+  for (const word of words) {
+    for (const part of word.parts) {
+      if (!part.term || !wanted.has(part.term)) continue;
+      for (const text of [part.term, part.alias]) if (text && !out.includes(text)) out.push(text);
+    }
+  }
+  return out;
+}

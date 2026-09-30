@@ -28,7 +28,17 @@ import {
   expandPagesWithContext,
   normalizeContextPageRadius,
 } from "@/lib/page-context";
-import { type QueryFormsWord, composeQueries, formsFromList, isRomanQuery } from "@/lib/search-query";
+import { KOSHES } from "@/lib/koshes.mjs";
+import {
+  type CompoundWord,
+  type QueryFormsWord,
+  composeQueries,
+  defaultParts,
+  formsFromList,
+  isRomanQuery,
+  partQueries,
+  partsFromList,
+} from "@/lib/search-query";
 import {
   type SearchRequest,
   type SearchScope,
@@ -233,6 +243,14 @@ export default function SearchPage() {
   // Forms named in a link, applied once the spellings for its query arrive.
   const pendingFormsRef = useRef<string[] | null>(null);
 
+  // The words a compound query is made of, from /api/compound-parts, and the
+  // ones chosen to be searched with it.
+  const [compoundWords, setCompoundWords] = useState<CompoundWord[] | null>(null);
+  const [compoundFor, setCompoundFor] = useState("");
+  const [chosenParts, setChosenParts] = useState<string[]>([]);
+  const partsCacheRef = useRef(new Map<string, CompoundWord[]>());
+  const pendingPartsRef = useRef<string[] | null>(null);
+
   // ---------------------------------------------------------------- results
   const [results, setResults] = useState<SearchResult[]>([]);
   const [summary, setSummary] = useState<SearchSummary | null>(null);
@@ -364,20 +382,91 @@ export default function SearchPage() {
     );
   }
 
-  /** The strings a request is searched as, reading the spellings if needed. */
+  const loadParts = useCallback(async (text: string) => {
+    const key = text.trim();
+    const cached = partsCacheRef.current.get(key);
+    if (cached) return cached;
+    const res = await fetch(`/api/compound-parts?q=${encodeURIComponent(key)}`);
+    const json = (await res.json()) as { words?: CompoundWord[]; error?: string };
+    if (!res.ok) throw new Error(json.error || `Could not split the word (${res.status})`);
+    const words = json.words ?? [];
+    partsCacheRef.current.set(key, words);
+    return words;
+  }, []);
+
+  /** The strings a request is searched as, reading the spellings and compound parts if needed. */
   async function queriesFor(request: SearchRequest) {
-    if (!isRomanQuery(request.q)) return { queries: normalizeOCRSearchQueries(request.q), forms: null };
-    const words = await loadForms(request.q);
-    const chosen = formsFromList(words, request.forms);
-    return { queries: composeQueries(chosen), forms: chosen.flat() };
+    let base: string[];
+    let forms: string[] | null = null;
+    if (!isRomanQuery(request.q)) base = normalizeOCRSearchQueries(request.q);
+    else {
+      const chosen = formsFromList(await loadForms(request.q), request.forms);
+      base = composeQueries(chosen);
+      forms = chosen.flat();
+    }
+    if (!base.length || (request.parts && request.parts.length === 0)) return { queries: base, forms, parts: request.parts };
+    // A failed split only loses the parts; the word itself is still searched.
+    const words = await loadParts(base[0]).catch(() => [] as CompoundWord[]);
+    const parts = partsFromList(words, request.parts);
+    return { queries: normalizeOCRSearchQueries([...base, ...partQueries(words, parts)]), forms, parts: request.parts };
   }
 
-  const currentQueries = useMemo(() => {
+  const baseQueries = useMemo(() => {
     const text = q.trim();
     if (!text) return [];
     if (!roman) return normalizeOCRSearchQueries(text);
     return formsFor === text ? composeQueries(chosenForms) : [];
   }, [q, roman, formsFor, chosenForms]);
+
+  // The word the compound parts are read from: the query as typed, or for a
+  // romanised query its first chosen Devanagari spelling.
+  const compoundBase = baseQueries[0] ?? "";
+  useEffect(() => {
+    const text = compoundBase.trim();
+    if (Array.from(text).length < 4 || isRomanQuery(text)) {
+      setCompoundWords(null);
+      setCompoundFor("");
+      setChosenParts([]);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const words = await loadParts(text);
+        if (!active) return;
+        const pending = pendingPartsRef.current;
+        pendingPartsRef.current = null;
+        setCompoundWords(words);
+        setCompoundFor(text);
+        setChosenParts(partsFromList(words, pending));
+      } catch {
+        if (active) setCompoundWords(null);
+      }
+    }, partsCacheRef.current.has(text) ? 0 : 260);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [compoundBase, loadParts]);
+
+  const partsReady = compoundWords !== null && compoundFor === compoundBase.trim() && compoundWords.length > 0;
+  const currentQueries = useMemo(
+    () =>
+      partsReady && compoundWords
+        ? normalizeOCRSearchQueries([...baseQueries, ...partQueries(compoundWords, chosenParts)])
+        : baseQueries,
+    [baseQueries, partsReady, compoundWords, chosenParts]
+  );
+
+  /** The parts as a request stores them: null while they are the default choice. */
+  function requestParts(): string[] | null {
+    if (!partsReady || !compoundWords) return null;
+    return sameIds(chosenParts, defaultParts(compoundWords)) ? null : [...chosenParts];
+  }
+
+  function togglePart(term: string) {
+    setChosenParts((prev) => (prev.includes(term) ? prev.filter((t) => t !== term) : [...prev, term]));
+  }
 
   // ---------------------------------------------------------------- URL
   // The URL is the source of truth: on load and on back/forward the form is set
@@ -397,6 +486,7 @@ export default function SearchPage() {
         : null
     );
     pendingFormsRef.current = parsed.forms;
+    pendingPartsRef.current = parsed.parts;
     setQ(parsed.q);
     setSearchMode(parsed.matchMode);
     setScriptOn({
@@ -453,6 +543,7 @@ export default function SearchPage() {
     return {
       q: q.trim(),
       forms: roman ? chosenForms.flat() : null,
+      parts: requestParts(),
       scripts,
       matchMode: searchMode,
       scope,
@@ -476,13 +567,22 @@ export default function SearchPage() {
     return null;
   })();
 
-  function run(page: number) {
-    if (formProblem) {
+  // The six kosh granths, for "search in the koshes".
+  const koshIds = useMemo(
+    () => KOSHES.map((kosh) => optionByGranthKey.get(kosh.key)?.custom_id).filter((id): id is string => Boolean(id)),
+    [optionByGranthKey]
+  );
+
+  function run(page: number, only?: { granthIds: string[] }) {
+    if (only) {
+      setScope("selected");
+      setSelectedIds(only.granthIds);
+    } else if (formProblem) {
       setError(formProblem);
       return;
     }
     setError(null);
-    const request = formRequest(page);
+    const request = only ? { ...formRequest(page), scope: "selected" as const, granthIds: only.granthIds } : formRequest(page);
     const url = buildSearchUrl(request, keyById);
     if (url !== router.asPath) {
       // Each new search adds a history entry, so Back returns to the previous one.
@@ -509,7 +609,7 @@ export default function SearchPage() {
     setError(null);
     try {
       if (isRomanQuery(request.q)) setPhase("spellings");
-      const { queries, forms } = await queriesFor(request);
+      const { queries, forms, parts } = await queriesFor(request);
       if (seq !== searchSeqRef.current) return;
       if (queries.length === 0) throw new Error("No spelling to search. Choose one of the spellings offered.");
       setPhase("searching");
@@ -563,7 +663,7 @@ export default function SearchPage() {
         granthIds: request.scope === "all" ? [] : request.granthIds,
         missingGranths: json.missing_granths ?? [],
       });
-      setLastRequest({ ...request, forms });
+      setLastRequest({ ...request, forms, parts });
       setPhase("done");
       // More hit pages than /api/search checks at once: count them all in the
       // background and replace the "+" totals when that is done.
@@ -610,6 +710,7 @@ export default function SearchPage() {
         lastRequest.matchMode !== searchMode ||
         String(lastRequest.scripts) !== String(scripts) ||
         (roman && formsFor === q.trim() && !sameIds(lastRequest.forms ?? [], chosenForms.flat())) ||
+        (partsReady && String(lastRequest.parts) !== String(requestParts())) ||
         lastRequest.scope !== scope ||
         (scope === "selected" && !sameIds(lastRequest.granthIds, selectedIds)))
   );
@@ -919,6 +1020,67 @@ export default function SearchPage() {
                   )}
                 </>
               )}
+            </div>
+          ) : null}
+
+          {partsReady && compoundWords ? (
+            <div className="ltParts" aria-live="polite">
+              {compoundWords.map((word) => (
+                <div key={word.word} className="ltPartsRow">
+                  <span className="ltPartsLabel">
+                    <span className="indic">{word.word}</span>{" "}
+                    {word.inKosh.length ? "is in the koshes; its parts:" : "is made of:"}
+                  </span>
+                  {word.parts.map((part, index) => {
+                    const key = `${word.word}-${index}-${part.text}`;
+                    if (part.kind === "prefix" || part.kind === "ending") {
+                      return (
+                        <span
+                          key={key}
+                          className="ltPartFixed indic"
+                          title={part.kind === "prefix" ? "A prefix (not searched on its own)" : "A case ending (not searched)"}
+                        >
+                          {part.kind === "prefix" ? `${part.term}-` : `-${part.text}`}
+                        </span>
+                      );
+                    }
+                    const term = part.term ?? part.text;
+                    const on = chosenParts.includes(term);
+                    const where =
+                      part.kind === "unknown"
+                        ? "Not in the koshes or the vishay list"
+                        : part.vishayOnly
+                          ? "A vishay term; not a kosh headword"
+                          : `In ${part.koshes?.join(", ") || "the kosh text"}`;
+                    const also = part.alias ? ` Also searched as ${part.alias}.` : "";
+                    const pages = typeof part.pages === "number" ? ` ${plural(part.pages, "page")} in the library.` : "";
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`ltSpelling ltPart${on ? " isOn" : ""}${part.kind === "word" && !part.vishayOnly ? "" : " isOutsideKosh"}`}
+                        aria-pressed={on}
+                        onClick={() => togglePart(term)}
+                        title={`${where}.${also}${pages} Click to ${on ? "stop searching" : "also search"} this part.`}
+                      >
+                        {on ? <LightTableIcon name="check" size={14} /> : null}
+                        <span className="indic">{term}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+              {koshIds.length && chosenParts.length ? (
+                <button
+                  type="button"
+                  className="ltLink ltPartsKosh"
+                  onClick={() => run(1, { granthIds: koshIds })}
+                  disabled={loading}
+                  title="Search the word and the chosen parts in Shabda Ratna Mahodadhi, Abhidhan Vyutpatti Prakriya Kosh and Apte"
+                >
+                  Search these in the koshes
+                </button>
+              ) : null}
             </div>
           ) : null}
 

@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
 import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { koshRank } from "@/lib/koshes.mjs";
 import { warmPdfIndex } from "@/lib/pdf-highlight-builder";
 import {
   MAX_COMBINED_PDF_GRANTHS,
@@ -64,7 +65,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         };
       }
 
-      const { granths, truncated } = await loadSearchMatchGranths(
+      const { granths: byMatches, truncated } = await loadSearchMatchGranths(
         scopedRelPaths,
         queries,
         matchMode,
@@ -72,6 +73,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         undefined,
         scripts
       );
+      // Koshes lead, in the order the user set (Shabda Ratna Mahodadhi, Abhidhan
+      // Vyutpatti, Apte); the export (combined PDF, CSV, word list) follows this list.
+      const granths = [...byMatches].sort((a, b) => koshRank(a.granth_key) - koshRank(b.granth_key));
       const targets = await resolveGranthPdfTargets(
         granths.map((granth) => ({
           granth_key: granth.granth_key,

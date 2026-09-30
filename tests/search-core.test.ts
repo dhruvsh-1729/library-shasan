@@ -76,7 +76,7 @@ test("chosen spellings compose into phrase queries", () => {
 test("search links round-trip, and old links still resolve", () => {
   const keys = new Map([["doc-1", "069"]]);
   const url = buildSearchUrl(
-    { q: "hinsa", forms: ["हिंसा"], scripts: ["devanagari"], matchMode: "exact_word", scope: "selected", granthIds: ["doc-1"], page: 2 },
+    { q: "hinsa", forms: ["हिंसा"], parts: null, scripts: ["devanagari"], matchMode: "exact_word", scope: "selected", granthIds: ["doc-1"], page: 2 },
     keys
   );
   assert.equal(url.startsWith("/?"), true);
@@ -89,6 +89,13 @@ test("search links round-trip, and old links still resolve", () => {
     2,
     ["069"],
   ]);
+  // Compound parts: a list, "none", or absent for the default choice.
+  const partsUrl = (parts: string[] | null) =>
+    buildSearchUrl({ q: "मनोयोग", forms: null, parts, scripts: null, matchMode: "sanskrit_forms", scope: "all", granthIds: [], page: 1 }, keys);
+  const partsOf = (url: string) => parseSearchUrl(Object.fromEntries(new URL(`http://x${url}`).searchParams)).parts;
+  assert.deepEqual(partsOf(partsUrl(["मनस्", "योग"])), ["मनस्", "योग"]);
+  assert.deepEqual(partsOf(partsUrl([])), []);
+  assert.equal(partsOf(partsUrl(null)), null);
   // ?langs=typed on a Devanagari query meant Devanagari only.
   assert.deepEqual(parseSearchUrl({ q: "हिंसा", langs: "typed" }).scripts, ["devanagari"]);
   // A duplicate's old key leads to the granth searched in its place.

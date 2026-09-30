@@ -5,6 +5,7 @@ import {
   buildOCRSearchExcerptForQueries,
   findOCRSearchMatchesForQueries,
   isTooShortForContains,
+  MAX_SEARCH_QUERIES,
   normalizeOCRSearchQueries,
   parseOCRSearchMode,
   parseOCRSearchScripts,
@@ -90,7 +91,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const scripts = parseOCRSearchScripts(req.query.scripts);
     const queries = normalizeOCRSearchQueries(q, parseQueryVariants(req.query.queryVariant ?? req.query.queryVariants))
       .filter((query) => Array.from(query).length >= 2)
-      .slice(0, 8);
+      .slice(0, MAX_SEARCH_QUERIES);
 
     if (queries.length === 0) {
       setPublicCacheHeaders(res, { maxAgeSeconds: 60, staleWhileRevalidateSeconds: 300 });

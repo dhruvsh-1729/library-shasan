@@ -4,7 +4,9 @@ import { type OCRSearchMode, type OCRSearchScripts, parseOCRSearchMode, parseOCR
 // a refresh or the Back button always shows the same search:
 //   /?q=hinsa&forms=हिंसा&scripts=devanagari&match=contains&in=215,296&page=2
 // "forms" lists the Devanagari spellings chosen for a romanised query (the
-// spellings /api/query-forms offered); "scripts" keeps only hits written in
+// spellings /api/query-forms offered); "parts" lists the compound parts searched
+// with the word (/api/compound-parts offers them; "none" searches the word alone,
+// no "parts" searches the default choice); "scripts" keeps only hits written in
 // those scripts; "in" lists granths by their short keys (lib/granth-short-keys),
 // and no "in" means all granths. Older links (?customId=, ?matchMode=,
 // ?langs=typed,devanagari) still work.
@@ -16,6 +18,8 @@ export type SearchRequest = {
   q: string;
   /** Spellings chosen for a romanised query; null means the page's default choice. */
   forms: string[] | null;
+  /** Compound parts searched with the word; null means the page's default choice, [] none. */
+  parts: string[] | null;
   /** Scripts whose hits count; null means both. */
   scripts: OCRSearchScripts;
   matchMode: OCRSearchMode;
@@ -58,6 +62,7 @@ export function parseSearchUrl(query: Record<string, QueryValue>): ParsedSearchU
   const q = first(query.q).trim();
   const legacyCustomId = first(query.customId).trim();
   const formsRaw = first(query.forms).trim();
+  const partsRaw = first(query.parts).trim();
   const scriptsRaw = first(query.scripts).trim();
   const langsRaw = first(query.langs).trim();
   const inRaw = first(query.in).trim();
@@ -65,6 +70,7 @@ export function parseSearchUrl(query: Record<string, QueryValue>): ParsedSearchU
   return {
     q,
     forms: formsRaw ? splitList(formsRaw) : null,
+    parts: partsRaw === "none" ? [] : partsRaw ? splitList(partsRaw) : null,
     scripts: scriptsRaw ? parseOCRSearchScripts(scriptsRaw) : langsRaw ? scriptsFromLegacyLangs(splitList(langsRaw), q) : null,
     // No match param means the default Sanskrit forms search.
     matchMode: parseOCRSearchMode(first(query.match) || first(query.matchMode) || "sanskrit_forms"),
@@ -78,6 +84,7 @@ export function buildSearchUrl(request: SearchRequest, keyById: ReadonlyMap<stri
   const params = new URLSearchParams();
   if (request.q) params.set("q", request.q);
   if (request.forms?.length) params.set("forms", request.forms.join(","));
+  if (request.parts) params.set("parts", request.parts.length ? request.parts.join(",") : "none");
   if (request.scripts) params.set("scripts", request.scripts.join(","));
   if (request.matchMode !== "sanskrit_forms") params.set("match", request.matchMode);
   if (request.scope === "selected") {
