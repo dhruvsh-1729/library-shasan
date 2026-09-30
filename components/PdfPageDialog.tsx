@@ -17,6 +17,21 @@ type PDFDocumentProxy = import("pdfjs-dist").PDFDocumentProxy;
 type RenderTask = import("pdfjs-dist").RenderTask;
 type TextLayer = import("pdfjs-dist").TextLayer;
 
+/** Ring boxes (page fractions, lower-left origin) from our OCR's line boxes, or null. */
+async function fetchLineRings(pdfUrl: string, page: number, terms: string[], mode: OCRSearchMode, scripts: OCRSearchScripts) {
+  try {
+    const params = new URLSearchParams({ pdfUrl, page: String(page), q: terms[0] ?? "", matchMode: mode });
+    for (const term of terms.slice(1)) params.append("queryVariant", term);
+    if (scripts) params.set("scripts", scripts.join(","));
+    const res = await fetch(`/api/page-rings?${params.toString()}`);
+    if (!res.ok) return null;
+    const json = (await res.json()) as { rings?: Array<{ x: number; y: number; width: number; height: number }> | null };
+    return json.rings ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export type PdfDialogTarget = {
   pdfUrl: string;
   page?: number | null;
@@ -380,13 +395,25 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
             `"Nirmala UI", "Mangal", "Kohinoor Devanagari", sans-serif`;
           textDiv.style.unicodeBidi = "plaintext";
         }
-        // Ring the word where the page draws it: exact glyph positions first,
-        // the text-content estimate next, and the old text highlight last.
+        // Ring the word where it is printed: our OCR's line boxes when the book
+        // has them, else the PDF's own text layer (exact glyph positions, then
+        // the text-content estimate), else the old text highlight.
         let boxes: WordBox[] = [];
         if (highlightTerms.length) {
-          const exact = await findGlyphWordBoxes(page as unknown as GlyphPage, pdfModule.OPS, highlightTerms, highlightMode, highlightScripts);
+          const [vx0, vy0, vx1, vy1] = page.view;
+          const fromLines = pdfUrl ? await fetchLineRings(pdfUrl, pageNumber, highlightTerms, highlightMode, highlightScripts) : null;
           if (!active || token !== renderTokenRef.current) return;
-          boxes = exact ?? findWordBoxes(textContent.items as PdfTextItem[], highlightTerms, highlightMode, highlightScripts);
+          if (fromLines) {
+            const w = vx1 - vx0;
+            const h = vy1 - vy0;
+            boxes = fromLines.map((b) => ({ x: vx0 + b.x * w, y: vy0 + b.y * h, width: b.width * w, height: b.height * h, fontSize: b.height * h * 0.8, text: "" }));
+          } else {
+            const exact = await findGlyphWordBoxes(page as unknown as GlyphPage, pdfModule.OPS, highlightTerms, highlightMode, highlightScripts);
+            if (!active || token !== renderTokenRef.current) return;
+            boxes = exact ?? findWordBoxes(textContent.items as PdfTextItem[], highlightTerms, highlightMode, highlightScripts);
+            // A text layer that runs past the page edge cannot be shown.
+            boxes = boxes.filter((b) => b.x < vx1 && b.x + b.width > vx0 && b.y < vy1 && b.y + b.height > vy0);
+          }
         }
         if (boxes.length) {
           setRingFrame({ width: viewport.width, height: viewport.height });
@@ -489,73 +516,84 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
             <div className="pdfDialogTitle" title={dialogTitle}>
               {dialogTitle}
             </div>
-            <div className="pdfDialogSubline">
-              {pageCount > 0 ? `Page ${currentPage} of ${pageCount}` : `Page ${currentPage}`}
-              {isPdfLoading ? " | Loading current page" : ""}
-              {highlightTerms.length > 0 && !isPdfLoading ? ` | ${highlightCount} highlight(s)` : ""}
-            </div>
+            {highlightTerms.length > 0 && !isPdfLoading ? (
+              <div className={`pdfDialogSubline${highlightCount ? "" : " isMissing"}`}>
+                {highlightCount ? `${highlightCount} ${highlightCount === 1 ? "match" : "matches"} ringed` : "The word could not be placed on this scan"}
+              </div>
+            ) : null}
           </div>
 
-          <div className="pdfDialogControls">
-            <button type="button" onClick={() => goToPage(currentPage - 1)} disabled={!canGoPrev}>
-              Previous
-            </button>
+          <div className="pdfDialogTools pvTools">
+            <div className="pvGroup">
+              <button type="button" className="pvBtn" onClick={() => goToPage(currentPage - 1)} disabled={!canGoPrev} aria-label="Previous page">
+                ‹
+              </button>
+              <form className="pvPageForm" onSubmit={submitPage}>
+                <input
+                  id="pdf-dialog-page"
+                  value={pageEntry}
+                  onChange={(event) => setPageEntry(event.target.value)}
+                  onBlur={() => setPageEntry(String(currentPage))}
+                  inputMode="numeric"
+                  min={1}
+                  max={pageCount || undefined}
+                  type="number"
+                  aria-label="Page number"
+                />
+                <span>/ {pageCount || "–"}</span>
+              </form>
+              <button type="button" className="pvBtn" onClick={() => goToPage(currentPage + 1)} disabled={!canGoNext} aria-label="Next page">
+                ›
+              </button>
+            </div>
 
-            <form className="pdfDialogPageForm" onSubmit={submitPage}>
-              <label htmlFor="pdf-dialog-page">Page</label>
-              <input
-                id="pdf-dialog-page"
-                value={pageEntry}
-                onChange={(event) => setPageEntry(event.target.value)}
-                inputMode="numeric"
-                min={1}
-                max={pageCount || undefined}
-                type="number"
-              />
-              <button type="submit">Go</button>
-            </form>
-
-            <button type="button" onClick={() => goToPage(currentPage + 1)} disabled={!canGoNext}>
-              Next
-            </button>
+            <div className="pvGroup">
+              <button
+                type="button"
+                className="pvBtn"
+                onClick={() => setZoom((value) => Math.max(0.7, Number((value - 0.15).toFixed(2))))}
+                disabled={!canZoomOut}
+                aria-label="Zoom out"
+              >
+                −
+              </button>
+              <span className="pvZoom">{Math.round(zoom * 100)}%</span>
+              <button
+                type="button"
+                className="pvBtn"
+                onClick={() => setZoom((value) => Math.min(2.8, Number((value + 0.15).toFixed(2))))}
+                disabled={!canZoomIn}
+                aria-label="Zoom in"
+              >
+                +
+              </button>
+            </div>
 
             <button
               type="button"
-              onClick={() => setZoom((value) => Math.max(0.7, Number((value - 0.15).toFixed(2))))}
-              disabled={!canZoomOut}
-              aria-label="Zoom out"
+              className={`pvBtn pvToggle${showTextLayer ? " isOn" : ""}`}
+              aria-pressed={showTextLayer}
+              onClick={() => setShowTextLayer((prev) => !prev)}
+              title="Lets you select and copy the text on the page"
             >
-              -
-            </button>
-            <span className="pdfDialogZoom">{Math.round(zoom * 100)}%</span>
-            <button
-              type="button"
-              onClick={() => setZoom((value) => Math.min(2.8, Number((value + 0.15).toFixed(2))))}
-              disabled={!canZoomIn}
-              aria-label="Zoom in"
-            >
-              +
-            </button>
-
-            <button type="button" onClick={() => setShowTextLayer((prev) => !prev)}>
-              Text {showTextLayer ? "On" : "Off"}
+              Select text
             </button>
 
             {pdfUrl ? (
-              <a href={pdfUrl} target="_blank" rel="noreferrer">
-                Raw
+              <a className="pvBtn pvToggle" href={pdfUrl} target="_blank" rel="noreferrer" title="The whole PDF in a new tab">
+                Whole PDF
               </a>
             ) : null}
 
-            <button type="button" className="pdfDialogCloseButton" onClick={onClose} aria-label="Close PDF viewer">
-              Close
+            <button type="button" className="pvBtn pdfDialogClose" onClick={onClose} aria-label="Close">
+              ×
             </button>
           </div>
         </header>
 
         {error ? <div className="pdfDialogError">{error}</div> : null}
         {!error && showTextLayer && !isPdfLoading && textDivCount === 0 ? (
-          <div className="pdfDialogNotice">This page has no embedded text layer.</div>
+          <div className="pdfDialogNotice">This page has no text to select.</div>
         ) : null}
 
         <section className="pdfDialogViewport" aria-busy={isPdfLoading}>

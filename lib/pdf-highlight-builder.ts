@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import { PDFDict, PDFDocument, PDFName, type PDFPage, PDFRawStream, PDFStream, degrees, rgb } from "pdf-lib";
+import { lineBoxRingsForPdf, onPage } from "@/lib/line-boxes";
 import { extractPdfPagesByRange } from "@/lib/pdf-range-subset.mjs";
 import { findGlyphWordBoxes } from "@/lib/pdf-glyph-boxes";
 import { type PdfTextItem, type WordBox, findWordBoxes } from "@/lib/pdf-word-boxes";
@@ -220,10 +221,17 @@ async function markedSource(source: CombinedPdfSource, mark: MarkOptions | null)
   let rings = 0;
   if (mark?.queries.length) {
     try {
-      const boxes = await wordBoxesPerPage(bytes, mark);
-      doc.getPages().forEach((page, i) => {
-        drawRings(page, boxes[i] ?? []);
-        rings += boxes[i]?.length ?? 0;
+      // Our OCR's line boxes where the book has them (they follow the print);
+      // the PDF's own text layer only for pages they cannot place.
+      const docPages = doc.getPages();
+      const sizes = docPages.map((page, i) => ({ page: pages[i], ...page.getSize() }));
+      const fromLines = await lineBoxRingsForPdf(source.pdfUrl, sizes, mark);
+      const needLayer = sizes.some((s) => fromLines.get(s.page) == null);
+      const fromLayer = needLayer ? await wordBoxesPerPage(bytes, mark) : [];
+      docPages.forEach((page, i) => {
+        const boxes = onPage(fromLines.get(pages[i]) ?? fromLayer[i] ?? [], page.getSize());
+        drawRings(page, boxes);
+        rings += boxes.length;
       });
     } catch (error) {
       // A page that cannot be read for positions still exports, unmarked.

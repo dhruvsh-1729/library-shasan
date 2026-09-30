@@ -73,3 +73,23 @@ test("legacy-font glyph order is repaired without changing text length", () => {
     for (const r of readings) assert.equal(r.length, raw.length);
   }
 });
+
+test("line boxes place a ring on the printed line, where the word falls along it", async () => {
+  const { lineBoxRings } = await import("@/lib/line-box-rings");
+  const content = "पहली पंक्ति यहाँ है\n\nधर्म अर्थ काम मोक्ष";
+  // two printed lines (the blank one has no box), as page fractions, top-left origin
+  const boxes: Array<[number, number, number, number]> = [
+    [0.1, 0.1, 0.9, 0.15],
+    [0.1, 0.2, 0.5, 0.25],
+  ];
+  const rings = lineBoxRings(content, boxes, { width: 400, height: 600 }, ["मोक्ष"], "exact_word")!;
+  assert.equal(rings.length, 1);
+  const [ring] = rings;
+  // on the second line: PDF y is measured from the bottom
+  assert.ok(Math.abs(ring.y - 600 * 0.75) < 1 && Math.abs(ring.height - 600 * 0.05) < 1);
+  // the last word of the line ends at the line box's right edge
+  assert.ok(Math.abs(ring.x + ring.width - 400 * 0.5) < 2, `ends at ${ring.x + ring.width}`);
+  assert.ok(ring.x > 400 * 0.3, `starts at ${ring.x}`);
+  // lines and boxes that do not line up give no rings rather than wrong ones
+  assert.equal(lineBoxRings(content, boxes.slice(0, 1), { width: 400, height: 600 }, ["मोक्ष"], "exact_word"), null);
+});

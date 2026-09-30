@@ -95,7 +95,7 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  * drawn syllable by syllable, so sharing an item's width this way puts a ring
  * on the word rather than beside it.
  */
-function syllableWidth(cluster: string): number {
+export function syllableWidth(cluster: string): number {
   if (/^\s+$/.test(cluster)) return 0.45;
   if (/^[\u200b-\u200d]+$/.test(cluster)) return 0;
   const consonants = (cluster.match(/[\u0915-\u0939\u0958-\u095F\u0A95-\u0AB9]/gu) ?? []).length;

@@ -271,9 +271,7 @@ body {
 .extractorIdentifierGrid button,
 .extractorRangeHint button,
 .extractorCoverStrip button,
-.extractorSegmentRanges button,
-.pdfDialogControls button,
-.pdfDialogControls a {
+.extractorSegmentRanges button {
   border: 1px solid var(--lt-rule);
   border-radius: 7px;
   background: #fff;
@@ -293,9 +291,7 @@ body {
 .scanLinks a:hover,
 .adminGhostButton:hover:not(:disabled),
 .authGoogleButton:hover:not(:disabled),
-.extractorActions button:hover:not(:disabled),
-.pdfDialogControls button:hover:not(:disabled),
-.pdfDialogControls a:hover {
+.extractorActions button:hover:not(:disabled) {
   border-color: var(--lt-cobalt);
   background: var(--lt-cobalt-wash);
 }
@@ -452,6 +448,33 @@ body {
 
 .pdfDialogSubline {
   color: var(--lt-ink-2);
+}
+
+/* The word is on the page by its text, but the scan's text layer does not place it. */
+.pdfDialogSubline.isMissing {
+  color: var(--lt-amber);
+}
+
+.pdfDialogTools {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pdfDialogTools .pvToggle {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.pdfDialogClose.pvBtn {
+  font-size: 26px;
+  width: 42px;
+  height: 42px;
+  padding: 0;
 }
 
 .pdfDialogViewport {
@@ -860,3 +883,9 @@ body {
   }
 }
 div.tvFolio { cursor: default; }
+
+/* "Clear" stays one word next to the library search box. */
+.libraryClearButton {
+  white-space: nowrap;
+  flex: none;
+}
