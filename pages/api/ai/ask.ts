@@ -130,8 +130,11 @@ async function answer(opts: {
       passages,
     });
     let sawThinking = false;
+    // Earlier turns go to every part, so a follow-up ("explain that") is
+    // understood however long the scope is; they fit the same budget as a
+    // single-call answer.
     const result = await chatStream({
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      messages: [{ role: "system", content: system }, ...opts.history, { role: "user", content: user }],
       model: opts.model,
       onThinking: (d) => { sawThinking = true; think(d); },
       onAnswer: (d) => { if (sawThinking) { think("\n\n"); sawThinking = false; } think(d); },
@@ -148,7 +151,7 @@ async function answer(opts: {
     parts,
   });
   const merged = await chatStream({
-    messages: [{ role: "system", content: merge.system }, { role: "user", content: merge.user }],
+    messages: [{ role: "system", content: merge.system }, ...opts.history, { role: "user", content: merge.user }],
     model: opts.model,
     onThinking: think,
     onAnswer: (delta) => emit({ type: "answer", delta }),
