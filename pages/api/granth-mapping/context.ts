@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { repairPageEnds } from "@/lib/granth-mapping";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 
@@ -33,6 +34,7 @@ type MapRow = {
   gatha: number | null;
   page_start: number;
   page_end: number | null;
+  next_page_start?: number | null;
   anchor_text: string | null;
 };
 
@@ -217,15 +219,16 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      const mapRows = (await fetchAll((from, to) => {
+      // Repaired so a chapter's last verse does not stretch to the end of the book.
+      const mapRows = repairPageEnds((await fetchAll((from, to) => {
         let query = supabase
           .from("granth_gatha_map")
-          .select("book_code,pdf_file_name,pdf_url,custom_id,adhikar,gatha,page_start,page_end,anchor_text")
+          .select("book_code,pdf_file_name,pdf_url,custom_id,adhikar,gatha,page_start,page_end,next_page_start,anchor_text")
           .eq("book_id", bookId)
           .range(from, to);
         if (bookCode) query = query.eq("book_code", bookCode);
         return query.order("adhikar", { ascending: true }).order("gatha", { ascending: true });
-      })) as MapRow[];
+      })) as MapRow[]);
 
       const identifiers = buildIdentifierSummaries(mapRows);
       const allPageRanges = mergePageRanges(mapRows);

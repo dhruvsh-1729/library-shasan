@@ -1,4 +1,4 @@
-import { groupSegments, parseNumberListSpec, type MappingSegment } from "@/lib/granth-mapping";
+import { groupSegments, parseNumberListSpec, repairPageEnds, type MappingSegment } from "@/lib/granth-mapping";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export type GranthResolveKind = "gathas" | "pages";
@@ -185,16 +185,18 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
 
   if (kind !== "gathas") throw new GranthResolveError(400, { error: "kind must be pages or gathas" });
 
-  const allRows = await fetchAll((from, to) => {
+  // Every row of the book is read so the last verse of each adhikar can end
+  // where the next verse starts, not at the end of the book.
+  const allRows = repairPageEnds((await fetchAll((from, to) => {
     let query = supabase
       .from("granth_gatha_map")
-      .select("book_id,book_code,pdf_file_name,pdf_url,custom_id,adhikar,gatha,page_start,page_end,anchor_text")
+      .select("book_id,book_code,pdf_file_name,pdf_url,custom_id,adhikar,gatha,page_start,page_end,next_page_start,anchor_text")
       .not("pdf_url", "is", null)
       .range(from, to);
     if (hasBookId) query = query.eq("book_id", bookId);
     if (bookCode) query = query.eq("book_code", bookCode);
     return query.order("adhikar", { ascending: true }).order("gatha", { ascending: true });
-  });
+  })) as Array<Record<string, unknown> & { page_start: number; page_end?: number | null }>);
 
   if (allRows.length === 0) {
     throw new GranthResolveError(404, { error: "No gatha mapping found for this selection" });

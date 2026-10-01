@@ -20,6 +20,53 @@ export type MappingSegment = {
   pages: number[];
 };
 
+type SpanRow = {
+  book_code?: string | null;
+  pdf_url?: string | null;
+  page_start: number;
+  page_end?: number | null;
+  next_page_start?: number | null;
+};
+
+/**
+ * Repairs `page_end` of granth_gatha_map rows.
+ *
+ * The stored `page_end` is `next_page_start - 1`, but the last verse of every
+ * adhikar has no `next_page_start` and was given the last page of the whole
+ * book, so one verse could span hundreds of pages. Its real end is the page
+ * before the next verse that starts anywhere later in the same PDF. Only the
+ * book's very last verse keeps the stored end. Pass every row of the book (not
+ * just the requested verses) so the following anchors are known; the source
+ * rows are not changed.
+ */
+export function repairPageEnds<T extends SpanRow>(rows: T[]): T[] {
+  const startsByFile = new Map<string, number[]>();
+  const fileOf = (row: SpanRow) => `${row.book_code ?? ""}\u0000${row.pdf_url ?? ""}`;
+  for (const row of rows) {
+    const start = Number(row.page_start);
+    if (!Number.isFinite(start)) continue;
+    const list = startsByFile.get(fileOf(row)) ?? [];
+    list.push(start);
+    startsByFile.set(fileOf(row), list);
+  }
+  for (const list of startsByFile.values()) list.sort((a, b) => a - b);
+
+  return rows.map((row) => {
+    const start = Number(row.page_start);
+    if (!Number.isFinite(start)) return row;
+    const next = Number(row.next_page_start);
+    let end: number;
+    if (row.next_page_start != null && Number.isFinite(next)) {
+      end = next - 1;
+    } else {
+      const following = startsByFile.get(fileOf(row))?.find((p) => p > start);
+      end = following != null ? following - 1 : Number(row.page_end ?? start);
+    }
+    if (!Number.isFinite(end) || end < start) end = start;
+    return end === row.page_end ? row : { ...row, page_end: end };
+  });
+}
+
 export function parseNumberListSpec(spec: string) {
   const trimmed = String(spec || "").trim();
   if (!trimmed) return [];
