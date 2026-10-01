@@ -1,6 +1,9 @@
 DONE 2026-10-01: the 29 published + 4 aligned books below were rebuilt, verified and are live
 (33 new PDFs, all load). 453, 455 and 456 failed the safety check as planned and keep their
-old PDF. All superseded PDFs are still on UploadThing (--no-delete); step 4 has NOT been run.
+old PDF. Step 4 was run 2026-10-01 at the user's request: the last 50 superseded PDFs were deleted from
+UploadThing (originals stay on the SSD). Checked after: all 410 rebuilt books have one PDF, every
+Supabase link (documents, granth_ocr_files, granth_library_files, granth_gatha_map) points at it,
+it loads, and no old file is served. Turso stores no PDF links.
 
 Books whose PDF text layer was not rebuilt before 2026-10-01 (see RUNBOOK section below)
 
