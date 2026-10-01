@@ -8,6 +8,7 @@ import {
   buildPrompt,
   buildMergePrompt,
   chunkPassages,
+  limitToChunks,
   LANGUAGES,
   type ContextScope,
   type LanguageId,
@@ -93,14 +94,14 @@ export function describeContext(context: ResolvedContext) {
  */
 async function answer(opts: {
   context: ResolvedContext;
+  chunks: ResolvedContext["passages"][];
   question: string;
   language: LanguageId;
   model: ChatModelId;
   history: ChatTurn[];
   emit: (event: AskEvent) => void;
 }) {
-  const { emit } = opts;
-  const chunks = chunkPassages(opts.context.passages, opts.context.verses);
+  const { emit, chunks } = opts;
   let thinking = "";
   const think = (delta: string) => { thinking += delta; emit({ type: "thinking", delta }); };
 
@@ -220,10 +221,15 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: SessionU
   }
 
   try {
-    const context = await resolveContext(scope);
+    const resolved = await resolveContext(scope);
 
     // A gatha number that exists in every chapter is not a scope. Answering it
     // would mean summarising whichever chapter sorted first.
+    // What is read is decided once, here, so the sources shown, the "not read"
+    // note and the model's input always agree.
+    const { chunks, dropped } = chunkPassages(resolved.passages, resolved.verses);
+    const context = limitToChunks(resolved, chunks.flat(), dropped);
+
     if (context.needsAdhikar) {
       const message = `${context.summaryLine} Choose the chapter you mean.`;
       const chatId = await save(message, { error: true, needsAdhikar: context.needsAdhikar });
@@ -264,7 +270,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: SessionU
     });
     emit({ type: "context", context: described });
 
-    const result = await answer({ context, question, language, model, history, emit });
+    const result = await answer({ context, chunks, question, language, model, history, emit });
     const chatId = await save(result.content, {
       scopeLine: described.summaryLine,
       sources: described.passages,

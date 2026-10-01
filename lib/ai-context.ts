@@ -7,7 +7,7 @@ import {
   type OCRSearchMode,
 } from "@/lib/ocr-search";
 import { buildOCRPrefilter } from "@/lib/ocr-search-index";
-import { excludeDuplicatesSql, getGranthCatalog } from "@/lib/granth-catalog";
+import { describeGranth, excludeDuplicatesSql, getGranthCatalog } from "@/lib/granth-catalog";
 
 /**
  * Everything the assistant is allowed to talk about is fetched here, verbatim
@@ -86,15 +86,30 @@ function clampPages(from: number, to: number) {
   return { lo, hi: Math.min(hi, lo + MAX_PAGES_PER_REQUEST - 1) };
 }
 
+/**
+ * The checked catalog names ("Nishitha · Part 2"), so the model reads the same
+ * name the reader sees; the raw spreadsheet name is the fallback.
+ */
 async function granthNames(keys: string[]) {
   if (!keys.length) return new Map<string, string>();
-  const client = getTursoClient();
-  const res = await client.execute({
-    sql: `SELECT granth_key, granth_name FROM ocr_granths
-          WHERE granth_key IN (${keys.map(() => "?").join(",")})`,
-    args: keys,
-  });
-  return new Map(res.rows.map((r) => [String(r.granth_key), String(r.granth_name ?? r.granth_key)]));
+  const catalog = await getGranthCatalog().catch(() => null);
+  const names = new Map<string, string>();
+  const missing: string[] = [];
+  for (const key of keys) {
+    const name = catalog ? describeGranth(catalog, key)?.displayName : null;
+    if (name) names.set(key, name);
+    else missing.push(key);
+  }
+  if (missing.length) {
+    const client = getTursoClient();
+    const res = await client.execute({
+      sql: `SELECT granth_key, granth_name FROM ocr_granths
+            WHERE granth_key IN (${missing.map(() => "?").join(",")})`,
+      args: missing,
+    });
+    for (const r of res.rows) names.set(String(r.granth_key), String(r.granth_name ?? r.granth_key));
+  }
+  return names;
 }
 
 async function fetchPages(granthKey: string, pages: number[]) {
@@ -490,6 +505,7 @@ async function resolveSearchContext(scope: Extract<ContextScope, { kind: "search
     args: [prefilter.match, ...keys, ...dup.args, MAX_SEARCH_PASSAGES * 4],
   });
 
+  const names = await granthNames([...new Set(res.rows.map((r) => String(r.granth_key)))]);
   const passages: Passage[] = [];
   let truncated = false;
   for (const row of res.rows) {
@@ -499,7 +515,7 @@ async function resolveSearchContext(scope: Extract<ContextScope, { kind: "search
     const occ = buildOCRSearchOccurrences(content, scope.query, mode, 700);
     passages.push({
       granthKey: String(row.granth_key),
-      granthName: String(row.granth_name ?? row.granth_key),
+      granthName: names.get(String(row.granth_key)) ?? String(row.granth_name ?? row.granth_key),
       pageNumber: Number(row.page_number),
       label: `page ${row.page_number} (${hits.length} match${hits.length === 1 ? "" : "es"})`,
       text: occ.slice(0, 3).map((o) => o.snippet).join("\n…\n"),
@@ -583,7 +599,25 @@ export function chunkPassages(passages: Passage[], verses: VerseSpan[] = []) {
   }
   if (current.length) chunks.push(current);
 
-  return chunks.slice(0, MAX_CHUNKS);
+  // Verse-aligned chunks can need more calls than the character budget
+  // suggests; what does not fit is returned so it is reported, never lost.
+  return { chunks: chunks.slice(0, MAX_CHUNKS), dropped: chunks.slice(MAX_CHUNKS).flat() };
+}
+
+/**
+ * The context limited to what will actually be read, with the verses that
+ * fall after the last read page marked as dropped.
+ */
+export function limitToChunks(context: ResolvedContext, kept: Passage[], dropped: Passage[]): ResolvedContext {
+  if (!dropped.length) return context;
+  const lastPage = kept.length ? kept[kept.length - 1].pageNumber : 0;
+  return {
+    ...context,
+    passages: kept,
+    totalChars: kept.reduce((sum, p) => sum + p.text.length, 0),
+    truncated: true,
+    droppedVerses: context.verses.filter((v) => v.pageEnd > lastPage),
+  };
 }
 
 export const LANGUAGES = [
@@ -613,8 +647,10 @@ export function buildPrompt(opts: {
 }) {
   const langName = LANGUAGES.find((l) => l.id === opts.language)?.label ?? "English";
   const passages = opts.passages ?? opts.context.passages;
+  // Numbered by place in the whole scope, so a part's [7] is the reader's 7th source.
+  const number = (p: Passage, i: number) => (opts.context.passages.indexOf(p) + 1) || i + 1;
   const sources = passages
-    .map((p, i) => `[${i + 1}] ${p.granthName} — ${p.label}\n${p.text}`)
+    .map((p, i) => `[${number(p, i)}] ${p.granthName} — ${p.label}\n${p.text}`)
     .join("\n\n---\n\n");
 
   const system = [
@@ -625,7 +661,7 @@ export function buildPrompt(opts: {
     "Stay inside the verses named in SCOPE. Never discuss, number or summarise a verse outside that range, and never invent a verse number that is not there.",
     "Never invent a verse, a citation, a page number or a translation.",
     "When you quote, keep the original script exactly as written.",
-    "Cite the passages you used as [1], [2] and so on.",
+    "Cite the passages you used by the number in front of each, such as [1] or [2]. Use only numbers that appear below.",
     `Write your whole answer in ${langName}.`,
     "OCR text can contain mistakes; if a passage looks garbled, say so rather than guessing.",
   ].join(" ");
@@ -667,11 +703,15 @@ export function buildMergePrompt(opts: {
     "Do not concatenate the parts and do not answer the question twice. Where two parts say the same thing, say it once. Where they disagree, keep what the verse order supports.",
     "Never write that something comes from a part, a passage list or a summary; write about the scripture itself.",
     "Add nothing that is not in the parts, and drop nothing that answers the question.",
+    "Keep every citation such as [3] exactly as the parts wrote it: never renumber, merge or invent one.",
     `Write your whole answer in ${langName}.`,
   ].join(" ");
 
   const user = [
     `SCOPE: ${scopeSentence(opts.context)}`,
+    opts.context.truncated
+      ? "NOTE: the scope was larger than the limit, so only part of it was read. Say which verses the answer covers."
+      : "",
     "",
     ...opts.parts.map((text, i) => `PART ${i + 1}:\n${text}`),
     "",
