@@ -100,6 +100,19 @@ function parseGranthSelections(value: unknown): GranthSelection[] {
   return selections;
 }
 
+/**
+ * The book number a line list is headed with, read from the granth's file name:
+ * the leading serial and the accession code after it ("069_B037418_…" →
+ * "069_B037418", "226_prashamrati_…" → "226"); a file with no serial falls back
+ * to its library number ("nandi_sutram_033330_hr6.pdf" → "033330"), then the name.
+ */
+function bookNumber(relPath: string, granthName: string) {
+  const file = path.basename(relPath);
+  const serial = file.match(/^\d+(?:-\d+)?(?:_[A-Z]\d{4,})?(?=[_ .])/);
+  if (serial) return serial[0];
+  return file.match(/_(\d{6})_(?:hr|std)/i)?.[1] ?? granthName;
+}
+
 /** The word shown in the PDF heading: the first query written in an Indian script, else the query itself. */
 function headingWord(queries: string[]) {
   return queries.find((query) => /[\u0900-\u097F\u0A80-\u0AFF]/.test(query)) ?? queries[0];
@@ -183,7 +196,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         if (lines.length === 0) continue;
         rowCount += lines.length;
         lineSections.push({
-          granthName: entry.granthName,
+          heading: bookNumber(entry.relPath, entry.granthName),
           rows: lines.map((line) => ({
             printedPage: line.printed_page,
             pdfPage: line.page_number,
@@ -219,9 +232,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const word = headingWord(queries);
     const bytes = lineLayout ? await buildLineListPdf({ word, sections: lineSections }) : await buildWordListPdf({ word, sections });
 
-    const named = lineLayout ? lineSections : sections;
+    const named = lineLayout ? lineSections.map((section) => section.heading) : sections.map((section) => section.granthName);
     const queryLabel = safeFileName(word, "search");
-    const scopeLabel = named.length === 1 ? safeFileName(named[0].granthName, "granth") : `${named.length}_granths`;
+    const scopeLabel = named.length === 1 ? safeFileName(named[0], "granth") : `${named.length}_granths`;
     const filename = `granth_search_${queryLabel}_${scopeLabel}_${lineLayout ? "line" : "word"}_list.pdf`;
 
     if (delivery === "email") {

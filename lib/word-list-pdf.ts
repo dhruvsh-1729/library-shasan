@@ -27,7 +27,6 @@ import {
   popGraphicsState,
   pushGraphicsState,
   rgb,
-  setFillingRgbColor,
   setFontAndSize,
   setTextMatrix,
   showText,
@@ -327,7 +326,7 @@ class TextDrawer {
   }
 
   /** Draws text with its baseline at y, starting at x; returns the pen position after it. */
-  draw(page: PDFPage, runs: ShapedRun[], x: number, y: number, size: number, color?: [number, number, number]) {
+  draw(page: PDFPage, runs: ShapedRun[], x: number, y: number, size: number) {
     const text = runs.map((run) => run.text).join("");
     const ops: PDFOperator[] = [
       PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [
@@ -338,7 +337,6 @@ class TextDrawer {
       ]),
       beginText(),
     ];
-    if (color) ops.unshift(setFillingRgbColor(...color));
     let penX = x;
     for (const run of runs) {
       const embedded = this.embedder.use(run);
@@ -446,19 +444,21 @@ export type LineListRow = {
   words: string[];
 };
 
-export type LineListSection = { granthName: string; rows: LineListRow[] };
+/** `heading` is the book number printed above the granth's rows. */
+export type LineListSection = { heading: string; rows: LineListRow[] };
 
 const LINE_TEXT_SIZE = 10.5;
-const LINE_LEADING = 1.55;
-const MATCH_COLOR: [number, number, number] = [0.6, 0.05, 0];
-const CELL_PAD_Y = 4;
+// tight leading and padding so as many lines as possible fit on a page
+const LINE_LEADING = 1.25;
+const LINE_CELL_PAD_X = 5;
+const LINE_CELL_PAD_Y = 2;
 
-type Piece = { text: string; weight: Weight; color?: [number, number, number] };
+type Piece = { text: string; weight: Weight };
 
 /**
- * The line split into pieces, the found words bold and coloured: marks every
- * character inside an occurrence of a found word, then groups runs of marked
- * and unmarked text.
+ * The line split into pieces, the found words bold: marks every character
+ * inside an occurrence of a found word, then groups runs of marked and
+ * unmarked text.
  */
 function highlightPieces(line: string, words: string[]): Piece[] {
   const mark = new Uint8Array(line.length);
@@ -469,14 +469,14 @@ function highlightPieces(line: string, words: string[]): Piece[] {
   for (let i = 0; i < line.length; ) {
     let j = i;
     while (j < line.length && mark[j] === mark[i]) j += 1;
-    pieces.push(mark[i] ? { text: line.slice(i, j), weight: "bold", color: MATCH_COLOR } : { text: line.slice(i, j), weight: "regular" });
+    pieces.push({ text: line.slice(i, j), weight: mark[i] ? "bold" : "regular" });
     i = j;
   }
   return pieces;
 }
 
 type Word = {
-  parts: Array<{ runs: ShapedRun[]; color?: [number, number, number] }>;
+  parts: Array<{ runs: ShapedRun[] }>;
   width: number;
   space: number;
   /** a later piece of a word too wide for the cell: starts a new line, no space */
@@ -496,14 +496,14 @@ function breakWord(text: TextDrawer, pieces: Piece[], size: number, room: number
     for (const { segment } of AKSHARAS.segment(piece.text)) {
       const w = text.width(text.layout(chunk + segment, piece.weight), size);
       if (width + w > room && (chunk || parts.length)) {
-        if (chunk) parts.push({ runs: text.layout(chunk, piece.weight), color: piece.color });
+        if (chunk) parts.push({ runs: text.layout(chunk, piece.weight) });
         flush();
         chunk = segment;
       } else chunk += segment;
     }
     if (chunk) {
       const runs = text.layout(chunk, piece.weight);
-      parts.push({ runs, color: piece.color });
+      parts.push({ runs });
       width += text.width(runs, size);
     }
   }
@@ -525,7 +525,7 @@ function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room: numbe
   }
   const spaceWidth = text.width(text.layout(" ", "regular"), size);
   const shaped: Word[] = words.filter((w) => w.length).flatMap((w) => {
-    const parts = w.map((p) => ({ runs: text.layout(p.text, p.weight), color: p.color }));
+    const parts = w.map((p) => ({ runs: text.layout(p.text, p.weight) }));
     const width = parts.reduce((sum, p) => sum + text.width(p.runs, size), 0);
     return width > room ? breakWord(text, w, size, room, spaceWidth) : [{ parts, width, space: spaceWidth }];
   });
@@ -539,6 +539,11 @@ function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room: numbe
   return lines;
 }
 
+/**
+ * The line list: for each granth, its book number, then one row per matched
+ * line — क्रमः | पृष्ठम् | पङ्क्तिः | the line with the found words bold — with
+ * no header row, all in black.
+ */
 export async function buildLineListPdf(options: { word: string; sections: LineListSection[] }) {
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
@@ -548,87 +553,49 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
   const text = new TextDrawer(faces, embedder);
   const [pageWidth, pageHeight] = A4;
   const tableWidth = pageWidth - 2 * MARGIN;
-  // क्रमः | पृष्ठम् | पङ्क्तिः | the line | शब्दः
-  const fixed = [30, 50, 46, 0, 106];
+  // क्रमः | पृष्ठम् | पङ्क्तिः | the line
+  const fixed = [28, 42, 38, 0];
   fixed[3] = tableWidth - fixed.reduce((a, b) => a + b, 0);
   const colX = fixed.map((_, i) => MARGIN + fixed.slice(0, i).reduce((a, b) => a + b, 0));
   const lineHeight = LINE_TEXT_SIZE * LINE_LEADING;
   const reference = faces.devanagari.regular;
   const ascent = (reference.ascender / reference.upem) * LINE_TEXT_SIZE;
 
-  // A cell whose longest word is wider than the cell is set a little smaller;
-  // a word still too wide then breaks between akṣaras (never cut, never overflowing).
-  const MIN_CELL_SIZE = 8.5;
-  const cellSize = (col: number, pieces: Piece[], minSize: number) => {
-    const room = fixed[col] - 2 * CELL_PAD_X;
-    const widest = Math.max(0, ...wrapPieces(text, pieces, LINE_TEXT_SIZE, Infinity).flat().map((w) => w.width));
-    return widest > room ? Math.max(minSize, (0.98 * LINE_TEXT_SIZE * room) / widest) : LINE_TEXT_SIZE;
-  };
-  // header cells only shrink (a heading is never broken)
-  let minSize = MIN_CELL_SIZE;
-  const cellLines = (col: number, pieces: Piece[]) => {
-    const size = cellSize(col, pieces, minSize);
-    return { size, lines: wrapPieces(text, pieces, size, fixed[col] - 2 * CELL_PAD_X) };
-  };
-
-  const drawRow = (page: PDFPage, top: number, cells: Piece[][]) => {
-    const wrapped = cells.map((pieces, col) => cellLines(col, pieces));
-    const height = Math.max(ROW_HEIGHT, Math.max(...wrapped.map((c) => c.lines.length)) * lineHeight + 2 * CELL_PAD_Y);
-    const bottom = top - height;
-    wrapped.forEach(({ size, lines }, col) => {
-      strokeRect(page, colX[col], bottom, fixed[col], height);
-      lines.forEach((words, i) => {
-        const baseline = top - CELL_PAD_Y - ascent - i * lineHeight - (lineHeight - LINE_TEXT_SIZE) / 2;
-        let x = colX[col] + CELL_PAD_X;
-        words.forEach((w, k) => {
-          if (k) x += w.space;
-          for (const part of w.parts) x = text.draw(page, part.runs, x, baseline, size, part.color);
-        });
-      });
-    });
-    return { bottom, height };
-  };
-  const measure = (cells: Piece[][]) =>
-    Math.max(ROW_HEIGHT, Math.max(...cells.map((p, col) => cellLines(col, p).lines.length)) * lineHeight + 2 * CELL_PAD_Y);
-
-  const plain = (value: string, weight: Weight = "regular"): Piece[] => [{ text: value, weight }];
-  const header = ["क्रमः", "पृष्ठम्", "पङ्क्तिः", "पाठः", "शब्दः"].map((h) => plain(h, "bold"));
-  const drawHeader = (page: PDFPage, top: number) => {
-    minSize = 5;
-    const r = drawRow(page, top, header);
-    minSize = MIN_CELL_SIZE;
-    return r;
-  };
+  // a word wider than its cell breaks between akṣaras (never cut, never overflowing)
+  const cellLines = (col: number, pieces: Piece[]) => wrapPieces(text, pieces, LINE_TEXT_SIZE, fixed[col] - 2 * LINE_CELL_PAD_X);
+  const plain = (value: string): Piece[] => [{ text: value, weight: "regular" }];
 
   for (const section of options.sections) {
     let page = doc.addPage(A4);
     let y = pageHeight - MARGIN - TITLE_SIZE;
-    text.draw(page, text.layout(`शब्दः : ${options.word}`, "bold"), MARGIN, y, TITLE_SIZE);
-    y -= TEXT_SIZE * 1.9;
-    const occurrences = section.rows.reduce((n, r) => n + Math.max(1, r.words.length), 0);
-    const info = text.layout(
-      `ग्रन्थः : ${section.granthName}   |   पङ्क्तयः : ${toDevanagariDigits(section.rows.length)}   |   कुल : ${toDevanagariDigits(occurrences)}`,
-      "regular"
-    );
-    const infoSize = Math.min(TEXT_SIZE, TEXT_SIZE * (tableWidth / Math.max(1, text.width(info, TEXT_SIZE))));
-    text.draw(page, info, MARGIN, y, infoSize);
-    y -= 14;
-    y = drawHeader(page, y).bottom;
+    text.draw(page, text.layout(section.heading, "bold"), MARGIN, y, TITLE_SIZE);
+    y -= 10;
 
     section.rows.forEach((row, index) => {
-      const cells = [
+      const wrapped = [
         plain(toDevanagariDigits(index + 1)),
         plain(row.printedPage ? toDevanagariDigits(row.printedPage) : `PDF ${toDevanagariDigits(row.pdfPage)}`),
         plain(toDevanagariDigits(row.lineNumber)),
         highlightPieces(row.lineText, row.words),
-        // one found word per line of the cell
-        row.words.flatMap((w, i) => [...(i ? [{ text: " ", weight: "bold" as Weight }] : []), { text: w, weight: "bold" as Weight, color: MATCH_COLOR }]),
-      ];
-      if (y - measure(cells) < MARGIN) {
+      ].map((pieces, col) => cellLines(col, pieces));
+      const height = Math.max(...wrapped.map((lines) => lines.length)) * lineHeight + 2 * LINE_CELL_PAD_Y;
+      if (y - height < MARGIN) {
         page = doc.addPage(A4);
-        y = drawHeader(page, pageHeight - MARGIN).bottom;
+        y = pageHeight - MARGIN;
       }
-      y = drawRow(page, y, cells).bottom;
+      const top = y;
+      wrapped.forEach((lines, col) => {
+        strokeRect(page, colX[col], top - height, fixed[col], height);
+        lines.forEach((words, i) => {
+          const baseline = top - LINE_CELL_PAD_Y - ascent - i * lineHeight - (lineHeight - LINE_TEXT_SIZE) / 2;
+          let x = colX[col] + LINE_CELL_PAD_X;
+          words.forEach((w, k) => {
+            if (k) x += w.space;
+            for (const part of w.parts) x = text.draw(page, part.runs, x, baseline, LINE_TEXT_SIZE);
+          });
+        });
+      });
+      y = top - height;
     });
   }
 
