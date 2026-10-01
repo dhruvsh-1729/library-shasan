@@ -355,8 +355,8 @@ class TextDrawer {
   }
 }
 
-function strokeRect(page: PDFPage, x: number, y: number, width: number, height: number) {
-  page.drawRectangle({ x, y, width, height, borderWidth: BORDER, borderColor: rgb(0, 0, 0) });
+function strokeRect(page: PDFPage, x: number, y: number, width: number, height: number, borderWidth = BORDER) {
+  page.drawRectangle({ x, y, width, height, borderWidth, borderColor: rgb(0, 0, 0) });
 }
 
 // ------------------------------------------------------------------ document
@@ -452,6 +452,8 @@ const LINE_TEXT_SIZE = 10.5;
 const LINE_LEADING = 1.25;
 const LINE_CELL_PAD_X = 5;
 const LINE_CELL_PAD_Y = 2;
+const LINE_HEADING_SIZE = 12;
+const LINE_BORDER = 0.4;
 
 type Piece = { text: string; weight: Weight };
 
@@ -542,7 +544,8 @@ function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room: numbe
 /**
  * The line list: for each granth, its book number, then one row per matched
  * line — क्रमः | पृष्ठम् | पङ्क्तिः | the line with the found words bold — with
- * no header row, all in black.
+ * no header row, all in black. The first row on each page labels its page and
+ * line numbers "Pg" and "Ln", so the two number columns can be told apart.
  */
 export async function buildLineListPdf(options: { word: string; sections: LineListSection[] }) {
   const faces = await loadFaces();
@@ -554,7 +557,7 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
   const [pageWidth, pageHeight] = A4;
   const tableWidth = pageWidth - 2 * MARGIN;
   // क्रमः | पृष्ठम् | पङ्क्तिः | the line
-  const fixed = [28, 42, 38, 0];
+  const fixed = [26, 50, 42, 0];
   fixed[3] = tableWidth - fixed.reduce((a, b) => a + b, 0);
   const colX = fixed.map((_, i) => MARGIN + fixed.slice(0, i).reduce((a, b) => a + b, 0));
   const lineHeight = LINE_TEXT_SIZE * LINE_LEADING;
@@ -567,25 +570,32 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
 
   for (const section of options.sections) {
     let page = doc.addPage(A4);
-    let y = pageHeight - MARGIN - TITLE_SIZE;
-    text.draw(page, text.layout(section.heading, "bold"), MARGIN, y, TITLE_SIZE);
-    y -= 10;
+    let y = pageHeight - MARGIN - LINE_HEADING_SIZE;
+    text.draw(page, text.layout(section.heading, "bold"), MARGIN, y, LINE_HEADING_SIZE);
+    y -= 7;
+    let firstOnPage = true;
 
     section.rows.forEach((row, index) => {
-      const wrapped = [
-        plain(toDevanagariDigits(index + 1)),
-        plain(row.printedPage ? toDevanagariDigits(row.printedPage) : `PDF ${toDevanagariDigits(row.pdfPage)}`),
-        plain(toDevanagariDigits(row.lineNumber)),
-        highlightPieces(row.lineText, row.words),
-      ].map((pieces, col) => cellLines(col, pieces));
-      const height = Math.max(...wrapped.map((lines) => lines.length)) * lineHeight + 2 * LINE_CELL_PAD_Y;
+      const layoutRow = (labelled: boolean) => {
+        const label = (name: string) => (labelled ? `${name} ` : "");
+        const wrapped = [
+          plain(toDevanagariDigits(index + 1)),
+          plain(row.printedPage ? `${label("Pg")}${toDevanagariDigits(row.printedPage)}` : `PDF ${toDevanagariDigits(row.pdfPage)}`),
+          plain(`${label("Ln")}${toDevanagariDigits(row.lineNumber)}`),
+          highlightPieces(row.lineText, row.words),
+        ].map((pieces, col) => cellLines(col, pieces));
+        return { wrapped, height: Math.max(...wrapped.map((lines) => lines.length)) * lineHeight + 2 * LINE_CELL_PAD_Y };
+      };
+      let { wrapped, height } = layoutRow(firstOnPage);
       if (y - height < MARGIN) {
         page = doc.addPage(A4);
         y = pageHeight - MARGIN;
+        ({ wrapped, height } = layoutRow(true));
       }
+      firstOnPage = false;
       const top = y;
       wrapped.forEach((lines, col) => {
-        strokeRect(page, colX[col], top - height, fixed[col], height);
+        strokeRect(page, colX[col], top - height, fixed[col], height, LINE_BORDER);
         lines.forEach((words, i) => {
           const baseline = top - LINE_CELL_PAD_Y - ascent - i * lineHeight - (lineHeight - LINE_TEXT_SIZE) / 2;
           let x = colX[col] + LINE_CELL_PAD_X;
