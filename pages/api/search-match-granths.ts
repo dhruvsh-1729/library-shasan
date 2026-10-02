@@ -73,8 +73,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         undefined,
         scripts
       );
-      // Koshes lead, in the order the user set (Shabda Ratna Mahodadhi, Abhidhan
-      // Vyutpatti, Apte); the export (combined PDF, CSV, word list) follows this list.
+      // Koshes lead, in Maharaj Saheb's priority (Abhidhan Vyutpatti, Shabda
+      // Ratna Mahodadhi, Apte); the export (combined PDF, CSV, word list) follows this list.
       const granths = [...byMatches].sort((a, b) => koshRank(a.granth_key) - koshRank(b.granth_key));
       const targets = await resolveGranthPdfTargets(
         granths.map((granth) => ({

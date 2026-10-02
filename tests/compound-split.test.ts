@@ -21,7 +21,7 @@ test("syllables count conjuncts once", () => {
   assert.equal(aksharaCount("अ"), 1);
 });
 
-test("vishay compounds split into kosh words", () => {
+test("compounds split into kosh words", () => {
   assert.equal(split("अकर्कशप्रशस्तवचनविनयअभ्यंतरतप"), "अकर्कश + प्रशस्त + वचन + विनय + अभ्यंतर + तप");
   assert.equal(split("अकटुप्रशस्तमनविनयअभ्यंतरतप"), "अ- + कटु + प्रशस्त + मन + विनय + अभ्यंतर + तप");
   assert.equal(split("कायोत्सर्गआगार"), "काय + उत्सर्ग + आगार");
@@ -56,7 +56,7 @@ test("Gujarati case endings and ळ are handled", () => {
   assert.equal(split("वचनबळ"), "वचन + बल");
 });
 
-test("chosen parts become queries: kosh spelling and vishay spelling", () => {
+test("chosen parts become queries: kosh spelling and the typed spelling", () => {
   const words: CompoundWord[] = [
     {
       word: "मनोयोगअज्झल्",
@@ -75,7 +75,7 @@ test("chosen parts become queries: kosh spelling and vishay spelling", () => {
   assert.deepEqual(partQueries(words, ["मनस्", "अज्झल्"]), ["मनस्", "मन", "अज्झल्"]);
 });
 
-test("kosh export order: Shabda Ratna Mahodadhi, Abhidhan Vyutpatti, Apte, then the rest", () => {
+test("kosh export order: Abhidhan Vyutpatti, Shabda Ratna Mahodadhi, Apte, then the rest", () => {
   const keys = ["069", "375", "371", "380", "370", "382", "381"];
-  assert.deepEqual([...keys].sort((a, b) => koshRank(a) - koshRank(b)), ["380", "381", "382", "370", "371", "375", "069"]);
+  assert.deepEqual([...keys].sort((a, b) => koshRank(a) - koshRank(b)), ["370", "371", "380", "381", "382", "375", "069"]);
 });

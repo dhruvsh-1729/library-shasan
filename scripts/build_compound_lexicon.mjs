@@ -4,24 +4,20 @@
 //      Abhidhan Vyutpatti Prakriya Kosh 370-371, Apte 375) in Turso;
 //   2. Devanagari words printed in the text of at least two of the three
 //      koshes (catches headwords the OCR broke, keeps out Hindi/Gujarati glosses);
-//   3. the vishay list (abhishekbhai- final_subs_processed.xlsx, Kingston SSD):
-//      stretches no kosh word covers but that recur across vishays (पच्चक्खाण,
-//      अट्ठम, परिषह …) are learned as vishay terms.
+//   3. the numbered headwords of the Agamic vyutpatti kosh (395), which has
+//      the Jain terms the three koshes lack (सामायिक, उपासक …).
 //
-//   node --env-file=.env scripts/build_compound_lexicon.mjs \
-//     ["/media/dell/KINGSTON/abhishekbhai- final_subs_processed.xlsx"] [--report]
-import { readFileSync, writeFileSync } from "node:fs";
+// The vishay list is never read: the vishay names may not be stored or used
+// electronically, so every word here comes from a kosh.
+//
+//   node --env-file=.env scripts/build_compound_lexicon.mjs
+import { writeFileSync } from "node:fs";
 import { createClient } from "@libsql/client";
-import XLSX from "xlsx";
 import { foldSanskrit } from "../lib/sanskrit-fold.mjs";
 import { KOSHES, koshBit } from "../lib/koshes.mjs";
-import { SOURCE, UPASARGAS, aksharaCount, canStartWord, compoundParts, createLexicon, searchableParts, splitCompound } from "../lib/sanskrit-compound.mjs";
+import { SOURCE, UPASARGAS, aksharaCount, canStartWord, createLexicon, searchableParts, splitCompound } from "../lib/sanskrit-compound.mjs";
 
 const OUT = new URL("../data/compound-lexicon.json", import.meta.url);
-const DEFAULT_VISHAY = "/media/dell/KINGSTON/abhishekbhai- final_subs_processed.xlsx";
-const args = process.argv.slice(2);
-const report = args.includes("--report");
-const vishayPath = args.find((a) => !a.startsWith("--")) ?? DEFAULT_VISHAY;
 
 // Word tokens written in Devanagari (Gujarati-script glosses are not Sanskrit headwords).
 const DEVANAGARI_WORD = /[ऀ-ॣ॰-ॿ]{2,}/gu;
@@ -33,12 +29,14 @@ const HEADWORD_LINE = new RegExp(`^[\\s\\-–—*☐]*([\\u0900-\\u0963\\u0970-\
 const APTE_SUBENTRY = new RegExp(`[-–—]\\s*([\\u0900-\\u0963]{2,})\\s*\\(\\s*${LABEL}\\s*[.)]`, "gu");
 
 const MIN_TEXT_COUNT = 3;
-const MIN_VISHAY_TOPICS = 3;
-// Longer unknown stretches are several words the koshes lack, not one term.
-const MAX_VISHAY_SYLLABLES = 6;
-// A kosh split costing this much per part is built from weak or OCR-damaged headwords
-// (सामायिक = सामन् + अयिकं); cheaper ones are real (जिनागम = जिन + आगम, 1.04).
+// The Agamic vyutpatti kosh numbers its entries: "११९. उपासकाः - साधूनुपासते…".
+const AGAMIC_KOSH = "395";
+const AGAMIC_BIT = 8;
+// A word the three koshes already make well (cheap parts) keeps their parts, so
+// each half is looked up there (कायोत्सर्ग = काय + उत्सर्ग); only what they make
+// badly (सामायिक = सामन् + अयिकं, a cost per part this high) is taken from 395.
 const WEAK_SPLIT_COST = 1.2;
+const AGAMIC_HEADWORD_LINE = /^\s*[०-९0-9]+\s*\.\s*([\u0900-\u0963\u0970-\u097f]{2,})\s*(?:\([^)]*\)\s*)?[-–—]/u;
 
 /** The stems a printed headword gives: देवः → देव, आत्मन् → आत्म, योगिन् → योगी, मनस् → मन. */
 function headwordStems(head) {
@@ -54,7 +52,7 @@ function headwordStems(head) {
   if (base.endsWith("ृ")) stems.add(`${base.slice(0, -1)}ा`);
   // महत् is महा at the head of a compound (महाव्रत, महास्वप्न).
   if (base === "महत्") stems.add("महा");
-  // पर्षद् → पर्षदा, परिषद् → परिषदा: the vishay list writes consonant-stem feminines with -ā.
+  // पर्षद् → पर्षदा, परिषद् → परिषदा: vishay names write consonant-stem feminines with -ā.
   if (/[\u0915-\u0939]्$/.test(base) && !base.endsWith("न्") && !base.endsWith("स्")) stems.add(`${base.slice(0, -1)}ा`);
   // One syllable only for a consonant stem (अप्, वाक्); अ, न … are not parts.
   return [...stems].filter((s) => canStartWord(s) && (aksharaCount(s) >= 2 || s.endsWith("्")));
@@ -124,97 +122,31 @@ for (const [token, { n, mask }] of textCounts) {
 }
 console.log(`headword stems: ${words.size - textWords}, text words: ${textWords}`);
 
-// ------------------------------------------------------------------ vishay
-function vishayWords(topic) {
-  return String(topic ?? "")
-    .normalize("NFC")
-    .split(/[\s{}()[\],।॥.\-–—/]+/)
-    .filter((w) => /[ऀ-ॿ]/.test(w) && aksharaCount(w) >= 2)
-    .map((w) => foldSanskrit(w));
-}
-
-let topics = [];
-try {
-  const workbook = XLSX.readFile(vishayPath);
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  topics = XLSX.utils.sheet_to_json(sheet, { header: 1 }).slice(1).map((row) => String(row[0] ?? "")).filter(Boolean);
-  console.log(`vishay topics: ${topics.length} from ${vishayPath}`);
-} catch (error) {
-  console.warn(`vishay list not read (${error.message}); the lexicon has kosh words only`);
-}
-
-// Building blocks: a vishay word that begins or ends at least MIN_VISHAY_TOPICS
-// other vishay words (सामायिक in सामायिकचारित्र, सामायिकव्रत …) is a term of
-// its own, unless the koshes already make it from well-attested headwords
-// (जिनागम = जिन + आगम stays split, so each half is looked up in the koshes).
-if (topics.length) {
+// ------------------------------------------------------------------ Agamic kosh
+{
   const lex = createLexicon({ words: Object.fromEntries(words) });
-  const vocabulary = new Set(topics.flatMap(vishayWords));
-  const uses = new Map();
-  for (const word of vocabulary) {
-    for (let k = 1; k < word.length; k += 1) {
-      for (const piece of [word.slice(0, k), word.slice(k)]) {
-        if (piece !== word && vocabulary.has(piece)) uses.set(piece, (uses.get(piece) ?? 0) + 1);
+  const result = await client.execute({ sql: "SELECT content FROM ocr_pages WHERE granth_key = ?", args: [AGAMIC_KOSH] });
+  let heads = 0;
+  let learned = 0;
+  for (const row of result.rows) {
+    for (const line of foldSanskrit(String(row.content ?? "").normalize("NFC")).split("\n")) {
+      const m = line.match(AGAMIC_HEADWORD_LINE);
+      if (!m) continue;
+      heads += 1;
+      for (const stem of headwordStems(m[1])) {
+        if (words.has(stem)) continue;
+        const split = splitCompound(stem, lex);
+        const parts = split ? searchableParts(split.parts).length : 0;
+        const weak = !split || split.parts.some((p) => p.kind === "unknown") || split.cost / Math.max(1, parts) >= WEAK_SPLIT_COST;
+        if (!weak) continue;
+        addWord(stem, m[1], SOURCE.agamic, AGAMIC_BIT, frequency(stem));
+        learned += 1;
       }
     }
   }
-  let learned = 0;
-  for (const [word, count] of uses) {
-    const syllables = aksharaCount(word);
-    if (count < MIN_VISHAY_TOPICS || words.has(word) || !canStartWord(word) || syllables < 2 || syllables > MAX_VISHAY_SYLLABLES) continue;
-    // The koshes make it well (cheap parts, not a short word chopped in three): keep their parts.
-    const split = splitCompound(word, lex);
-    const parts = split ? searchableParts(split.parts).length : 0;
-    const weak = !split || split.cost / Math.max(1, parts) >= WEAK_SPLIT_COST || (parts >= 3 && syllables <= 6);
-    if (!weak) continue;
-    addWord(word, word, SOURCE.vishay, 0, count);
-    learned += 1;
-  }
-  console.log(`building blocks: learned ${learned} vishay terms`);
-}
-
-// Two rounds: terms learned in the first round split more vishays in the second.
-for (let round = 1; round <= 2 && topics.length; round += 1) {
-  const lex = createLexicon({ words: Object.fromEntries(words) });
-  const seenIn = new Map(); // unknown stretch -> Set of topic indexes
-  topics.forEach((topic, index) => {
-    for (const word of vishayWords(topic)) {
-      const split = splitCompound(word, lex);
-      for (const part of split?.parts ?? []) {
-        if (part.kind !== "unknown" || aksharaCount(part.text) < 2) continue;
-        const set = seenIn.get(part.text) ?? new Set();
-        set.add(index);
-        seenIn.set(part.text, set);
-      }
-    }
-  });
-  let learned = 0;
-  for (const [text, set] of seenIn) {
-    const syllables = aksharaCount(text);
-    if (set.size < MIN_VISHAY_TOPICS || syllables < 2 || syllables > MAX_VISHAY_SYLLABLES || !canStartWord(text) || words.has(text)) continue;
-    addWord(text, text, SOURCE.vishay, 0, set.size);
-    learned += 1;
-  }
-  console.log(`round ${round}: learned ${learned} vishay terms`);
+  console.log(`kosh ${AGAMIC_KOSH}: ${result.rows.length} pages, ${heads} headword lines, ${learned} words the three koshes lack`);
 }
 
 const sorted = Object.fromEntries([...words].sort((a, b) => (a[0] < b[0] ? -1 : 1)));
 writeFileSync(OUT, `${JSON.stringify({ version: 1, built: new Date().toISOString().slice(0, 10), words: sorted })}\n`);
 console.log(`wrote ${OUT.pathname}: ${words.size} words`);
-
-if (report && topics.length) {
-  const lex = createLexicon(JSON.parse(readFileSync(OUT, "utf8")));
-  let total = 0;
-  let allKosh = 0;
-  let someUnknown = 0;
-  for (const topic of topics) {
-    for (const word of vishayWords(topic)) {
-      total += 1;
-      const r = compoundParts(word, lex);
-      const parts = r?.parts ?? [];
-      if (parts.some((p) => p.kind === "unknown")) someUnknown += 1;
-      else if (parts.every((p) => p.kind !== "word" || p.source !== SOURCE.vishay)) allKosh += 1;
-    }
-  }
-  console.log({ vishayWords: total, allPartsInKosh: allKosh, withUnknownPart: someUnknown });
-}

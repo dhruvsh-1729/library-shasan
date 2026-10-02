@@ -1,4 +1,4 @@
-export const SOURCE: { head: 0; text: 1; vishay: 2 };
+export const SOURCE: { head: 0; text: 1; agamic: 2 };
 export const UPASARGAS: string[];
 
 export type LexiconEntry = { key: string; head: string; source: number; koshes: number; freq: number };

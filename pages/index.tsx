@@ -991,6 +991,7 @@ export default function SearchPage() {
           <nav className="ltNav" aria-label="Other pages">
             <Link href="/library">Library</Link>
             <Link href="/ask">Ask</Link>
+            <Link href="/vyutpatti">Vyutpatti</Link>
             <Link href="/scannable-documents">Scan status</Link>
           </nav>
         </header>
@@ -1071,9 +1072,9 @@ export default function SearchPage() {
                     const on = chosenParts.includes(term);
                     const where =
                       part.kind === "unknown"
-                        ? "Not in the koshes or the vishay list"
-                        : part.vishayOnly
-                          ? "A vishay term; not a kosh headword"
+                        ? "Not in the koshes"
+                        : part.agamicOnly
+                          ? "Only in the Agamic Vyutpatti Kosh"
                           : `In ${part.koshes?.join(", ") || "the kosh text"}`;
                     const also = part.alias ? ` Also searched as ${part.alias}.` : "";
                     const pages = typeof part.pages === "number" ? ` ${plural(part.pages, "page")} in the library.` : "";
@@ -1081,7 +1082,7 @@ export default function SearchPage() {
                       <button
                         key={key}
                         type="button"
-                        className={`ltSpelling ltPart${on ? " isOn" : ""}${part.kind === "word" && !part.vishayOnly ? "" : " isOutsideKosh"}`}
+                        className={`ltSpelling ltPart${on ? " isOn" : ""}${part.kind === "word" && !part.agamicOnly ? "" : " isOutsideKosh"}`}
                         aria-pressed={on}
                         onClick={() => togglePart(term)}
                         title={`${where}.${also}${pages} Click to ${on ? "stop searching" : "also search"} this part.`}
@@ -1099,7 +1100,7 @@ export default function SearchPage() {
                   className="ltLink ltPartsKosh"
                   onClick={() => run(1, { granthIds: koshIds })}
                   disabled={loading}
-                  title="Search the word and the chosen parts in Shabda Ratna Mahodadhi, Abhidhan Vyutpatti Prakriya Kosh and Apte"
+                  title="Search the word and the chosen parts in Abhidhan Vyutpatti Prakriya Kosh, Shabda Ratna Mahodadhi and Apte"
                 >
                   Search these in the koshes
                 </button>

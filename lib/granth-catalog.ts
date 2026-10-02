@@ -41,6 +41,8 @@ export type GranthCatalog = {
 
 // Metadata changes only when granths are scanned or uploaded.
 const CATALOG_TTL_MS = 10 * 60 * 1000;
+// A build takes about half a second; one still running after this is stuck.
+const CATALOG_BUILD_TIMEOUT_MS = 45 * 1000;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -117,12 +119,19 @@ export async function getGranthCatalog(): Promise<GranthCatalog> {
   const cached = globalThis.__granthCatalog;
   if (cached && cached.expiresAt > Date.now()) return cached.value;
   if (!globalThis.__granthCatalogLoading) {
-    globalThis.__granthCatalogLoading = buildCatalog()
+    // A metadata request that never answers must not hold every later caller
+    // forever: the shared build gives up, and the next call starts a new one.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("The granth catalog took too long to load.")), CATALOG_BUILD_TIMEOUT_MS);
+    });
+    globalThis.__granthCatalogLoading = Promise.race([buildCatalog(), timeout])
       .then((value) => {
         globalThis.__granthCatalog = { value, expiresAt: Date.now() + CATALOG_TTL_MS };
         return value;
       })
       .finally(() => {
+        clearTimeout(timer);
         globalThis.__granthCatalogLoading = undefined;
       });
   }

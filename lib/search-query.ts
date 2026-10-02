@@ -58,7 +58,8 @@ export type CompoundPart = {
   term?: string;
   alias?: string;
   koshes?: string[];
-  vishayOnly?: boolean;
+  /** Only in the Agamic vyutpatti kosh (395), not in the three koshes. */
+  agamicOnly?: boolean;
   pages?: number;
 };
 export type CompoundWord = { word: string; inKosh: string[]; parts: CompoundPart[] };

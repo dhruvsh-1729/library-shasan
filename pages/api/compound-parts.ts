@@ -13,7 +13,7 @@ import { getTursoClient } from "@/lib/turso";
 // The words a Devanagari compound is made of, so the search page can offer
 // "अकर्कश + प्रशस्त + वचन + …" and search the parts in the koshes, where the
 // whole vishay is rarely printed. The word list (data/compound-lexicon.json)
-// comes from the kosh headwords and the vishay list; see
+// comes from the kosh headwords only; see
 // scripts/build_compound_lexicon.mjs.
 
 export type CompoundPartsResponse = { query: string; words: CompoundWord[] };
@@ -48,7 +48,7 @@ async function partsFor(words: string[]): Promise<CompoundPartsResponse["words"]
     if (!split || searchableParts(split.parts).length < 2) continue;
     out.push({
       word: split.word,
-      inKosh: split.whole && split.whole.source !== SOURCE.vishay ? koshFamilyLabels(split.whole.koshes) : [],
+      inKosh: split.whole && split.whole.source !== SOURCE.agamic ? koshFamilyLabels(split.whole.koshes) : [],
       parts: split.parts.map((part): CompoundPart => {
         if (part.kind === "prefix") return { text: part.text, kind: "prefix", term: part.label };
         if (part.kind === "ending" || part.kind === "unknown") return { text: part.text, kind: part.kind, term: part.text };
@@ -62,7 +62,7 @@ async function partsFor(words: string[]): Promise<CompoundPartsResponse["words"]
           term: part.term,
           alias,
           koshes: koshFamilyLabels(part.koshes),
-          vishayOnly: part.source === SOURCE.vishay,
+          agamicOnly: part.source === SOURCE.agamic,
         };
       }),
     });
