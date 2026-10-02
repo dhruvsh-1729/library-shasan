@@ -143,6 +143,8 @@ async function printedPages(granthKey: string, pages: number[]) {
  * index found; the model then decides which really are the word's entry.
  */
 export async function findCandidates(word: string, options: { tier?: 1 | 2 } = {}): Promise<Candidate[]> {
+  // Only Devanagari (Hindi-lipi) words are looked up.
+  if (!/^[\u0900-\u097f]+$/u.test(String(word ?? "").normalize("NFC"))) return [];
   const keys = headwordKeys(word);
   if (!keys.length) return [];
   const result = await getTursoClient().execute({

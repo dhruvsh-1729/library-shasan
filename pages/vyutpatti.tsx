@@ -53,12 +53,6 @@ function problemWith(text: string) {
   return "";
 }
 
-const SOURCE_LABEL: Record<ReaderLine["source"], string> = {
-  kosh: "From kosh",
-  ai: "AI: verify",
-  vigraha: "Vigraha: verify",
-};
-
 async function readStream(res: Response, onEvent: (event: Record<string, unknown>) => void) {
   if (!(res.headers.get("content-type") ?? "").includes("ndjson") || !res.body) {
     const json = await res.json().catch(() => ({}));
@@ -88,11 +82,24 @@ async function readStream(res: Response, onEvent: (event: Record<string, unknown
 
 function AutoGrow({ value, onChange, className, label }: { value: string; onChange: (v: string) => void; className?: string; label: string }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
+  // Sized to its text; measured again once the Indic fonts arrive and whenever
+  // the width changes (a phone turned sideways), or a line is cut short.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight + 2}px`;
+    };
+    fit();
+    let cancelled = false;
+    document.fonts?.ready.then(() => !cancelled && fit());
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    observer?.observe(el);
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+    };
   }, [value]);
   return (
     <textarea ref={ref} className={className} value={value} rows={1} aria-label={label} onChange={(e) => onChange(e.target.value)} />
@@ -215,12 +222,14 @@ export default function VyutpattiPage() {
     update(key, (item) => ({ rows: item.rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)) }));
   const removeRow = (key: number, index: number) => update(key, (item) => ({ rows: item.rows.filter((_, i) => i !== index) }));
 
+  const pages = (item: Item) => item.result?.words.reduce((n, w) => n + w.entries.length, 0) ?? 0;
+
   return (
     <>
       <Head>
         <title>Vyutpatti</title>
       </Head>
-      <div className="vyShell">
+      <div className={`vyShell${done.length ? " hasBar" : ""}`}>
         <header className="chTop">
           <strong className="chBrand">Vyutpatti</strong>
           <nav className="chNav">
@@ -233,8 +242,7 @@ export default function VyutpattiPage() {
         <main className="vyMain">
           <form className="vyForm" onSubmit={onSubmit}>
             <label className="vyLabel" htmlFor="vy-input">
-              Vishay
-              <span>One per line, typed in Devanagari. A number before it becomes the heading (1.1 अचौर्य); a topic in braces guides the meaning ({"सकरणयोग {अयोगीकेवली}"}).</span>
+              Vishay <span>one per line</span>
             </label>
             <textarea
               id="vy-input"
@@ -250,6 +258,7 @@ export default function VyutpattiPage() {
               aria-describedby={problem ? "vy-problem" : undefined}
               spellCheck={false}
               autoComplete="off"
+              autoCapitalize="off"
             />
             {problem ? (
               <p className="vyProblem" id="vy-problem" role="alert">
@@ -257,10 +266,6 @@ export default function VyutpattiPage() {
               </p>
             ) : null}
             <div className="vyControls">
-              <label className="vyBox">
-                Box No
-                <input value={box} onChange={(e) => setBox(e.target.value.slice(0, 12))} inputMode="numeric" />
-              </label>
               <div className="vyEngine" role="radiogroup" aria-label="Read with">
                 {(["claude", "sarvam"] as Engine[]).map((e) => (
                   <button key={e} type="button" role="radio" aria-checked={engine === e} className={engine === e ? "isOn" : ""} onClick={() => setEngine(e)}>
@@ -268,22 +273,19 @@ export default function VyutpattiPage() {
                   </button>
                 ))}
               </div>
+              <label className="vyBox">
+                Box
+                <input value={box} onChange={(e) => setBox(e.target.value.slice(0, 12))} inputMode="numeric" aria-label="Box No" />
+              </label>
               <button type="submit" className="vyGo" disabled={running || !input.trim() || Boolean(problem)}>
                 {running ? "Working…" : "Find vyutpatti"}
               </button>
             </div>
-            <p className="vyHint">
-              Looked up in Abhidhan Vyutpatti Prakriya Kosh, Shabda Ratna Mahodadhi and Apte; a word none of them has goes to the Agamic
-              Vyutpatti Kosh, Abhidhan Rajendra Kosh, Paia Sadda Mahannavo and Alpaparichit Saiddhantik Shabdakosh. Nothing you type is saved.
-              {engine === "sarvam" ? " With Sarvam, Shabda Ratna Mahodadhi's Gujarati is taken from the OCR text and needs checking." : ""}
-            </p>
+            {engine === "sarvam" ? <p className="vyHint">Sarvam cannot read the page scans: check the Gujarati meanings.</p> : null}
           </form>
 
           {done.length ? (
             <div className="vyBar">
-              <span>
-                {done.length} vishay{done.length === 1 ? "" : "s"} ready
-              </span>
               <button type="button" className="vyGo" onClick={() => download()} disabled={downloading}>
                 {downloading ? "Making PDF…" : done.length === 1 ? "Download PDF" : `Download PDF (${done.length})`}
               </button>
@@ -299,81 +301,117 @@ export default function VyutpattiPage() {
                     {item.number ? <span className="vyNumber">{item.number}</span> : null}
                     <span className="indic">{item.result?.vishay ?? item.vishay}</span>
                   </h2>
-                  {item.status === "running" || item.status === "waiting" ? (
-                    <span className="vyStatus">
-                      <span className="chTyping" aria-hidden="true">
-                        <span />
-                        <span />
-                        <span />
-                      </span>
-                      {item.progress}
-                    </span>
-                  ) : null}
-                  {item.status === "done" ? (
-                    <div className="vyCardActions">
-                      <button type="button" onClick={() => download(item)} disabled={downloading}>
-                        PDF
-                      </button>
-                      <button type="button" onClick={() => setItems((list) => list.filter((i) => i.key !== item.key))}>
-                        Remove
-                      </button>
-                    </div>
-                  ) : null}
-                  {item.status === "error" ? (
-                    <div className="vyCardActions">
-                      <button type="button" onClick={() => retry(item)} disabled={running}>
-                        Try again
-                      </button>
-                      <button type="button" onClick={() => setItems((list) => list.filter((i) => i.key !== item.key))}>
-                        Remove
-                      </button>
-                    </div>
+                  {item.status === "done" || item.status === "error" ? (
+                    <button
+                      type="button"
+                      className="vyClose"
+                      onClick={() => setItems((list) => list.filter((i) => i.key !== item.key))}
+                      aria-label={`Remove ${item.vishay}`}
+                    >
+                      ×
+                    </button>
                   ) : null}
                 </header>
 
-                {item.status === "error" ? <p className="vyProblem">{item.error}</p> : null}
+                {item.status === "running" || item.status === "waiting" ? (
+                  <p className="vyStatus">
+                    <span className="chTyping" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    {item.progress}
+                  </p>
+                ) : null}
+
+                {item.status === "error" ? (
+                  <div className="vyErrorRow">
+                    <p className="vyProblem">{item.error}</p>
+                    <button type="button" className="vyLink" onClick={() => retry(item)} disabled={running}>
+                      Try again
+                    </button>
+                  </div>
+                ) : null}
 
                 {item.result ? (
                   <>
-                    <p className="vyParts">
-                      <span className="indic">
-                        {item.result.parts.map((p) => (p.prefix ? `${p.word}-` : p.word)).join(" + ")}
-                      </span>
-                      {item.result.samasa ? <span className="vySamasa indic">{item.result.samasa}</span> : null}
-                    </p>
+                    {item.result.parts.length > 1 ? (
+                      <p className="vyParts indic">
+                        {item.result.parts
+                          .filter((p) => !p.skip)
+                          .map((p) => (p.prefix ? `${p.word}-` : p.word))
+                          .join(" + ")}
+                      </p>
+                    ) : null}
 
-                    <h3 className="vySection">Reader page</h3>
                     {item.lines.length ? (
                       <ol className="vyLines">
                         {item.lines.map((line, index) => (
                           <li key={index} className={`vyLine is-${line.source}`}>
                             <div className="vyLineText indic">
                               <strong>{line.head}</strong>
+                              {/* The line's leading " - " is drawn by the page, kept in the PDF. */}
                               <AutoGrow
                                 className="vyEdit indic"
                                 label={`Line for ${line.head}`}
-                                value={line.body}
-                                onChange={(v) => editLine(item.key, index, v)}
+                                value={line.body.replace(/^\s*-\s*/, "")}
+                                onChange={(v) => editLine(item.key, index, ` - ${v.replace(/^\s*-\s*/, "")}`)}
                               />
                             </div>
                             <div className="vyLineMeta">
-                              <span className={`vyTag is-${line.source}`}>{SOURCE_LABEL[line.source]}</span>
-                              {line.note && line.source === "kosh" ? <span className="vyNote">{line.note}</span> : null}
-                              <button type="button" className="vyRemove" onClick={() => removeLine(item.key, index)} aria-label={`Remove the line for ${line.head}`}>
-                                Remove
+                              {line.source !== "kosh" ? <span className="vyTag">AI · check</span> : null}
+                              {line.source === "kosh" && line.note ? <span className="vyTag">check page</span> : null}
+                              <button type="button" className="vyX" onClick={() => removeLine(item.key, index)} aria-label={`Remove the line for ${line.head}`}>
+                                ×
                               </button>
                             </div>
                           </li>
                         ))}
                       </ol>
                     ) : (
-                      <p className="vyEmpty">No line: none of the koshes has these words.</p>
+                      <p className="vyEmpty">None of the koshes has these words.</p>
                     )}
 
-                    <details className="vyTableWrap">
-                      <summary>
-                        Internal table <span>{item.rows.length} rows</span>
-                      </summary>
+                    <div className="vyCardFoot">
+                      <button type="button" className="vyLink" onClick={() => download(item)} disabled={downloading}>
+                        PDF
+                      </button>
+                    </div>
+
+                    <details className="vyDetails">
+                      <summary>Details</summary>
+
+                      {pages(item) ? (
+                        <>
+                          <h3 className="vySection">Kosh pages</h3>
+                          <ul className="vySources">
+                            {item.result.words
+                              .filter((w) => w.entries.length)
+                              .map((w) => (
+                                <li key={w.word}>
+                                  <span className="vySourceWord indic">{w.word}</span>
+                                  {w.entries.map((e) => (
+                                    <button
+                                      key={e.id}
+                                      type="button"
+                                      className="vyPage"
+                                      disabled={!e.pdfUrl}
+                                      onClick={() =>
+                                        e.pdfUrl &&
+                                        setPdfTarget({ pdfUrl: e.pdfUrl, page: e.pdfPage, title: e.citation, searchTerm: e.head, searchMode: "exact_word" })
+                                      }
+                                    >
+                                      <span className="indic">{e.citation}</span>
+                                      <span>{e.printedPage ? `p. ${e.printedPage}` : `PDF ${e.pdfPage}`}</span>
+                                    </button>
+                                  ))}
+                                </li>
+                              ))}
+                          </ul>
+                        </>
+                      ) : null}
+
+                      <h3 className="vySection">Internal table</h3>
                       <div className="vyTableScroll">
                         <table className="vyTable">
                           <thead>
@@ -389,19 +427,21 @@ export default function VyutpattiPage() {
                           <tbody>
                             {item.rows.map((row, index) => (
                               <tr key={index} className={`is-${row.source}`}>
-                                <td>{index + 1}</td>
-                                <td className="indic">{row.granth}</td>
-                                <td>
+                                <td data-label="Sr.">{index + 1}</td>
+                                <td data-label="Granth" className="indic">
+                                  {row.granth}
+                                </td>
+                                <td data-label="ShastraPath">
                                   <AutoGrow className="vyEdit indic" label="ShastraPath" value={row.shastraPath} onChange={(v) => editRow(item.key, index, "shastraPath", v)} />
                                 </td>
-                                <td>
+                                <td data-label="Pub.Rem">
                                   <AutoGrow className="vyEdit indic" label="Pub.Rem" value={row.pubRem} onChange={(v) => editRow(item.key, index, "pubRem", v)} />
                                 </td>
-                                <td>
+                                <td data-label="In.Rem">
                                   <AutoGrow className="vyEdit indic" label="In.Rem" value={row.inRem} onChange={(v) => editRow(item.key, index, "inRem", v)} />
                                 </td>
                                 <td>
-                                  <button type="button" className="vyRemove" onClick={() => removeRow(item.key, index)} aria-label={`Remove row ${index + 1}`}>
+                                  <button type="button" className="vyX" onClick={() => removeRow(item.key, index)} aria-label={`Remove row ${index + 1}`}>
                                     ×
                                   </button>
                                 </td>
@@ -410,50 +450,15 @@ export default function VyutpattiPage() {
                           </tbody>
                         </table>
                       </div>
-                    </details>
 
-                    <details className="vyTableWrap">
-                      <summary>
-                        Kosh pages <span>{item.result.words.reduce((n, w) => n + w.entries.length, 0)} entries</span>
-                      </summary>
-                      <ul className="vySources">
-                        {item.result.words.map((w) => (
-                          <li key={w.word}>
-                            <span className="vySourceWord indic">{w.word}</span>
-                            {w.role === "base" && w.of ? <span className="vySourceRole indic">base of {w.of}</span> : null}
-                            {w.entries.length ? (
-                              w.entries.map((e) => (
-                                <button
-                                  key={e.id}
-                                  type="button"
-                                  className="vyPage"
-                                  disabled={!e.pdfUrl}
-                                  onClick={() =>
-                                    e.pdfUrl &&
-                                    setPdfTarget({ pdfUrl: e.pdfUrl, page: e.pdfPage, title: e.citation, searchTerm: e.head, searchMode: "exact_word" })
-                                  }
-                                  title={e.readFrom === "scan" ? "Read from the page scan" : "Read from the OCR text"}
-                                >
-                                  <span className="indic">{e.citation}</span>
-                                  <span>{e.printedPage ? `p. ${e.printedPage}` : `PDF p. ${e.pdfPage}`}</span>
-                                  {e.checked ? null : <span className="vyFlag">check</span>}
-                                </button>
-                              ))
-                            ) : (
-                              <span className="vyEmpty">{w.ai ? "in no kosh: AI" : "in no kosh"}</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                      {item.result.notes.length ? (
+                        <ul className="vyNotes">
+                          {item.result.notes.map((n) => (
+                            <li key={n}>{n}</li>
+                          ))}
+                        </ul>
+                      ) : null}
                     </details>
-
-                    {item.result.notes.length ? (
-                      <ul className="vyNotes">
-                        {item.result.notes.map((n) => (
-                          <li key={n}>{n}</li>
-                        ))}
-                      </ul>
-                    ) : null}
                   </>
                 ) : null}
               </article>

@@ -339,7 +339,7 @@ ${blocks.join("\n\n")}
 For each id return:
 - is_entry: true when this is the entry of the block's word: its printed headword is that word or that word's nominative/stem form (कथा, कायिकः for कायिक, चौर्यम् for चौर्य; for a Prakrit kosh, the Sanskrit form given for the headword is that word). False for a different word, a longer compound beginning with it, a synonym list, or a running head.
 - why: when is_entry is false, the reason in a few English words; otherwise "".
-- fits_vishay: whether the sense of this entry is the one the vishay "${vishay}" uses. The vishays are topics of Jain scripture, so a sense fits only when it is the meaning the word has in that Jain topic: काय as "body" fits कायिकहिंसा, काय as the root of the little finger does not; मूलगुण as the basic vows fits, मूलगुण as an arithmetical multiplier does not; अमुक्त as "not liberated" fits अमुक्तमां मुक्तसंज्ञा, अमुक्त as "a weapon held in the hand" does not. When unsure, false.
+- fits_vishay: whether the entry's meaning is the one the word has in the vishay "${vishay}". The vishays are Jain topics. Answer false only for a clearly different meaning: काय as the root of the little finger does not fit कायिकहिंसा (it means body there); मूलगुण as an arithmetical multiplier does not fit a vishay on vows; अमुक्त as "a weapon held in the hand" does not fit अमुक्तमां मुक्तसंज्ञा. The ordinary meaning of a plain word fits (कथा as talk or story fits अकथा). When unsure, true.
 - derivation_fits: whether the printed derivation belongs to that same sense (Shabda Ratna Mahodadhi's काय prints "कः प्रजापतिर्देवताऽस्य" for the Prajāpati sense, not for "body": false for कायिकहिंसा).
 - relevant_gender: the label printed for that sense, when the entry gives the senses different labels; else the same as gender.
 - head: the headword as printed.
@@ -506,7 +506,7 @@ export async function buildVyutpatti(input: VishayInput, engine: Engine, progres
   const stamp = remarkStamp();
   if (engine === "sarvam") notes.push("Read with Sarvam: Shabda Ratna Mahodadhi's Gujarati meanings come from OCR text, not the scan. Check them against the page.");
 
-  progress("Splitting the vishay");
+  progress("Splitting");
   const plan = await planVishay(engine, vishay, usage);
   const { main } = splitContext(vishay);
   // The whole is looked up as one word only when it is one word (not a phrase or a maxim).
@@ -528,7 +528,7 @@ export async function buildVyutpatti(input: VishayInput, engine: Engine, progres
       return true;
     });
     if (!round.length) break;
-    progress(`Looking up ${round.map((q) => q.word).join(", ")} in the koshes`);
+    progress(`Looking up ${round.length} word${round.length === 1 ? "" : "s"}`);
     const found = await Promise.all(
       round.map(async (q) => {
         let candidates = await findCandidates(q.word, q.tier2 ? { tier: 2 } : {});
@@ -546,7 +546,7 @@ export async function buildVyutpatti(input: VishayInput, engine: Engine, progres
       })
     );
     const withCandidates = found.filter((f) => f.candidates.length);
-    if (withCandidates.length) progress(`Reading ${withCandidates.reduce((n, f) => n + f.candidates.length, 0)} kosh entries${engine === "claude" ? " from the page scans" : ""}`);
+    if (withCandidates.length) progress(`Reading ${withCandidates.reduce((n, f) => n + f.candidates.length, 0)} kosh entries`);
     const readings = withCandidates.length ? await readCandidates(engine, vishay, withCandidates, usage, notes) : new Map<string, Reading>();
 
     for (const f of found) {
@@ -602,7 +602,7 @@ export async function buildVyutpatti(input: VishayInput, engine: Engine, progres
     (w) => !w.entries.length && !w.brokenInto && (w.role === "part" || (w.role === "whole" && !plan.vigraha && looked.length <= 1))
   );
   if (missing.length) {
-    progress(`${missing.map((w) => w.word).join(", ")}: in no kosh; asking for its vyutpatti`);
+    progress(`${missing.length} word${missing.length === 1 ? "" : "s"} in no kosh: writing with AI`);
     // A derived word whose base a kosh has is derived from that base (शिथिलता from शिथिल).
     const withBase = missing.map((w) => {
       const base = words.find((b) => b.role === "base" && b.of === w.word && b.entries.length);
