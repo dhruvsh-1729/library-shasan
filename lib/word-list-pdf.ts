@@ -50,10 +50,10 @@ const FONT_FILES = {
   gujarati: { regular: "NotoSerifGujarati-Regular.ttf", bold: "NotoSerifGujarati-Bold.ttf" },
 } as const;
 type Script = keyof typeof FONT_FILES;
-type Weight = "regular" | "bold";
+export type Weight = "regular" | "bold";
 
-const A4: [number, number] = [595.28, 841.89];
-const MARGIN = 42.5; // 15 mm
+export const A4: [number, number] = [595.28, 841.89];
+export const MARGIN = 42.5; // 15 mm
 const TITLE_SIZE = 16;
 const TEXT_SIZE = 12;
 const MIN_WORD_SIZE = 7;
@@ -68,8 +68,10 @@ export const toDevanagariDigits = (value: string | number) =>
   String(value).replace(/[0-9]/g, (d) => DEVANAGARI_DIGITS[Number(d)]);
 
 // ------------------------------------------------------------------ fonts
+// (The fonts, shaping, embedding and wrapping below are shared with the
+// vyutpatti PDF, lib/vyutpatti/pdf.ts.)
 
-type LoadedFace = {
+export type LoadedFace = {
   bytes: Uint8Array;
   font: HarfBuzz.Font;
   upem: number;
@@ -113,7 +115,7 @@ async function loadFace(file: string): Promise<LoadedFace> {
   };
 }
 
-function loadFaces() {
+export function loadFaces() {
   facesPromise ??= (async () => {
     hb = await import("harfbuzzjs");
     const out = {} as Record<Script, Record<Weight, LoadedFace>>;
@@ -131,7 +133,7 @@ function loadFaces() {
 // ------------------------------------------------------------------ shaping
 
 type ShapedGlyph = { gid: number; xAdvance: number; xOffset: number; yOffset: number; cluster: number };
-type ShapedRun = { face: LoadedFace; text: string; glyphs: ShapedGlyph[]; width: number };
+export type ShapedRun = { face: LoadedFace; text: string; glyphs: ShapedGlyph[]; width: number };
 
 const GUJARATI = /[઀-૿]/;
 const NEUTRAL = /[\s\d.,:;|()[\]\-–—'"“”‘’/!?+*=%&]/;
@@ -169,7 +171,7 @@ function shapeRun(face: LoadedFace, text: string): ShapedRun {
 
 type EmbeddedFont = { face: LoadedFace; ref: PDFRef; widths: Map<number, number>; toUnicode: Map<number, string> };
 
-class FontEmbedder {
+export class FontEmbedder {
   private readonly fonts = new Map<LoadedFace, EmbeddedFont>();
   private readonly pageNames = new Map<string, PDFName>();
   private readonly doc: PDFDocument;
@@ -308,7 +310,7 @@ function buildToUnicodeCMap(map: Map<number, string>) {
 
 // ------------------------------------------------------------------ drawing
 
-class TextDrawer {
+export class TextDrawer {
   private readonly faces: Record<Script, Record<Weight, LoadedFace>>;
   private readonly embedder: FontEmbedder;
 
@@ -355,7 +357,7 @@ class TextDrawer {
   }
 }
 
-function strokeRect(page: PDFPage, x: number, y: number, width: number, height: number, borderWidth = BORDER) {
+export function strokeRect(page: PDFPage, x: number, y: number, width: number, height: number, borderWidth = BORDER) {
   page.drawRectangle({ x, y, width, height, borderWidth, borderColor: rgb(0, 0, 0) });
 }
 
@@ -455,7 +457,7 @@ const LINE_CELL_PAD_Y = 2;
 const LINE_HEADING_SIZE = 12;
 const LINE_BORDER = 0.4;
 
-type Piece = { text: string; weight: Weight };
+export type Piece = { text: string; weight: Weight };
 
 /**
  * The line split into pieces, the found words bold: marks every character
@@ -477,7 +479,7 @@ function highlightPieces(line: string, words: string[]): Piece[] {
   return pieces;
 }
 
-type Word = {
+export type Word = {
   parts: Array<{ runs: ShapedRun[] }>;
   width: number;
   space: number;
@@ -514,7 +516,7 @@ function breakWord(text: TextDrawer, pieces: Piece[], size: number, room: number
 }
 
 /** Breaks pieces into lines no wider than `room` (at spaces; a word longer than a line gets its own). */
-function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room: number) {
+export function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room: number) {
   // words keep their pieces, so a word half-highlighted stays one word
   const words: Array<Array<Piece>> = [[]];
   for (const piece of pieces) {

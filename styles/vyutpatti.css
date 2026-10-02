@@ -1,0 +1,547 @@
+/* Vyutpatti (pages/vyutpatti.tsx): the Light Table, with the reader's lines
+   as slips. Indic text is large; AI-written lines are marked amber. */
+
+.vyShell {
+  min-height: 100vh;
+  background: var(--lt-glass);
+}
+
+.vyShell .indic {
+  font-family: var(--lt-indic-font);
+}
+
+.vyMain {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 8px 24px 80px;
+  display: grid;
+  gap: 18px;
+}
+
+/* ------------------------------------------------------------ form */
+
+.vyForm {
+  display: grid;
+  gap: 10px;
+  padding: 20px 22px;
+  background: var(--lt-glass-lit);
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 12px;
+  box-shadow: var(--lt-shadow);
+}
+
+.vyLabel {
+  display: grid;
+  gap: 2px;
+  font-weight: 650;
+  font-size: 17px;
+}
+
+.vyLabel span {
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--lt-ink-2);
+}
+
+.vyInput {
+  width: 100%;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-size: clamp(22px, 2.4vw, 26px);
+  line-height: 1.55;
+}
+
+.vyInput[aria-invalid="true"] {
+  border-color: var(--lt-pencil);
+}
+
+.vyControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.vyBox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lt-ink-2);
+}
+
+.vyBox input {
+  width: 64px;
+  padding: 8px 10px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--lt-ink);
+  background: #fff;
+}
+
+.vyEngine {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.vyEngine button {
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--lt-ink-2);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.vyEngine button.isOn {
+  background: var(--lt-cobalt);
+  color: #fff;
+}
+
+.vyGo {
+  min-height: 40px;
+  margin-left: auto;
+  padding: 9px 18px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--lt-cobalt);
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.vyGo:hover:not(:disabled) {
+  background: var(--lt-cobalt-deep);
+}
+
+.vyGo:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.vyHint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lt-ink-3);
+}
+
+.vyProblem {
+  margin: 0;
+  color: var(--lt-pencil);
+  font-size: 14px;
+  font-weight: 560;
+}
+
+/* ------------------------------------------------------------ download bar */
+
+.vyBar {
+  position: sticky;
+  top: 62px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 12px;
+  background: rgba(247, 250, 252, 0.94);
+  backdrop-filter: blur(8px);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ results */
+
+.vyList {
+  display: grid;
+  gap: 16px;
+}
+
+.vyCard {
+  display: grid;
+  gap: 10px;
+  padding: 18px 22px 20px;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: var(--lt-slip-shadow);
+}
+
+.vyCard.is-error {
+  border-left: 3px solid var(--lt-pencil);
+}
+
+.vyCardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.vyCardHead h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.vyNumber {
+  padding-right: 14px;
+  border-right: 2px solid var(--lt-ink);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.vyStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--lt-ink-2);
+  font-size: 14px;
+}
+
+.vyStatus .chTyping {
+  padding-top: 0 !important;
+}
+
+.vyCardActions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.vyCardActions button,
+.vyRemove {
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--lt-ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vyCardActions button:hover,
+.vyRemove:hover {
+  color: var(--lt-ink);
+  border-color: var(--lt-tick);
+}
+
+.vyParts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0;
+  font-size: 20px;
+  color: var(--lt-ink-2);
+}
+
+.vySamasa {
+  font-size: 15px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--lt-cobalt-wash);
+  color: var(--lt-cobalt-deep);
+}
+
+.vySection {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lt-ink-3);
+}
+
+.vyLines {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vyLine {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--lt-rule);
+  border-radius: 6px;
+}
+
+.vyLine.is-ai,
+.vyLine.is-vigraha {
+  border-color: #e7d3a4;
+  background: var(--lt-amber-wash);
+}
+
+.vyLineText {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 19px;
+  line-height: 1.7;
+}
+
+.vyLineText strong {
+  flex: none;
+  padding-top: 2px;
+}
+
+.vyEdit {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--lt-ink);
+  font-size: inherit;
+  line-height: inherit;
+  resize: none;
+  overflow: hidden;
+}
+
+.vyEdit:hover {
+  border-color: var(--lt-rule);
+}
+
+.vyEdit:focus {
+  border-color: var(--lt-cobalt);
+  background: #fff;
+  outline: none;
+}
+
+.vyLineMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.vyTag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 650;
+  background: var(--lt-green-wash);
+  color: var(--lt-green);
+}
+
+.vyTag.is-ai,
+.vyTag.is-vigraha {
+  background: #f6e2b5;
+  color: var(--lt-amber);
+}
+
+.vyNote {
+  color: var(--lt-amber);
+}
+
+.vyLineMeta .vyRemove {
+  margin-left: auto;
+  min-height: 28px;
+  padding: 3px 10px;
+}
+
+.vyEmpty {
+  margin: 0;
+  color: var(--lt-ink-3);
+  font-size: 14px;
+}
+
+.vyTableWrap {
+  border-top: 1px solid var(--lt-rule);
+  padding-top: 8px;
+}
+
+.vyTableWrap summary {
+  cursor: pointer;
+  font-weight: 650;
+  font-size: 14.5px;
+  color: var(--lt-ink-2);
+  padding: 4px 0;
+}
+
+.vyTableWrap summary span {
+  font-weight: 400;
+  color: var(--lt-ink-3);
+  margin-left: 6px;
+}
+
+.vyTableScroll {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.vyTable {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.vyTable th,
+.vyTable td {
+  border: 1px solid var(--lt-rule);
+  padding: 6px 8px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.vyTable th {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--lt-ink-2);
+  background: var(--lt-glass-lit);
+}
+
+.vyTable td:first-child {
+  width: 34px;
+  color: var(--lt-ink-3);
+}
+
+.vyTable td:nth-child(2) {
+  width: 150px;
+}
+
+.vyTable tr.is-ai td,
+.vyTable tr.is-vigraha td {
+  background: var(--lt-amber-wash);
+}
+
+.vyTable .vyEdit {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.vyTable .vyRemove {
+  min-height: 28px;
+  padding: 2px 9px;
+}
+
+.vySources {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vySources li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.vySourceWord {
+  min-width: 90px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.vySourceRole {
+  font-size: 13px;
+  color: var(--lt-ink-3);
+}
+
+.vyPage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 6px;
+  background: var(--lt-glass-lit);
+  color: var(--lt-cobalt-deep);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.vyPage .indic {
+  font-size: 15px;
+}
+
+.vyPage:hover:not(:disabled) {
+  border-color: var(--lt-cobalt);
+}
+
+.vyFlag {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--lt-amber-wash);
+  color: var(--lt-amber);
+  font-weight: 650;
+  font-size: 12px;
+}
+
+.vyNotes {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: var(--lt-amber);
+}
+
+@media (max-width: 640px) {
+  .vyMain {
+    padding: 4px 16px 64px;
+  }
+
+  .vyForm {
+    padding: 16px;
+  }
+
+  .vyGo {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .vyCard {
+    padding: 14px 14px 16px;
+  }
+
+  .vyCardHead h2 {
+    font-size: 24px;
+  }
+
+  .vyNumber {
+    font-size: 21px;
+  }
+
+  .vyLineText {
+    flex-direction: column;
+    gap: 0;
+    font-size: 18px;
+  }
+
+  .vyBar {
+    top: 56px;
+  }
+}

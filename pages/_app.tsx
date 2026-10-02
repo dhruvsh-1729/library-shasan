@@ -4,6 +4,7 @@ import "@/styles/admin.css";
 import "@/styles/search.css";
 import "@/styles/theme.css";
 import "@/styles/ask.css";
+import "@/styles/vyutpatti.css";
 import "@/styles/sheet.css";
 import "@/styles/phone.css";
 import type { AppProps } from "next/app";

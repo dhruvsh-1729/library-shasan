@@ -587,6 +587,7 @@ export default function AskPage() {
           <nav className="chNav">
             <Link href="/">Search</Link>
             <Link href="/library">Library</Link>
+            <Link href="/vyutpatti">Vyutpatti</Link>
           </nav>
         </header>
 
