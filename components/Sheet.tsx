@@ -35,9 +35,12 @@ export function Sheet({
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const busyRef = useRef(busy);
-  busyRef.current = busy;
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  // The latest values, for the Escape handler (refs are not written during render).
+  useEffect(() => {
+    busyRef.current = busy;
+    closeRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;

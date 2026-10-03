@@ -74,20 +74,20 @@ export default function SignInPage({ googleEnabled }: SignInPageProps) {
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  // A failed Google sign-in comes back to this page as ?error=<code>.
+  // A failed Google sign-in comes back to this page as ?error=<code>; it shows
+  // until the next attempt.
+  const [queryErrorDismissed, setQueryErrorDismissed] = useState(false);
+  const queryCode = router.isReady && !queryErrorDismissed ? firstQueryValue(router.query.error) : "";
+  const shownError = error || (queryCode ? messageForError(queryCode) : "");
+
   // Whoever signs in next on this device must not see pages or searches the last person kept offline.
   useEffect(() => {
     navigator.serviceWorker?.controller?.postMessage("clear");
   }, []);
 
-  useEffect(() => {
-    if (!router.isReady) return;
-    const code = firstQueryValue(router.query.error);
-    if (code) setError(messageForError(code));
-  }, [router.isReady, router.query.error]);
-
   const handleGoogleSignIn = (): void => {
     setError("");
+    setQueryErrorDismissed(true);
     setSubmitting(true);
     void signIn("google", { callbackUrl: "/" });
   };
@@ -97,6 +97,7 @@ export default function SignInPage({ googleEnabled }: SignInPageProps) {
     if (submitting) return;
 
     setError("");
+    setQueryErrorDismissed(true);
     setSubmitting(true);
 
     try {
@@ -139,9 +140,9 @@ export default function SignInPage({ googleEnabled }: SignInPageProps) {
             <p className="authSubtitle">Sign in to continue</p>
           </div>
 
-          {error ? (
+          {shownError ? (
             <div className="authError" role="alert">
-              {error}
+              {shownError}
             </div>
           ) : null}
 
