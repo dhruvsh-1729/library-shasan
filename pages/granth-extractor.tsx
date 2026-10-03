@@ -20,6 +20,7 @@ import {
   type Plan,
 } from "@/lib/extract-plan";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
+import { AppNav } from "@/components/AppNav";
 
 type Mode = "gathas" | "pages";
 type Recent = {
@@ -330,16 +331,12 @@ export default function GranthExtractor() {
   return (
     <>
       <Head>
-        <title>Extract pages</title>
+        <title>Gatha</title>
       </Head>
       <div className="exShell">
         <header className="chTop">
-          <strong className="chBrand">Extract</strong>
-          <nav className="chNav">
-            <Link href="/">Search</Link>
-            <Link href="/ask">Ask</Link>
-            <Link href="/library">Library</Link>
-          </nav>
+          <strong className="chBrand">Gatha</strong>
+          <AppNav current="extract" />
         </header>
 
         <main className="exMain">

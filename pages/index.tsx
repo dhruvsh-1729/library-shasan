@@ -1,6 +1,7 @@
 // The search page, the app's home page ("/"). Kept deliberately plain: one
 // search box, a sentence saying what was found, and one card per page with an
 // "Open this page" button. Everything else sits behind "More options".
+import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { KeyboardEvent, ReactNode } from "react";
@@ -50,6 +51,7 @@ import {
   resolveGranthValues,
   sameIds,
 } from "@/lib/search-url";
+import { AppNav } from "@/components/AppNav";
 
 type SearchOccurrence = { snippet: string; matchStart: number; matchEnd: number; text: string };
 
@@ -1034,15 +1036,13 @@ export default function SearchPage() {
   // ---------------------------------------------------------------- page
   return (
     <main className="lt">
+      <Head>
+        <title>Search</title>
+      </Head>
       <div className="ltFrame">
         <header className="ltTop">
           <h1>Search the granths</h1>
-          <nav className="ltNav" aria-label="Other pages">
-            <Link href="/library">Library</Link>
-            <Link href="/ask">Ask</Link>
-            <Link href="/vyutpatti">Vyutpatti</Link>
-            <Link href="/scannable-documents">Scan status</Link>
-          </nav>
+          <AppNav current="search" />
         </header>
 
         <section className="ltSearch" aria-label="Search">

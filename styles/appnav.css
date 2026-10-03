@@ -1,0 +1,96 @@
+/*
+ * The page menu shared by every page (components/AppNav). Loaded after the
+ * page styles, so it looks the same whichever header it sits in.
+ */
+
+.appNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.appNavMain,
+.appNavExtra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.appNav a,
+.appNav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--lt-ink-2);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.appNav a:hover,
+.appNav button:hover {
+  background: var(--lt-cobalt-wash);
+  color: var(--lt-cobalt-deep);
+}
+
+.appNav a[aria-current="page"] {
+  background: var(--lt-cobalt);
+  color: #fff;
+  font-weight: 600;
+}
+
+.appNavExtra a,
+.appNavExtra button {
+  border-color: var(--lt-glass-edge);
+  font-size: 14px;
+}
+
+/* Phones: the header's title on one line, the five places in one even row
+   under it, a page's own links below them. Nothing is hidden or cut off. */
+@media (max-width: 720px) {
+  header:has(> .appNav),
+  header:has(> * > .appNav) {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .appNav {
+    flex: 1 1 100%;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .appNavMain {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+  }
+
+  .appNavMain a {
+    padding: 0 2px;
+    font-size: 14px;
+    background: var(--lt-glass-lit);
+    border-color: var(--lt-glass-edge);
+  }
+
+  .appNavMain a[aria-current="page"] {
+    border-color: var(--lt-cobalt);
+  }
+
+  .appNavExtra {
+    width: 100%;
+  }
+}

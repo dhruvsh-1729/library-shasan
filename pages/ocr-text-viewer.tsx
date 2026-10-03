@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AppNav } from "@/components/AppNav";
 
 type GranthMeta = {
   display_name?: string | null;
@@ -281,15 +282,15 @@ export default function OCRTextViewerPage() {
                 <p className="indic">{granth.native_title}</p>
               ) : null}
             </div>
-            <nav className="ltNav" aria-label="Pages">
-              <Link href="/">Search</Link>
-              <Link href="/library">Library</Link>
-              {granth?.xlsx_url ? (
-                <a href={granth.xlsx_url} target="_blank" rel="noreferrer">
-                  Spreadsheet
-                </a>
-              ) : null}
-            </nav>
+            <AppNav
+              extra={
+                granth?.xlsx_url ? (
+                  <a href={granth.xlsx_url} target="_blank" rel="noreferrer">
+                    Spreadsheet
+                  </a>
+                ) : null
+              }
+            />
           </header>
 
           {q.trim() && rows.length ? (

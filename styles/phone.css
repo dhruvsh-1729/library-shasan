@@ -16,17 +16,16 @@
 @media (max-width: 760px) {
   /* ---------------------------------------------------------- tab rows */
 
+  /* Every tab stays in view: the row wraps instead of scrolling sideways
+     (a hidden-scrollbar row hid tabs off the right edge). */
   .adminTabs,
   .scanTabs {
     display: flex !important;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 6px;
     margin: 0;
     padding: 2px 0 6px;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
   }
 
   .adminTabs::-webkit-scrollbar,
@@ -42,7 +41,6 @@
     gap: 8px;
     padding: 0 14px !important;
     border-radius: 999px !important;
-    scroll-snap-align: start;
     white-space: nowrap;
     justify-content: center !important;
   }

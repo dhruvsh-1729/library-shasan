@@ -1,3 +1,4 @@
+import Head from "next/head";
 import {
   getDocumentScanLabel,
   getDocumentStatusLabel,
@@ -7,6 +8,7 @@ import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { AppNav } from "@/components/AppNav";
 
 type ScanView = "remaining" | "ready" | "review" | "searchable" | "all";
 
@@ -139,6 +141,9 @@ export default function ScannableDocumentsPage() {
 
   return (
     <main className="scanShell">
+      <Head>
+        <title>Scan status</title>
+      </Head>
       <div className="scanFrame">
         <header className="scanHeader">
           <div className="scanHeaderText">
@@ -149,11 +154,7 @@ export default function ScannableDocumentsPage() {
                 : `${rangeStart}-${rangeEnd} of ${totalForView}`}
             </div>
           </div>
-          <nav className="scanNav" aria-label="Library tools">
-            <Link href="/library">Library</Link>
-            <Link href="/">Search</Link>
-            <Link href="/granth-extractor">Extractor</Link>
-          </nav>
+          <AppNav />
         </header>
 
         <section className="scanToolbar" aria-label="Scan status filters">

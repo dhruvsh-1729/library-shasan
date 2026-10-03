@@ -1,3 +1,4 @@
+import Head from "next/head";
 import Link from "next/link";
 import type { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
@@ -320,6 +321,9 @@ export default function AdminUsersPage({ currentUser }: UsersPageProps) {
 
   return (
     <div className="adminShell">
+      <Head>
+        <title>Users</title>
+      </Head>
       <div className="adminFrame">
         <header className="adminHeader">
           <div className="adminHeaderText">

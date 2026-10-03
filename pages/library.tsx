@@ -1,3 +1,4 @@
+import Head from "next/head";
 import { useSession } from "next-auth/react";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import Link from "next/link";
@@ -6,6 +7,7 @@ import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog"
 import { getDocumentScanLabel, getDocumentStatusLabel, type DocumentScanState } from "@/lib/document-scan-state";
 import { bookNumbers } from "@/lib/granth-name-search";
 import { useEffect, useState } from "react";
+import { AppNav } from "@/components/AppNav";
 
 type GranthItem = {
   id: number;
@@ -188,6 +190,9 @@ export default function HomePage() {
 
   return (
     <main className="libraryShell">
+      <Head>
+        <title>Library</title>
+      </Head>
       <div className="libraryFrame">
         <header className="libraryHeader">
           <div className="libraryHeaderText">
@@ -196,14 +201,15 @@ export default function HomePage() {
               {error ? "Could not load granths" : loading && items.length === 0 ? "Loading granths..." : `${rangeStart}-${rangeEnd} of ${total}`}
             </div>
           </div>
-          <nav className="libraryNav" aria-label="Library tools">
-            <Link href="/">Search</Link>
-            <Link href="/ask">Ask</Link>
-            <Link href="/vyutpatti">Vyutpatti</Link>
-            <Link href="/granth-extractor">Extractor</Link>
-            <Link href="/scannable-documents">Scan status</Link>
-            {canManageUsers ? <Link href="/admin/users">Users</Link> : null}
-          </nav>
+          <AppNav
+            current="library"
+            extra={
+              <>
+                <Link href="/scannable-documents">Scan status</Link>
+                {canManageUsers ? <Link href="/admin/users">Users</Link> : null}
+              </>
+            }
+          />
         </header>
 
         <section className="libraryToolbar" aria-label="Library search and pagination">

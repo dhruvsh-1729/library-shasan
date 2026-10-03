@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AppNav } from "@/components/AppNav";
 
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 type PDFDocumentLoadingTask = import("pdfjs-dist").PDFDocumentLoadingTask;
@@ -324,15 +325,15 @@ export default function PdfViewerPage() {
 
       <main className="lt pv">
         <header className="pvBar">
-          <nav className="ltNav" aria-label="Pages">
-            <Link href="/">Search</Link>
-            <Link href="/library">Library</Link>
-            {originalHref ? (
-              <a href={originalHref} target="_blank" rel="noreferrer">
-                Original
-              </a>
-            ) : null}
-          </nav>
+          <AppNav
+            extra={
+              originalHref ? (
+                <a href={originalHref} target="_blank" rel="noreferrer">
+                  Original
+                </a>
+              ) : null
+            }
+          />
 
           <div className="pvTools">
             <div className="pvGroup">

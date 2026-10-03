@@ -9,6 +9,7 @@ import { Sheet } from "@/components/Sheet";
 import type { ReaderLine, TableRow } from "@/lib/vyutpatti/format";
 import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
 import { needsDevanagari, toDevanagari } from "@/lib/to-devanagari";
+import { AppNav } from "@/components/AppNav";
 
 // Vyutpatti: the reader types each vishay (in Devanagari) and gets its
 // derivation from the koshes in Maharaj Saheb's order, as a reader page and an
@@ -340,11 +341,7 @@ export default function VyutpattiPage() {
       <div className={`vyShell${done.length ? " hasBar" : ""}`}>
         <header className="chTop">
           <strong className="chBrand">Vyutpatti</strong>
-          <nav className="chNav">
-            <Link href="/">Search</Link>
-            <Link href="/ask">Ask</Link>
-            <Link href="/library">Library</Link>
-          </nav>
+          <AppNav current="vyutpatti" />
         </header>
 
         <main className="vyMain">

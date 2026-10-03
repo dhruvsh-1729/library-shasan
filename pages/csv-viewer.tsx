@@ -1,6 +1,8 @@
+import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AppNav } from "@/components/AppNav";
 
 function readSingleQuery(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value ?? "";
@@ -166,6 +168,9 @@ export default function CsvViewerPage() {
 
   return (
     <main className="lt tv">
+      <Head>
+        <title>Spreadsheet</title>
+      </Head>
       <div className="tvFrame">
         <header className="tvTop">
           <div className="tvTitle">
@@ -177,15 +182,15 @@ export default function CsvViewerPage() {
               </p>
             ) : null}
           </div>
-          <nav className="ltNav" aria-label="Pages">
-            <Link href="/">Search</Link>
-            <Link href="/library">Library</Link>
-            {csvUrl ? (
-              <a href={csvUrl} target="_blank" rel="noreferrer">
-                Download
-              </a>
-            ) : null}
-          </nav>
+          <AppNav
+            extra={
+              csvUrl ? (
+                <a href={csvUrl} target="_blank" rel="noreferrer">
+                  Download
+                </a>
+              ) : null
+            }
+          />
         </header>
 
         {loading ? (

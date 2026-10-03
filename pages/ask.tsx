@@ -14,6 +14,7 @@ import { type OCRSearchMode } from "@/lib/ocr-search";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
 import { type QueryFormsWord, composeQueries, defaultForms, isRomanQuery } from "@/lib/search-query";
 import { toDevanagari } from "@/lib/to-devanagari";
+import { AppNav } from "@/components/AppNav";
 
 type GranthOption = { granth_key: string; granth_name: string; page_count: number };
 type ScopeKind = "gatha" | "pages" | "search";
@@ -668,11 +669,7 @@ export default function AskPage() {
               </button>
             ) : null}
           </div>
-          <nav className="chNav">
-            <Link href="/">Search</Link>
-            <Link href="/library">Library</Link>
-            <Link href="/vyutpatti">Vyutpatti</Link>
-          </nav>
+          <AppNav current="ask" />
         </header>
 
         <main className="chMain">

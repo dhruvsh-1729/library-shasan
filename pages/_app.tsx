@@ -8,6 +8,7 @@ import "@/styles/vyutpatti.css";
 import "@/styles/extract.css";
 import "@/styles/sheet.css";
 import "@/styles/phone.css";
+import "@/styles/appnav.css";
 import type { AppProps } from "next/app";
 import { Archivo, Noto_Serif_Devanagari, Noto_Serif_Gujarati } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
