@@ -1,7 +1,7 @@
 // The vyutpatti PDF, in the two layouts of Maharaj Saheb's sample (WhatsApp
 // scan, 28 Sep 2026 17.19):
 //
-//   1. the internal table (Gitarth Ganga box sheet): the vishay as a heading,
+//   1. the internal table (the box sheet): the vishay as a heading,
 //      "BOX No - n", and Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem with
 //      one row per kosh entry;
 //   2. the reader page: "1.1 | अचौर्य" large, then "व्युत्पत्तिअर्थ" and one line
@@ -129,15 +129,11 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[]) {
     const heading = [section.number, section.vishay].filter(Boolean).join(" - ");
     let page = doc.addPage(A4);
     let y = pageHeight - MARGIN - 12;
-    // The sheet's mark, top right, as text (the logo is not in the library).
-    const brand = text.layout("Gitarth Ganga", "bold");
-    const brandWidth = text.width(brand, 11);
-    text.draw(page, brand, MARGIN + width - brandWidth, y, 11);
-    // A long vishay is set smaller so it never runs into the mark.
-    const headingRoom = width - 2 * (brandWidth + 12);
+    // No organisation's name or mark on the sheet (Sahebji's instruction):
+    // the heading alone, set smaller when a long vishay would not fit.
     const headingRuns = text.layout(heading, "regular");
-    const headingSize = Math.max(7, Math.min(12, (12 * headingRoom) / Math.max(1, text.width(headingRuns, 12))));
-    centred(page, heading, y, headingSize, "regular", MARGIN + brandWidth + 12, headingRoom);
+    const headingSize = Math.max(7, Math.min(12, (12 * width) / Math.max(1, text.width(headingRuns, 12))));
+    centred(page, heading, y, headingSize, "regular");
     y -= 24;
     text.draw(page, text.layout(`BOX No - ${section.box || "1"}`, "regular"), MARGIN, y, 11);
     y -= 8;
