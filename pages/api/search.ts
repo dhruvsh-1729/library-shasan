@@ -209,24 +209,34 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const verifiedPages = verifiedRows.length;
       const occurrencesExact = countsExact;
 
-      // A complete scan pages through the verified pages, so no tile is a page
-      // whose only hit is in a script the search left out. Past the cap the
-      // index hits are paged instead, as the scan cannot see every page.
-      const listRows = countsExact
-        ? verifiedRows.slice(offset, offset + limit)
-        : (
-            await client.execute({
-              sql: `WITH hits AS (${hitSql}),
-                    unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
-                    SELECT ${pageColumns}
-                    FROM unique_hits
-                    JOIN ocr_pages p ON p.id = unique_hits.page_id
-                    JOIN ocr_granths g ON g.granth_key = p.granth_key
-                    ORDER BY unique_hits.page_id ASC
-                    LIMIT ? OFFSET ?`,
-              args: [...hitArgs, limit, offset],
-            })
-          ).rows;
+      // Tiles are always verified pages, so none is a page whose only hit is
+      // in a script the search left out (with Devanagari only, the default,
+      // the raw index puts Gujarati pages first). Past the cap the scan goes
+      // on in batches until the asked page of results is filled.
+      const SCAN_BATCH = 1000;
+      const MAX_EXTRA_BATCHES = 8;
+      let scanned = Math.min(scanResult.rows.length, OCCURRENCE_SCAN_CAP);
+      for (let batch = 0; !countsExact && verifiedRows.length < offset + limit && batch < MAX_EXTRA_BATCHES; batch += 1) {
+        const more = (
+          await client.execute({
+            sql: `WITH hits AS (${hitSql}),
+                  unique_hits AS (SELECT page_id FROM hits GROUP BY page_id)
+                  SELECT ${pageColumns}
+                  FROM unique_hits
+                  JOIN ocr_pages p ON p.id = unique_hits.page_id
+                  JOIN ocr_granths g ON g.granth_key = p.granth_key
+                  ORDER BY unique_hits.page_id ASC
+                  LIMIT ? OFFSET ?`,
+            args: [...hitArgs, SCAN_BATCH, scanned],
+          })
+        ).rows;
+        scanned += more.length;
+        for (const row of more) {
+          if (findOCRSearchMatchesForQueries(toStr(row.content), queries, matchMode, scripts).length > 0) verifiedRows.push(row);
+        }
+        if (more.length < SCAN_BATCH) break;
+      }
+      const listRows = verifiedRows.slice(offset, offset + limit);
 
       const rows = listRows.map((row) => ({
         granth_key: toStr(row.granth_key),

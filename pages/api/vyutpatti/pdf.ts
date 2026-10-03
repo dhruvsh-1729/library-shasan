@@ -25,7 +25,8 @@ function readSections(raw: unknown): VyutpattiPdfSection[] | null {
     const section = (s ?? {}) as Record<string, unknown>;
     const rows = (Array.isArray(section.rows) ? section.rows : []).slice(0, MAX_ITEMS).map((r): TableRow => {
       const row = (r ?? {}) as Record<string, unknown>;
-      return { granth: text(row.granth), shastraPath: text(row.shastraPath), pubRem: text(row.pubRem), inRem: text(row.inRem), source: source(row.source) };
+      const granthNo = text(row.granthNo, 8);
+      return { granth: text(row.granth), granthNo: /^\d{3}$/.test(granthNo) ? granthNo : undefined, shastraPath: text(row.shastraPath), pubRem: text(row.pubRem), inRem: text(row.inRem), source: source(row.source) };
     });
     const lines = (Array.isArray(section.lines) ? section.lines : []).slice(0, MAX_ITEMS).map((l): ReaderLine => {
       const line = (l ?? {}) as Record<string, unknown>;

@@ -130,7 +130,7 @@ const SOURCE_PARALLEL = 4;
  * those pages' bytes are fetched (HTTP ranges); a file the range reader cannot
  * handle is downloaded whole (disk-cached) and its pages copied, as before.
  */
-async function sourcePagesPdf(pdfUrl: string, pages: number[]) {
+export async function sourcePagesPdf(pdfUrl: string, pages: number[]) {
   try {
     const subset = await extractPdfPagesByRange(pdfUrl, pages);
     return { bytes: subset.bytes, pages: subset.pages };

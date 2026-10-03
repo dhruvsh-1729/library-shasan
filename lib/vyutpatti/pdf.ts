@@ -3,7 +3,9 @@
 //
 //   1. the internal table (the box sheet): the vishay as a heading,
 //      "BOX No - n", and Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem with
-//      one row per kosh entry;
+//      one row per kosh entry, the kosh named by its 3-digit granth number. Like
+//      the line list, the table takes the left 60% of the page and the right
+//      40% stays blank for Maharaj Saheb's notes;
 //   2. the reader page: "1.1 | अचौर्य" large, then "व्युत्पत्तिअर्थ" and one line
 //      per word, each starting with a corner mark.
 //
@@ -15,6 +17,7 @@ import {
   A4,
   FontEmbedder,
   MARGIN,
+  NOTES_TABLE_RIGHT,
   type Piece,
   TextDrawer,
   type Weight,
@@ -36,13 +39,13 @@ const BLACK = rgb(0, 0, 0);
 
 // ------------------------------------------------------------------ table
 
-const TABLE_SIZE = 9.5;
-const TABLE_LEADING = 1.35;
-const CELL_PAD_X = 4;
-const CELL_PAD_Y = 3;
+const TABLE_SIZE = 8.5;
+const TABLE_LEADING = 1.3;
+const CELL_PAD_X = 3;
+const CELL_PAD_Y = 2.5;
 const TABLE_BORDER = 0.6;
-// Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem
-const TABLE_COLUMNS = [24, 30, 106, 0, 50, 118];
+// Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem, in the table's 60% of the page
+const TABLE_COLUMNS = [18, 22, 38, 0, 46, 70];
 const TABLE_HEADER = ["Sr.", "V.T", "Granth", "ShastraPath", "Pub.Rem", "In.Rem"];
 
 // ------------------------------------------------------------------ reader
@@ -95,8 +98,9 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[]) {
   const ascentOf = (size: number) => (reference.ascender / reference.upem) * size;
 
   // ---------------------------------------------------------------- tables
+  const tableWidth = NOTES_TABLE_RIGHT - MARGIN;
   const cols = [...TABLE_COLUMNS];
-  cols[3] = width - cols.reduce((a, b) => a + b, 0);
+  cols[3] = tableWidth - cols.reduce((a, b) => a + b, 0);
   const colX = cols.map((_, i) => MARGIN + cols.slice(0, i).reduce((a, b) => a + b, 0));
   const lineHeight = TABLE_SIZE * TABLE_LEADING;
   const plain = (value: string, weight: Weight = "regular"): Piece[] => [{ text: value, weight }];
@@ -132,8 +136,8 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[]) {
     // No organisation's name or mark on the sheet (Sahebji's instruction):
     // the heading alone, set smaller when a long vishay would not fit.
     const headingRuns = text.layout(heading, "regular");
-    const headingSize = Math.max(7, Math.min(12, (12 * width) / Math.max(1, text.width(headingRuns, 12))));
-    centred(page, heading, y, headingSize, "regular");
+    const headingSize = Math.max(7, Math.min(12, (12 * tableWidth) / Math.max(1, text.width(headingRuns, 12))));
+    centred(page, heading, y, headingSize, "regular", MARGIN, tableWidth);
     y -= 24;
     text.draw(page, text.layout(`BOX No - ${section.box || "1"}`, "regular"), MARGIN, y, 11);
     y -= 8;
@@ -142,13 +146,13 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[]) {
     y = drawRow(page, y, header);
     // The vishay across the whole table, as in the sample.
     const bandHeight = lineHeight + 2 * CELL_PAD_Y + 4;
-    strokeRect(page, MARGIN, y - bandHeight, width, bandHeight, TABLE_BORDER);
-    const bandSize = Math.max(7, Math.min(TABLE_SIZE + 0.5, ((TABLE_SIZE + 0.5) * (width - 8)) / Math.max(1, text.width(text.layout(heading, "regular"), TABLE_SIZE + 0.5))));
-    centred(page, heading, y - CELL_PAD_Y - 2 - ascentOf(TABLE_SIZE), bandSize, "regular");
+    strokeRect(page, MARGIN, y - bandHeight, tableWidth, bandHeight, TABLE_BORDER);
+    const bandSize = Math.max(7, Math.min(TABLE_SIZE + 0.5, ((TABLE_SIZE + 0.5) * (tableWidth - 8)) / Math.max(1, text.width(text.layout(heading, "regular"), TABLE_SIZE + 0.5))));
+    centred(page, heading, y - CELL_PAD_Y - 2 - ascentOf(TABLE_SIZE), bandSize, "regular", MARGIN, tableWidth);
     y -= bandHeight;
 
     section.rows.forEach((row, index) => {
-      const cells = [String(index + 1), "व्यु.", row.granth, row.shastraPath, row.pubRem, row.inRem];
+      const cells = [String(index + 1), "व्यु.", row.granthNo || row.granth, row.shastraPath, row.pubRem, row.inRem];
       const layout = rowLayout(cells, "regular");
       if (y - layout.height < MARGIN) {
         page = doc.addPage(A4);

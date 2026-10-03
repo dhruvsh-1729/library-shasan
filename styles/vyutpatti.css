@@ -405,44 +405,69 @@
   color: var(--lt-ink-3);
 }
 
-.vySources {
+/* The kosh pages a vyutpatti was read from: view one, download one or all. */
+.vyKosh {
   display: grid;
+  gap: 6px;
+}
+
+.vyKoshHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+}
+
+.vyKoshHead .vySection {
+  margin: 0;
+}
+
+.vyKoshList {
+  display: grid;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.vySources li {
+.vyKoshList li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-}
-
-.vySourceWord {
-  width: 100%;
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.vyPage {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 4px 10px;
-  border: 1px solid var(--lt-glass-edge);
-  border-radius: 6px;
+  justify-content: space-between;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--lt-rule);
+  border-radius: 8px;
   background: var(--lt-glass-lit);
-  color: var(--lt-cobalt-deep);
-  font: inherit;
-  font-size: 13.5px;
-  cursor: pointer;
 }
 
-.vyPage .indic {
+.vyKoshName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
   font-size: 15px;
+}
+
+.vyKoshPg {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--lt-cobalt-deep);
+  white-space: nowrap;
+}
+
+.vyKoshWords {
+  width: 100%;
+  font-size: 13.5px;
+  color: var(--lt-ink-3);
+}
+
+.vyKoshActions {
+  display: flex;
+  gap: 6px;
 }
 
 /* The internal table: stacked cards on a phone, a table on a wide screen. */
@@ -583,9 +608,8 @@
     font-weight: 400;
   }
 
-  .vySourceWord {
+  .vyBar .vyLink {
     width: auto;
-    min-width: 90px;
   }
 
   .vyTable thead {
@@ -644,4 +668,25 @@
   .vyTable tr.is-vigraha td {
     background: var(--lt-amber-wash);
   }
+}
+
+/* Gujarati or English typed: the Devanagari it will be looked up as. */
+.vyPreview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border: 1px dashed var(--lt-glass-edge);
+  border-radius: 8px;
+  background: var(--lt-glass-lit);
+  font-size: 13.5px;
+  color: var(--lt-ink-3);
+}
+
+.vyPreviewText {
+  flex: 1 1 12em;
+  white-space: pre-wrap;
+  font-size: 17px;
+  color: var(--lt-ink);
 }

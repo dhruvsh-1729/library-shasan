@@ -1112,3 +1112,178 @@ button.chSourceChip:hover {
   color: var(--lt-cobalt);
   background: var(--lt-cobalt-wash);
 }
+
+/* ------------------------------------------------------------ print */
+
+.chPrint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lt-cobalt-deep) !important;
+  font-size: 14px !important;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.chPrint:hover {
+  border-color: var(--lt-cobalt);
+}
+
+.chPrintAll {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lt-cobalt-deep) !important;
+  cursor: pointer;
+}
+
+.chPrintSources {
+  display: none;
+}
+
+/*
+ * Paper: only the conversation (or, after "Print this answer", that answer and
+ * its question), black on white, a little larger, with the sources as a list.
+ */
+@media print {
+  @page {
+    margin: 16mm 14mm;
+  }
+
+  html,
+  body,
+  .ch {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .ch {
+    display: block;
+    min-height: 0;
+  }
+
+  .chBody {
+    display: block;
+    min-height: 0;
+  }
+
+  .chHistory,
+  .chScrim,
+  .chTop,
+  .chDock,
+  .chAvatar,
+  .chPrint,
+  .chPrintAll,
+  .chThinking,
+  .chChapters,
+  .chSources,
+  .chPages,
+  .chStatus {
+    display: none !important;
+  }
+
+  html[data-print="one"] .chTurn:not([data-print-target]) {
+    display: none !important;
+  }
+
+  .chMain {
+    width: auto;
+    max-width: none;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .chThread {
+    gap: 12pt;
+    padding: 0;
+  }
+
+  .chTurn {
+    display: block;
+    animation: none;
+  }
+
+  .isUser .chBubble {
+    max-width: none;
+    padding: 0 0 6pt;
+    border-radius: 0;
+    border-bottom: 0.6pt solid #000;
+    background: none;
+    color: #000;
+  }
+
+  .isUser .chText {
+    font-size: 13pt;
+    font-weight: 700;
+  }
+
+  .chTurnScope {
+    font-size: 10pt;
+    opacity: 1;
+  }
+
+  .chText,
+  .chMd {
+    color: #000 !important;
+    font-size: 13pt;
+    line-height: 1.6;
+  }
+
+  .chMd a {
+    color: #000 !important;
+    text-decoration: none;
+  }
+
+  .chMd table,
+  .chMd pre {
+    overflow: visible !important;
+  }
+
+  .chMd th,
+  .chMd td {
+    border-color: #000 !important;
+  }
+
+  .chNote {
+    color: #000 !important;
+  }
+
+  .chPrintSources::before {
+    content: "Sources";
+    display: block;
+    font-weight: 700;
+  }
+
+  .chPrintSources {
+    display: block;
+    margin: 8pt 0 0;
+    padding: 6pt 0 0;
+    border-top: 0.6pt solid #000;
+    list-style: none;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    break-inside: avoid;
+  }
+
+  .chMd h1,
+  .chMd h2,
+  .chMd h3 {
+    break-after: avoid;
+  }
+
+  .chMd p,
+  .chMd li,
+  .chMd tr {
+    break-inside: avoid;
+  }
+}

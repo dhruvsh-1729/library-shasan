@@ -12,6 +12,8 @@ import { authOptions } from "@/lib/auth-options";
 import { LANGUAGES } from "@/lib/ai-context";
 import { type OCRSearchMode } from "@/lib/ocr-search";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
+import { type QueryFormsWord, composeQueries, defaultForms, isRomanQuery } from "@/lib/search-query";
+import { toDevanagari } from "@/lib/to-devanagari";
 
 type GranthOption = { granth_key: string; granth_name: string; page_count: number };
 type ScopeKind = "gatha" | "pages" | "search";
@@ -54,6 +56,32 @@ type Turn = {
 
 type ChatSummary = { id: string; title: string; updated_at: string; message_count: number };
 type StoredMessage = { role: "user" | "assistant"; content: string; meta: Record<string, unknown> };
+
+/** Sources as printed: one line per granth, its pages as ranges ("Sources: Adhyatma Upnishad · pages 2–20"). */
+function printedSources(sources: SourcePassage[]) {
+  const pages = new Map<string, number[]>();
+  for (const s of sources) pages.set(s.granthName, [...(pages.get(s.granthName) ?? []), s.pageNumber]);
+  return [...pages].map(([name, list]) => {
+    const sorted = [...new Set(list)].sort((a, b) => a - b);
+    const ranges: string[] = [];
+    for (let i = 0; i < sorted.length; ) {
+      let j = i;
+      while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j += 1;
+      ranges.push(i === j ? String(sorted[i]) : `${sorted[i]}–${sorted[j]}`);
+      i = j + 1;
+    }
+    return `${name} · ${sorted.length === 1 ? "page" : "pages"} ${ranges.join(", ")}`;
+  });
+}
+
+function PrintIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5.5 7.5V3h9v4.5M5.5 14H3.5v-5.5a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1V14h-2" />
+      <path d="M5.5 11.5h9V17h-9z" />
+    </svg>
+  );
+}
 
 /** "Today", "Yesterday", or a short date, for the history list. */
 function chatDay(value: string) {
@@ -229,6 +257,37 @@ export default function AskPage() {
   }
 
   /** Opens a cited page: in the PDF viewer, or as OCR text when the granth has no PDF. */
+  /**
+   * Prints one answer with the question it answers, or the whole chat (index
+   * null): Maharaj Saheb reads answers on paper. Everything else on the page
+   * is hidden by the print styles in styles/ask.css.
+   */
+  function printTurns(index: number | null) {
+    const root = document.documentElement;
+    const marked: Element[] = [];
+    const clear = () => {
+      root.removeAttribute("data-print");
+      for (const el of marked) el.removeAttribute("data-print-target");
+      window.removeEventListener("afterprint", clear);
+    };
+    root.setAttribute("data-print", index === null ? "all" : "one");
+    if (index !== null) {
+      // The answer and the question just above it.
+      const question = turns.slice(0, index).map((t, i) => (t.role === "user" ? i : -1)).filter((i) => i >= 0).pop();
+      for (const i of [question, index]) {
+        const el = i == null ? null : document.querySelector(`[data-turn="${i}"]`);
+        if (el) {
+          el.setAttribute("data-print-target", "");
+          marked.push(el);
+        }
+      }
+    }
+    window.addEventListener("afterprint", clear);
+    window.print();
+    // Some phone browsers never send afterprint; the dialog has the page by now.
+    window.setTimeout(clear, 60_000);
+  }
+
   function openSource(source: SourcePassage) {
     if (source.pdfUrl) {
       setPdfTarget({ pdfUrl: source.pdfUrl, page: source.pageNumber, title: source.granthName });
@@ -357,10 +416,29 @@ export default function AskPage() {
     return query ? `“${query}” · ${granthKey ? name : "whole library"}` : "—";
   })();
 
-  function buildScope() {
+  function buildScope(searchQuery = query) {
     if (scopeKind === "gatha") return { kind: "gatha", granthKey, adhikar, gathaFrom, gathaTo };
     if (scopeKind === "pages") return { kind: "pages", granthKey, pageFrom, pageTo };
-    return { kind: "search", query, matchMode, granthKeys: granthKey ? [granthKey] : [] };
+    return { kind: "search", query: searchQuery, matchMode, granthKeys: granthKey ? [granthKey] : [] };
+  }
+
+  /**
+   * A word typed in English letters ("hinsa") is looked for as its Devanagari
+   * spelling with the most pages in the library (as /search offers it);
+   * Devanagari and Gujarati go as typed.
+   */
+  async function searchQueryInScript() {
+    const text = query.trim();
+    if (scopeKind !== "search" || !isRomanQuery(text)) return text;
+    try {
+      const res = await fetch(`/api/query-forms?q=${encodeURIComponent(text)}`);
+      const json = (await res.json()) as { words?: QueryFormsWord[] };
+      const spelled = res.ok ? composeQueries(defaultForms(json.words ?? []))[0] : "";
+      if (spelled) return spelled;
+    } catch {
+      // the local reading below
+    }
+    return toDevanagari(text);
   }
 
   async function ask(e: FormEvent) {
@@ -441,11 +519,12 @@ export default function AskPage() {
     };
 
     try {
+      const searchQuery = await searchQueryInScript();
       const res = await fetch("/api/ai/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scope: buildScope(),
+          scope: buildScope(searchQuery),
           question: q,
           language,
           model: deepMode ? "reasoning" : "fast",
@@ -549,7 +628,7 @@ export default function AskPage() {
                           onChange={(e) => setRenameDraft(e.target.value)}
                           onBlur={() => void saveRename(c.id)}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") void saveRename(c.id);
+                            if (e.key === "Enter" && !e.nativeEvent.isComposing) void saveRename(c.id);
                             if (e.key === "Escape") setRenamingId(null);
                           }}
                           aria-label="Chat name"
@@ -583,6 +662,11 @@ export default function AskPage() {
               <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13" /></svg>
             </button>
             <strong className="chBrand">Ask the library</strong>
+            {turns.some((t) => t.role === "assistant" && !t.streaming && !t.error) ? (
+              <button type="button" className="chPrintAll" onClick={() => printTurns(null)} aria-label="Print the whole chat" title="Print the whole chat">
+                <PrintIcon />
+              </button>
+            ) : null}
           </div>
           <nav className="chNav">
             <Link href="/">Search</Link>
@@ -608,7 +692,7 @@ export default function AskPage() {
           ) : (
             <section className="chThread" aria-live="polite">
               {turns.map((t, i) => (
-                <article key={i} className={`chTurn ${t.role === "user" ? "isUser" : "isAssistant"}${t.error ? " isError" : ""}`}>
+                <article key={i} data-turn={i} className={`chTurn ${t.role === "user" ? "isUser" : "isAssistant"}${t.error ? " isError" : ""}`}>
                   {t.role === "assistant" ? <span className="chAvatar" aria-hidden="true">ग्र</span> : null}
                   <div className="chBubble">
                     {t.role === "user" && t.scopeLine ? <div className="chTurnScope">{t.scopeLine}</div> : null}
@@ -648,6 +732,20 @@ export default function AskPage() {
                       <p className="chNote">Gatha {[...new Set(t.droppedGathas)].join(", ")} was not read. Ask about it separately.</p>
                     ) : t.truncated ? (
                       <p className="chNote">Only part of this was read. Choose fewer gathas or pages for a fuller answer.</p>
+                    ) : null}
+                    {t.role === "assistant" && !t.streaming && !t.error && t.content ? (
+                      <button type="button" className="chPrint" onClick={() => printTurns(i)}>
+                        <PrintIcon />
+                        Print this answer
+                      </button>
+                    ) : null}
+                    {t.role === "assistant" && t.sources?.length ? (
+                      // On paper the sources are a plain list (the page thumbnails are not printed).
+                      <ol className="chPrintSources">
+                        {printedSources(t.sources).map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ol>
                     ) : null}
                     {t.role === "assistant" && t.sources?.length ? (
                       <AskSourcePages
@@ -710,7 +808,7 @@ export default function AskPage() {
               </div>
 
               {scopeKind === "search" ? (
-                <input className="chField" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Word to look for, e.g. હિંસા" />
+                <input className="chField" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Word: हिंसा, હિંસા or hinsa" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
               ) : null}
 
               <div className="chBookPicker">
@@ -784,7 +882,7 @@ export default function AskPage() {
                 e.target.style.height = "auto";
                 e.target.style.height = `${Math.min(e.target.scrollHeight, 220)}px`;
               }}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void ask(e as unknown as FormEvent); } }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void ask(e as unknown as FormEvent); } }}
             />
             <div className="chTools">
               <button type="button" className={`chPill${scopeReady ? " isSet" : ""}`} onClick={() => setScopeOpen((o) => !o)} aria-expanded={scopeOpen}>

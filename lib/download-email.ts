@@ -302,3 +302,36 @@ export async function sendDownloadEmail(options: {
   if (options.recipientClientKey) await rememberDownloadRecipient(to, options.recipientClientKey);
   return { email: to, sizeBytes: size };
 }
+
+/**
+ * A short message with no attachment (sign-in details for a new account),
+ * through Maileroo's API when its key is set, else its SMTP relay.
+ */
+export async function sendPlainEmail(options: { to: string; subject: string; plain: string; html: string }) {
+  const to = normalizeDownloadEmail(options.to);
+  const apiKey = process.env.MAILEROO_API_KEY || process.env.MAILEROO_SENDING_KEY;
+  if (apiKey) {
+    const response = await fetch("https://smtp.maileroo.com/api/v2/emails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify({
+        from: { address: fromAddress(), display_name: fromName() },
+        to: { address: to },
+        reply_to: { address: fromAddress(), display_name: fromName() },
+        subject: options.subject,
+        plain: options.plain,
+        html: options.html,
+        tracking: false,
+        tags: { app: "granth-library", type: "account" },
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { success?: boolean; message?: string } | null;
+    if (!response.ok || payload?.success === false) {
+      throw new DownloadEmailError(response.status || 500, payload?.message || `Maileroo email request failed (${response.status})`);
+    }
+    return;
+  }
+  await createMailerooTransport().sendMail({ from: mailFrom(), to, replyTo: mailFrom(), subject: options.subject, text: options.plain, html: options.html });
+}
+
+export { escapeHtml as escapeEmailHtml };

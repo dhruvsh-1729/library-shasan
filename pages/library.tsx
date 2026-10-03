@@ -1,3 +1,5 @@
+import { useSession } from "next-auth/react";
+import { PERMISSIONS } from "@/lib/auth-permissions";
 import Link from "next/link";
 import { PageJumpPager } from "@/components/PageJumpPager";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
@@ -82,6 +84,8 @@ function displayTitle(row: GranthItem) {
 }
 
 export default function HomePage() {
+  const { data: session } = useSession();
+  const canManageUsers = Boolean(session?.user?.permissions?.includes(PERMISSIONS.usersManage));
   const [items, setItems] = useState<GranthItem[]>([]);
   const [meta, setMeta] = useState<ApiResponse["meta"] | null>(null);
   const [page, setPage] = useState(1);
@@ -198,6 +202,7 @@ export default function HomePage() {
             <Link href="/vyutpatti">Vyutpatti</Link>
             <Link href="/granth-extractor">Extractor</Link>
             <Link href="/scannable-documents">Scan status</Link>
+            {canManageUsers ? <Link href="/admin/users">Users</Link> : null}
           </nav>
         </header>
 

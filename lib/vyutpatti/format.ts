@@ -53,6 +53,8 @@ export type ReaderLine = { head: string; body: string; source: EntrySource; note
 
 export type TableRow = {
   granth: string;
+  /** The kosh's 3-digit granth number ("380"), which the table sheet prints in the Granth column. */
+  granthNo?: string;
   shastraPath: string;
   pubRem: string;
   inRem: string;
@@ -162,6 +164,7 @@ export function tableRowForEntry(entry: VyutpattiEntry, stamp: string): TableRow
   const flags = entry.checked ? "" : " (પાના સાથે ચકાસો)";
   return {
     granth: entry.citation,
+    granthNo: /^\d{3}$/.test(entry.granthKey) ? entry.granthKey : undefined,
     shastraPath: `${lineHead(entry)}${head ? ` - ${head}` : ""} (${koshReference(entry)})`,
     pubRem: "",
     inRem: `${stamp} ${meaningPhrase(entry.meaningGu)}${flags}`.trim(),

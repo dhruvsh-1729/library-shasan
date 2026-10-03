@@ -101,16 +101,14 @@ function parseGranthSelections(value: unknown): GranthSelection[] {
 }
 
 /**
- * The book number a line list is headed with, read from the granth's file name:
- * the leading serial and the accession code after it ("069_B037418_…" →
- * "069_B037418", "226_prashamrati_…" → "226"); a file with no serial falls back
- * to its library number ("nandi_sutram_033330_hr6.pdf" → "033330"), then the name.
+ * The book number a line list's footer shows: the granth's 3-digit serial from
+ * the start of its file name ("069_B037418_…" → "069", "226_prashamrati_…" →
+ * "226"), never the accession or library number. A file with no serial falls
+ * back to the granth's name.
  */
 function bookNumber(relPath: string, granthName: string) {
-  const file = path.basename(relPath);
-  const serial = file.match(/^\d+(?:-\d+)?(?:_[A-Z]\d{4,})?(?=[_ .])/);
-  if (serial) return serial[0];
-  return file.match(/_(\d{6})_(?:hr|std)/i)?.[1] ?? granthName;
+  const serial = path.basename(relPath).match(/^(\d+)(?=[-_ .])/);
+  return serial ? serial[1].padStart(3, "0") : granthName;
 }
 
 /** The word shown in the PDF heading: the first query written in an Indian script, else the query itself. */

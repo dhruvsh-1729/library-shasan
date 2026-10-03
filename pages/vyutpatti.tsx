@@ -7,6 +7,7 @@ import { authOptions } from "@/lib/auth-options";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import type { ReaderLine, TableRow } from "@/lib/vyutpatti/format";
 import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
+import { needsDevanagari, toDevanagari } from "@/lib/to-devanagari";
 
 // Vyutpatti: the reader types each vishay (in Devanagari) and gets its
 // derivation from the koshes in Maharaj Saheb's order, as a reader page and an
@@ -29,9 +30,9 @@ type Item = {
   rows: TableRow[];
 };
 
-const GUJARATI = /[\u0a80-\u0aff]/u;
-// Letters must be Devanagari; digits, spaces, braces and punctuation may stay.
-const OTHER_LETTER = /[^\P{L}\u0900-\u097f]/u;
+// Letters may be typed in Devanagari, Gujarati or Roman; the last two are
+// written in Devanagari (shown first) before anything is looked up.
+const OTHER_LETTER = /[^\P{L}\u0900-\u097f\u0a80-\u0affa-zA-Zāīūṛṝḷṭḍṇśṣṃṁḥñṅ]/u;
 
 /** "10.6.6 कायिकहिंसा" → number and vishay; same rule as the server. */
 function parseLines(text: string) {
@@ -47,10 +48,57 @@ function parseLines(text: string) {
 
 function problemWith(text: string) {
   for (const { vishay } of parseLines(text)) {
-    if (GUJARATI.test(vishay)) return `“${vishay}” is in Gujarati script. Type the vishay in Devanagari (Hindi lipi).`;
-    if (OTHER_LETTER.test(vishay)) return `“${vishay}” has letters that are not Devanagari.`;
+    if (OTHER_LETTER.test(vishay)) return `“${vishay}” has letters that are not Hindi, Gujarati or English.`;
   }
   return "";
+}
+
+/** The input written in Devanagari by the server (kosh spellings for Roman words); the local reading if it cannot be reached. */
+async function spellInDevanagari(text: string) {
+  try {
+    const res = await fetch("/api/vyutpatti/spell", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const json = (await res.json()) as { text?: string };
+    if (res.ok && typeof json.text === "string") return json.text;
+  } catch {
+    // offline or slow: the reading made here
+  }
+  return toDevanagari(text);
+}
+
+type KoshPage = { id: string; granthKey: string; page: number; citation: string; printedPage: string | null; pdfUrl: string | null; head: string; words: string[] };
+
+/** The kosh pages a result was read from, each page once, in the order the words came. */
+function koshPagesOf(result: VyutpattiResult | undefined): KoshPage[] {
+  const pages = new Map<string, KoshPage>();
+  for (const w of result?.words ?? []) {
+    for (const e of w.entries) {
+      const id = `${e.granthKey}:${e.pdfPage}`;
+      const known = pages.get(id);
+      if (known) {
+        if (!known.words.includes(w.word)) known.words.push(w.word);
+        continue;
+      }
+      pages.set(id, { id, granthKey: e.granthKey, page: e.pdfPage, citation: e.citation, printedPage: e.printedPage, pdfUrl: e.pdfUrl, head: e.head, words: [w.word] });
+    }
+  }
+  return [...pages.values()];
+}
+
+const pageLabel = (p: Pick<KoshPage, "printedPage" | "page">) => (p.printedPage ? `p. ${p.printedPage}` : `PDF ${p.page}`);
+
+function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 async function readStream(res: Response, onEvent: (event: Record<string, unknown>) => void) {
@@ -115,9 +163,28 @@ export default function VyutpattiPage() {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
+  // Which kosh-page download is being made ("all", an item key, or a page id).
+  const [pagesBusy, setPagesBusy] = useState("");
+  const [pagesError, setPagesError] = useState("");
   const nextKey = useRef(1);
 
   const problem = useMemo(() => problemWith(input), [input]);
+  // Gujarati or English typed: the Devanagari it will be looked up as.
+  const [spelled, setSpelled] = useState<{ from: string; text: string } | null>(null);
+  const needsSpelling = needsDevanagari(input) && !problem;
+  useEffect(() => {
+    if (!needsSpelling) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      const text = await spellInDevanagari(input);
+      if (active) setSpelled({ from: input, text });
+    }, 350);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [input, needsSpelling]);
+  const preview = needsSpelling ? (spelled?.from === input ? spelled.text : toDevanagari(input)) : "";
   const done = items.filter((i) => i.status === "done");
 
   // Nothing is saved anywhere: leaving the page loses the results.
@@ -163,7 +230,8 @@ export default function VyutpattiPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (running || problem) return;
-    const parsed = parseLines(input);
+    const text = needsDevanagari(input) ? (spelled?.from === input ? spelled.text : await spellInDevanagari(input)) : input;
+    const parsed = parseLines(text);
     if (!parsed.length) return;
     const fresh: Item[] = parsed.map((p) => ({ key: nextKey.current++, ...p, status: "waiting", progress: "Waiting", lines: [], rows: [] }));
     setItems((list) => [...fresh, ...list]);
@@ -199,15 +267,7 @@ export default function VyutpattiPage() {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error || `The PDF could not be made (${res.status}).`);
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = chosen.length === 1 ? `${chosen[0].number ? `${chosen[0].number} ` : ""}${chosen[0].vishay} vyutpatti.pdf` : "vyutpatti.pdf";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      saveBlob(await res.blob(), chosen.length === 1 ? `${chosen[0].number ? `${chosen[0].number} ` : ""}${chosen[0].vishay} vyutpatti.pdf` : "vyutpatti.pdf");
     } catch (error) {
       setDownloadError(error instanceof Error ? error.message : "The PDF could not be made.");
     } finally {
@@ -215,14 +275,43 @@ export default function VyutpattiPage() {
     }
   }
 
+  /** The kosh pages themselves, as scanned, in one PDF. */
+  async function downloadPages(busy: string, pages: KoshPage[], name: string) {
+    if (!pages.length || pagesBusy) return;
+    setPagesBusy(busy);
+    setPagesError("");
+    try {
+      const res = await fetch("/api/vyutpatti/pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pages: pages.map((p) => ({ granthKey: p.granthKey, page: p.page })), name }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `The kosh pages could not be fetched (${res.status}).`);
+      }
+      saveBlob(await res.blob(), `${name}.pdf`);
+    } catch (error) {
+      setPagesError(error instanceof Error ? error.message : "The kosh pages could not be fetched.");
+    } finally {
+      setPagesBusy("");
+    }
+  }
+
+  const allPages = useMemo(() => {
+    const seen = new Set<string>();
+    return [...done]
+      .sort((a, b) => a.key - b.key)
+      .flatMap((i) => koshPagesOf(i.result))
+      .filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+  }, [done]);
+
   const editLine = (key: number, index: number, body: string) =>
     update(key, (item) => ({ lines: item.lines.map((l, i) => (i === index ? { ...l, body } : l)) }));
   const removeLine = (key: number, index: number) => update(key, (item) => ({ lines: item.lines.filter((_, i) => i !== index) }));
   const editRow = (key: number, index: number, field: keyof TableRow, value: string) =>
     update(key, (item) => ({ rows: item.rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)) }));
   const removeRow = (key: number, index: number) => update(key, (item) => ({ rows: item.rows.filter((_, i) => i !== index) }));
-
-  const pages = (item: Item) => item.result?.words.reduce((n, w) => n + w.entries.length, 0) ?? 0;
 
   return (
     <>
@@ -242,7 +331,7 @@ export default function VyutpattiPage() {
         <main className="vyMain">
           <form className="vyForm" onSubmit={onSubmit}>
             <label className="vyLabel" htmlFor="vy-input">
-              Vishay <span>one per line</span>
+              Vishay <span>one per line · Hindi, ગુજરાતી or English</span>
             </label>
             <textarea
               id="vy-input"
@@ -250,9 +339,10 @@ export default function VyutpattiPage() {
               value={input}
               rows={Math.min(8, Math.max(2, input.split("\n").length + 1))}
               placeholder={"1.1 अचौर्य\n10.6.6 कायिकहिंसा"}
+              lang="hi"
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit(e as unknown as FormEvent);
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) onSubmit(e as unknown as FormEvent);
               }}
               aria-invalid={Boolean(problem)}
               aria-describedby={problem ? "vy-problem" : undefined}
@@ -281,6 +371,15 @@ export default function VyutpattiPage() {
                 {running ? "Working…" : "Find vyutpatti"}
               </button>
             </div>
+            {preview ? (
+              <div className="vyPreview" aria-live="polite">
+                <span>Will look up as</span>
+                <span className="vyPreviewText indic">{preview}</span>
+                <button type="button" className="vyLink" onClick={() => setInput(preview)}>
+                  Use this
+                </button>
+              </div>
+            ) : null}
             {engine === "sarvam" ? <p className="vyHint">Sarvam cannot read the page scans: check the Gujarati meanings.</p> : null}
           </form>
 
@@ -289,7 +388,13 @@ export default function VyutpattiPage() {
               <button type="button" className="vyGo" onClick={() => download()} disabled={downloading}>
                 {downloading ? "Making PDF…" : done.length === 1 ? "Download PDF" : `Download PDF (${done.length})`}
               </button>
+              {allPages.length ? (
+                <button type="button" className="vyLink" onClick={() => downloadPages("all", allPages, "kosh pages")} disabled={Boolean(pagesBusy)}>
+                  {pagesBusy === "all" ? "Fetching pages…" : `All kosh pages (${allPages.length})`}
+                </button>
+              ) : null}
               {downloadError ? <span className="vyProblem">{downloadError}</span> : null}
+              {pagesError ? <span className="vyProblem">{pagesError}</span> : null}
             </div>
           ) : null}
 
@@ -378,38 +483,56 @@ export default function VyutpattiPage() {
                       </button>
                     </div>
 
+                    {koshPagesOf(item.result).length ? (
+                      <section className="vyKosh" aria-label="Kosh pages">
+                        <div className="vyKoshHead">
+                          <h3 className="vySection">Kosh pages</h3>
+                          <button
+                            type="button"
+                            className="vyLink"
+                            disabled={Boolean(pagesBusy)}
+                            onClick={() =>
+                              downloadPages(String(item.key), koshPagesOf(item.result), `${item.number ? `${item.number} ` : ""}${item.result?.vishay ?? item.vishay} kosh pages`)
+                            }
+                          >
+                            {pagesBusy === String(item.key) ? "Fetching…" : `Download all (${koshPagesOf(item.result).length})`}
+                          </button>
+                        </div>
+                        <ul className="vyKoshList">
+                          {koshPagesOf(item.result).map((p) => (
+                            <li key={p.id}>
+                              <span className="vyKoshName">
+                                <span className="indic">{p.citation}</span> <span className="vyKoshPg">{pageLabel(p)}</span>
+                                <span className="vyKoshWords indic">{p.words.join(", ")}</span>
+                              </span>
+                              <span className="vyKoshActions">
+                                <button
+                                  type="button"
+                                  className="vyLink"
+                                  disabled={!p.pdfUrl}
+                                  onClick={() =>
+                                    p.pdfUrl && setPdfTarget({ pdfUrl: p.pdfUrl, page: p.page, title: p.citation, searchTerm: p.head, searchMode: "exact_word" })
+                                  }
+                                >
+                                  View
+                                </button>
+                                <button
+                                  type="button"
+                                  className="vyLink"
+                                  disabled={!p.pdfUrl || Boolean(pagesBusy)}
+                                  onClick={() => downloadPages(p.id, [p], `${p.citation} ${pageLabel(p)}`)}
+                                >
+                                  {pagesBusy === p.id ? "…" : "Download"}
+                                </button>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+
                     <details className="vyDetails">
                       <summary>Details</summary>
-
-                      {pages(item) ? (
-                        <>
-                          <h3 className="vySection">Kosh pages</h3>
-                          <ul className="vySources">
-                            {item.result.words
-                              .filter((w) => w.entries.length)
-                              .map((w) => (
-                                <li key={w.word}>
-                                  <span className="vySourceWord indic">{w.word}</span>
-                                  {w.entries.map((e) => (
-                                    <button
-                                      key={e.id}
-                                      type="button"
-                                      className="vyPage"
-                                      disabled={!e.pdfUrl}
-                                      onClick={() =>
-                                        e.pdfUrl &&
-                                        setPdfTarget({ pdfUrl: e.pdfUrl, page: e.pdfPage, title: e.citation, searchTerm: e.head, searchMode: "exact_word" })
-                                      }
-                                    >
-                                      <span className="indic">{e.citation}</span>
-                                      <span>{e.printedPage ? `p. ${e.printedPage}` : `PDF ${e.pdfPage}`}</span>
-                                    </button>
-                                  ))}
-                                </li>
-                              ))}
-                          </ul>
-                        </>
-                      ) : null}
 
                       <h3 className="vySection">Internal table</h3>
                       <div className="vyTableScroll">

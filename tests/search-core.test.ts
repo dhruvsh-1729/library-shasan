@@ -133,3 +133,15 @@ test("a phrase is found across a line break or double space", () => {
   assert.equal(findOCRSearchMatchesForQueries(text, ["श्री भगवती"], "exact_word").length, 2);
   assert.equal(findOCRSearchMatchesForQueries(text, ["श्री भगवती"], "sanskrit_forms").length, 2);
 });
+
+test("search defaults: anywhere inside a word, Devanagari only; both scripts are written out", () => {
+  const parsed = parseSearchUrl({ q: "हिंसा" });
+  assert.equal(parsed.matchMode, "contains");
+  assert.deepEqual(parsed.scripts, ["devanagari"]);
+  const base = { q: "हिंसा", forms: null, parts: null, scope: "all" as const, granthIds: [], page: 1 };
+  assert.equal(buildSearchUrl({ ...base, scripts: ["devanagari"], matchMode: "contains" }, new Map()), `/?q=${encodeURIComponent("हिंसा")}`);
+  const both = buildSearchUrl({ ...base, scripts: null, matchMode: "exact_word" }, new Map());
+  const again = parseSearchUrl(Object.fromEntries(new URL(`http://x${both}`).searchParams));
+  assert.equal(again.scripts, null);
+  assert.equal(again.matchMode, "exact_word");
+});

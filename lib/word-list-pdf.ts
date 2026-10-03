@@ -320,6 +320,8 @@ export class TextDrawer {
   }
 
   layout(text: string, weight: Weight) {
+    // Neither Noto Serif face has arrows (OCR writes "→" in some granths); they would print as boxes.
+    text = text.replace(/[→⇒]/g, "->").replace(/[←⇐]/g, "<-");
     return scriptRuns(text).map((run) => shapeRun(this.faces[run.script][weight], run.text));
   }
 
@@ -446,7 +448,7 @@ export type LineListRow = {
   words: string[];
 };
 
-/** `heading` is the book number printed above the granth's rows. */
+/** `heading` is the granth's 3-digit book number, printed in the footer of each of its pages. */
 export type LineListSection = { heading: string; rows: LineListRow[] };
 
 const LINE_TEXT_SIZE = 10.5;
@@ -456,6 +458,21 @@ const LINE_CELL_PAD_X = 5;
 const LINE_CELL_PAD_Y = 2;
 const LINE_HEADING_SIZE = 12;
 const LINE_BORDER = 0.4;
+/**
+ * The table takes the left 60% of the page; the right 40% stays blank for
+ * Maharaj Saheb's handwritten notes.
+ */
+export const NOTES_TABLE_RIGHT = A4[0] * 0.6;
+/** Room kept at the bottom of each page for the footer. */
+export const FOOTER_ROOM = 22;
+
+/** The book number centred under the table, at the foot of the page. */
+export function drawFooter(text: TextDrawer, page: PDFPage, value: string, left = MARGIN, right = NOTES_TABLE_RIGHT) {
+  if (!value) return;
+  const runs = text.layout(value, "bold");
+  const width = text.width(runs, LINE_HEADING_SIZE);
+  text.draw(page, runs, left + Math.max(0, (right - left - width) / 2), MARGIN - 6, LINE_HEADING_SIZE);
+}
 
 export type Piece = { text: string; weight: Weight };
 
@@ -544,10 +561,12 @@ export function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room
 }
 
 /**
- * The line list: for each granth, its book number, then one row per matched
- * line — क्रमः | पृष्ठम् | पङ्क्तिः | the line with the found words bold — with
- * no header row, all in black. The first row on each page labels its page and
- * line numbers "Pg" and "Ln", so the two number columns can be told apart.
+ * The line list: for each granth, one row per matched line — क्रमः | पृष्ठम् |
+ * पङ्क्तिः | the line with the found words bold — with no header row, all in
+ * black, in the left 60% of the page (the rest is left blank for notes). The
+ * granth's 3-digit book number is printed in the footer of each of its pages.
+ * The first row on each page labels its page and line numbers "Pg" and "Ln",
+ * so the two number columns can be told apart.
  */
 export async function buildLineListPdf(options: { word: string; sections: LineListSection[] }) {
   const faces = await loadFaces();
@@ -556,8 +575,9 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
   doc.setProducer("Granth library word search");
   const embedder = new FontEmbedder(doc);
   const text = new TextDrawer(faces, embedder);
-  const [pageWidth, pageHeight] = A4;
-  const tableWidth = pageWidth - 2 * MARGIN;
+  const pageHeight = A4[1];
+  const tableWidth = NOTES_TABLE_RIGHT - MARGIN;
+  const bottom = MARGIN + FOOTER_ROOM;
   // क्रमः | पृष्ठम् | पङ्क्तिः | the line
   const fixed = [26, 50, 42, 0];
   fixed[3] = tableWidth - fixed.reduce((a, b) => a + b, 0);
@@ -572,9 +592,8 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
 
   for (const section of options.sections) {
     let page = doc.addPage(A4);
-    let y = pageHeight - MARGIN - LINE_HEADING_SIZE;
-    text.draw(page, text.layout(section.heading, "bold"), MARGIN, y, LINE_HEADING_SIZE);
-    y -= 7;
+    drawFooter(text, page, section.heading);
+    let y = pageHeight - MARGIN;
     let firstOnPage = true;
 
     section.rows.forEach((row, index) => {
@@ -589,8 +608,9 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
         return { wrapped, height: Math.max(...wrapped.map((lines) => lines.length)) * lineHeight + 2 * LINE_CELL_PAD_Y };
       };
       let { wrapped, height } = layoutRow(firstOnPage);
-      if (y - height < MARGIN) {
+      if (y - height < bottom) {
         page = doc.addPage(A4);
+        drawFooter(text, page, section.heading);
         y = pageHeight - MARGIN;
         ({ wrapped, height } = layoutRow(true));
       }

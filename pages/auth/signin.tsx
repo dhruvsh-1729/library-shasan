@@ -75,6 +75,11 @@ export default function SignInPage({ googleEnabled }: SignInPageProps) {
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   // A failed Google sign-in comes back to this page as ?error=<code>.
+  // Whoever signs in next on this device must not see pages or searches the last person kept offline.
+  useEffect(() => {
+    navigator.serviceWorker?.controller?.postMessage("clear");
+  }, []);
+
   useEffect(() => {
     if (!router.isReady) return;
     const code = firstQueryValue(router.query.error);

@@ -43,7 +43,9 @@ import {
 import {
   type SearchRequest,
   type SearchScope,
+  DEFAULT_MATCH_MODE,
   buildSearchUrl,
+  modeSearchesParts,
   parseSearchUrl,
   resolveGranthValues,
   sameIds,
@@ -233,8 +235,8 @@ export default function SearchPage() {
 
   // ---------------------------------------------------------------- form
   const [q, setQ] = useState("");
-  const [searchMode, setSearchMode] = useState<OCRSearchMode>("sanskrit_forms");
-  const [scriptOn, setScriptOn] = useState<Record<OCRSearchScript, boolean>>({ devanagari: true, gujarati: true });
+  const [searchMode, setSearchMode] = useState<OCRSearchMode>(DEFAULT_MATCH_MODE);
+  const [scriptOn, setScriptOn] = useState<Record<OCRSearchScript, boolean>>({ devanagari: true, gujarati: false });
   const [scope, setScope] = useState<SearchScope>("all");
   // Kept while switching to "All granths" and back, so a selection is never lost.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -415,7 +417,10 @@ export default function SearchPage() {
       base = composeQueries(chosen);
       forms = chosen.flat();
     }
-    if (!base.length || (request.parts && request.parts.length === 0)) return { queries: base, forms, parts: request.parts };
+    // Only "the word and all its forms" adds the compound's parts; "only this exact word" (and the
+    // other modes) search the whole word as typed: भवमल stays भवमल, never भव + मल.
+    if (!base.length || !modeSearchesParts(request.matchMode)) return { queries: base, forms, parts: null };
+    if (request.parts && request.parts.length === 0) return { queries: base, forms, parts: request.parts };
     // A failed split only loses the parts; the word itself is still searched.
     const words = await loadParts(base[0]).catch(() => [] as CompoundWord[]);
     const parts = partsFromList(words, request.parts);
@@ -460,7 +465,8 @@ export default function SearchPage() {
     };
   }, [compoundBase, loadParts]);
 
-  const partsReady = compoundWords !== null && compoundFor === compoundBase.trim() && compoundWords.length > 0;
+  const partsReady =
+    modeSearchesParts(searchMode) && compoundWords !== null && compoundFor === compoundBase.trim() && compoundWords.length > 0;
   const currentQueries = useMemo(
     () =>
       partsReady && compoundWords
@@ -729,7 +735,8 @@ export default function SearchPage() {
   );
 
   function onSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter" && !loading) run(1);
+    // Not while a Hindi/Gujarati keyboard is still composing a letter (Enter picks the letter there).
+    if (event.key === "Enter" && !loading && !event.nativeEvent.isComposing) run(1);
   }
 
   function toggleGranth(id: string) {
@@ -1005,9 +1012,12 @@ export default function SearchPage() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={onSearchKeyDown}
-              placeholder="Type a word, e.g. हिंसा or hinsa"
+              placeholder="Type a word: हिंसा, હિંસા or hinsa"
               aria-label="Word to search"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              enterKeyHint="search"
               spellCheck={false}
             />
             <button type="button" className="ltGo" onClick={() => run(1)} disabled={loading} aria-busy={loading}>
@@ -1180,17 +1190,17 @@ export default function SearchPage() {
                 </div>
               </div>
             </div>
-          ) : scope === "selected" || searchMode !== "sanskrit_forms" || scripts ? (
+          ) : (
             <p className="ltMuted ltOptionsNow">
               {[
-                searchMode !== "sanskrit_forms" ? PLAIN_MODE_LABELS[searchMode] : "",
-                scripts ? `only ${scripts.map((s) => SCRIPT_LABELS[s]).join(" + ")}` : "",
+                PLAIN_MODE_LABELS[searchMode],
+                scripts ? `only ${scripts.map((s) => SCRIPT_LABELS[s]).join(" + ")}` : "Devanagari + Gujarati",
                 scope === "selected" ? `in ${plural(selectedIds.length, "chosen book")}` : "",
               ]
                 .filter(Boolean)
                 .join(" · ")}
             </p>
-          ) : null}
+          )}
 
           {scope === "selected" && selectedIds.length > 0 ? (
             <div className="ltChosen" aria-label="Chosen books">

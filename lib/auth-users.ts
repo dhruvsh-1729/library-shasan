@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { randomInt } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import {
   SUPER_ADMIN_ROLE,
@@ -253,4 +254,58 @@ export function sessionHasPermission(
   permission: Permission
 ) {
   return Boolean(session?.user?.permissions?.includes(permission));
+}
+
+// No 0/O, 1/l/I: the password is read out or copied from a phone message.
+const PASSWORD_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export const MIN_PASSWORD_LENGTH = 8;
+
+/** A random 10-character password that is easy to read and type. */
+export function generatePassword(length = 10) {
+  let out = "";
+  for (let i = 0; i < length; i += 1) out += PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
+  return out;
+}
+
+/** An account an admin makes directly: approved at once, signing in with email and password. */
+export async function createApprovedUser(input: {
+  email: string;
+  name?: string | null;
+  role: string;
+  password: string;
+  decidedBy: string;
+}): Promise<AppUser> {
+  const now = new Date().toISOString();
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_users")
+    .insert({
+      email: normalizeEmail(input.email),
+      name: input.name?.trim() || null,
+      password_hash: await hashPassword(input.password),
+      role: input.role,
+      status: "approved",
+      providers: ["credentials"],
+      decided_at: now,
+      decided_by: input.decidedBy,
+      decision_note: "Account made by an admin",
+    })
+    .select("*")
+    .single();
+
+  if (error) throw new Error(`Failed to create user: ${error.message}`);
+  return data as AppUser;
+}
+
+/** Sets a new password; the account can then sign in with email and password too. */
+export async function setUserPassword(user: AppUser, password: string): Promise<AppUser> {
+  const providers = user.providers.includes("credentials") ? user.providers : [...user.providers, "credentials"];
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_users")
+    .update({ password_hash: await hashPassword(password), providers, updated_at: new Date().toISOString() })
+    .eq("id", user.id)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(`Failed to set password: ${error.message}`);
+  return data as AppUser;
 }

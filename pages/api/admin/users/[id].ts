@@ -6,10 +6,14 @@ import {
   USER_STATUSES,
   type UserStatus,
 } from "@/lib/auth-permissions";
+import { emailAccount } from "@/lib/account-email";
 import {
+  MIN_PASSWORD_LENGTH,
   countActiveSuperAdmins,
   findUserById,
+  generatePassword,
   getRole,
+  setUserPassword,
   setUserRole,
   setUserStatus,
   type AppUser,
@@ -18,11 +22,15 @@ import {
 
 /**
  * Approve, reject or re-role a single account. The guard only proves
- * `users.manage`; assigning a role additionally needs `roles.manage`, and two
- * rails stop an admin locking either themselves or the portal out.
+ * `users.manage`; assigning a role or setting a new password additionally
+ * needs `roles.manage`, and two rails stop an admin locking either themselves
+ * or the portal out. A new password comes back once, to be shared.
  */
 
 type PatchBody = {
+  resetPassword?: unknown;
+  password?: unknown;
+  sendEmail?: unknown;
   status?: unknown;
   role?: unknown;
   note?: unknown;
@@ -30,7 +38,9 @@ type PatchBody = {
 
 type PublicAppUser = Omit<AppUser, "password_hash">;
 
-type PatchResponse = { user: PublicAppUser } | { error: string };
+type PatchResponse =
+  | { user: PublicAppUser; password?: string; emailed?: boolean; emailError?: string }
+  | { error: string };
 
 const NOTE_MAX = 500;
 
@@ -65,6 +75,27 @@ async function handler(
   }
 
   const body = (req.body ?? {}) as PatchBody;
+
+  if (body.resetPassword === true) {
+    if (!user.permissions.includes(PERMISSIONS.rolesManage)) {
+      return res.status(403).json({ error: "Only a super admin can set passwords" });
+    }
+    const password = String(body.password ?? "").trim() || generatePassword();
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: `The password needs at least ${MIN_PASSWORD_LENGTH} characters.` });
+    }
+    try {
+      const target = await findUserById(id);
+      if (!target) return res.status(404).json({ error: "User not found" });
+      const updated = await setUserPassword(target, password);
+      const role = await getRole(updated.role);
+      const mail = body.sendEmail ? await emailAccount(updated, password, req, role?.label ?? updated.role, true) : { emailed: false };
+      return res.status(200).json({ user: publicUser(updated), password, ...mail });
+    } catch (error) {
+      console.error("[api/admin/users/[id]] failed to set password", error);
+      return res.status(500).json({ error: "Could not set a new password." });
+    }
+  }
 
   if (body.status !== undefined && typeof body.status !== "string") {
     return res.status(400).json({ error: "status must be a string" });

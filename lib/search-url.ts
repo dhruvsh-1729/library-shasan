@@ -2,17 +2,26 @@ import { type OCRSearchMode, type OCRSearchScripts, parseOCRSearchMode, parseOCR
 
 // The search page (the home page, "/") keeps everything a search depends on in its URL, so a link,
 // a refresh or the Back button always shows the same search:
-//   /?q=hinsa&forms=हिंसा&scripts=devanagari&match=contains&in=215,296&page=2
+//   /?q=hinsa&forms=हिंसा&scripts=devanagari,gujarati&match=exact_word&in=215,296&page=2
 // "forms" lists the Devanagari spellings chosen for a romanised query (the
 // spellings /api/query-forms offered); "parts" lists the compound parts searched
 // with the word (/api/compound-parts offers them; "none" searches the word alone,
 // no "parts" searches the default choice); "scripts" keeps only hits written in
-// those scripts; "in" lists granths by their short keys (lib/granth-short-keys),
+// those scripts (no "scripts" is Devanagari only; no "match" is anywhere inside
+// a word); "in" lists granths by their short keys (lib/granth-short-keys),
 // and no "in" means all granths. Older links (?customId=, ?matchMode=,
 // ?langs=typed,devanagari) still work.
 
 /** Search everywhere, or only in the granths ticked in the picker. */
 export type SearchScope = "all" | "selected";
+
+/** What a search finds when the link does not say: the word anywhere inside a word. */
+export const DEFAULT_MATCH_MODE: OCRSearchMode = "contains";
+/** Scripts a search counts when the link does not say: Sanskrit (Devanagari) only. */
+export const DEFAULT_SCRIPTS: OCRSearchScripts = ["devanagari"];
+
+/** Compound parts are searched only with "the word and all its forms"; other modes search exactly the word typed. */
+export const modeSearchesParts = (mode: OCRSearchMode) => mode === "sanskrit_forms";
 
 export type SearchRequest = {
   q: string;
@@ -20,7 +29,7 @@ export type SearchRequest = {
   forms: string[] | null;
   /** Compound parts searched with the word; null means the page's default choice, [] none. */
   parts: string[] | null;
-  /** Scripts whose hits count; null means both. */
+  /** Scripts whose hits count; null means both (written "scripts=devanagari,gujarati"; no "scripts" is Devanagari only). */
   scripts: OCRSearchScripts;
   matchMode: OCRSearchMode;
   scope: SearchScope;
@@ -71,9 +80,9 @@ export function parseSearchUrl(query: Record<string, QueryValue>): ParsedSearchU
     q,
     forms: formsRaw ? splitList(formsRaw) : null,
     parts: partsRaw === "none" ? [] : partsRaw ? splitList(partsRaw) : null,
-    scripts: scriptsRaw ? parseOCRSearchScripts(scriptsRaw) : langsRaw ? scriptsFromLegacyLangs(splitList(langsRaw), q) : null,
-    // No match param means the default Sanskrit forms search.
-    matchMode: parseOCRSearchMode(first(query.match) || first(query.matchMode) || "sanskrit_forms"),
+    scripts: scriptsRaw ? parseOCRSearchScripts(scriptsRaw) : langsRaw ? scriptsFromLegacyLangs(splitList(langsRaw), q) : DEFAULT_SCRIPTS,
+    // No match param means the default: anywhere inside a word.
+    matchMode: parseOCRSearchMode(first(query.match) || first(query.matchMode) || DEFAULT_MATCH_MODE),
     page: Number.isFinite(page) && page > 1 ? page : 1,
     granthValues: legacyCustomId ? [legacyCustomId] : inRaw ? splitList(inRaw) : [],
   };
@@ -85,8 +94,9 @@ export function buildSearchUrl(request: SearchRequest, keyById: ReadonlyMap<stri
   if (request.q) params.set("q", request.q);
   if (request.forms?.length) params.set("forms", request.forms.join(","));
   if (request.parts) params.set("parts", request.parts.length ? request.parts.join(",") : "none");
-  if (request.scripts) params.set("scripts", request.scripts.join(","));
-  if (request.matchMode !== "sanskrit_forms") params.set("match", request.matchMode);
+  const scripts = request.scripts ?? ["devanagari", "gujarati"];
+  if (String(scripts) !== String(DEFAULT_SCRIPTS)) params.set("scripts", scripts.join(","));
+  if (request.matchMode !== DEFAULT_MATCH_MODE) params.set("match", request.matchMode);
   if (request.scope === "selected") {
     params.set("in", request.granthIds.map((id) => keyById.get(id) ?? id).join(","));
   }
