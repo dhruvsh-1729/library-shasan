@@ -8,6 +8,7 @@ import {
 } from "@/lib/ocr-search";
 import { buildOCRPrefilter } from "@/lib/ocr-search-index";
 import { describeGranth, excludeDuplicatesSql, getGranthCatalog } from "@/lib/granth-catalog";
+import { preferVerseRows } from "@/lib/granth-mapping";
 
 /**
  * Everything the assistant is allowed to talk about is fetched here, verbatim
@@ -138,6 +139,7 @@ async function fetchPageRange(granthKey: string, lo: number, hi: number) {
 type MapRow = {
   adhikar: number | null;
   gatha: number | null;
+  unit?: string | null;
   page_start: number;
   page_end: number | null;
   next_page_start: number | null;
@@ -190,7 +192,7 @@ async function resolveGathaSpans(scope: Extract<ContextScope, { kind: "gatha" }>
   const sb = getSupabaseAdmin();
   let q = sb
     .from("granth_gatha_map")
-    .select("adhikar,gatha,page_start,page_end,next_page_start,page_count")
+    .select("adhikar,gatha,unit,page_start,page_end,next_page_start,page_count")
     .eq("book_code", scope.granthKey)
     .gte("gatha", scope.gathaFrom)
     .lte("gatha", scope.gathaTo ?? scope.gathaFrom)
@@ -201,7 +203,11 @@ async function resolveGathaSpans(scope: Extract<ContextScope, { kind: "gatha" }>
   if (error) throw new Error(`gatha lookup failed: ${error.message}`);
   if (!data?.length) return null;
 
-  const rows = data as MapRow[];
+  // The same number can be a sutra and a niryukti gatha; chapter openings and page notes are not verses.
+  const byGatha = new Map<number, MapRow[]>();
+  for (const row of data as MapRow[]) byGatha.set(Number(row.gatha), [...(byGatha.get(Number(row.gatha)) ?? []), row]);
+  const rows = [...byGatha.values()].flatMap((list) => preferVerseRows(list));
+  if (!rows.length) return null;
 
   // Only the rows with no `next_page_start` need to look further down the book.
   const openStarts = rows.filter((r) => r.next_page_start == null).map((r) => Number(r.page_start));

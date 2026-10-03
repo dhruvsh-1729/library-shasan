@@ -20,6 +20,22 @@ export type MappingSegment = {
   pages: number[];
 };
 
+/** Units that are verses; a chapter opening or a page note is not. */
+const VERSE_UNITS = new Set(["gatha", "shlok", "karika", "niryukti", "bhashya", "mool", "kalash"]);
+
+/**
+ * The rows a gatha lookup should use. A row's `unit` says what the index
+ * pointed at: the same number can be both a sutra and a niryukti gatha
+ * (Acharang), and chapter openings (gatha 0) and page notes are not verses at
+ * all. Verse rows win when there are any; sutras are used when they are all a
+ * book has; rows with no unit (before the column existed) are kept as verses.
+ */
+export function preferVerseRows<T extends { unit?: string | null }>(rows: T[]): T[] {
+  const usable = rows.filter((row) => row.unit !== "chapter" && row.unit !== "other");
+  const verses = usable.filter((row) => row.unit == null || VERSE_UNITS.has(row.unit));
+  return verses.length ? verses : usable;
+}
+
 type SpanRow = {
   book_code?: string | null;
   pdf_url?: string | null;

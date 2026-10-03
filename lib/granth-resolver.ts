@@ -1,4 +1,4 @@
-import { groupSegments, parseNumberListSpec, repairPageEnds, type MappingSegment } from "@/lib/granth-mapping";
+import { groupSegments, parseNumberListSpec, preferVerseRows, repairPageEnds, type MappingSegment } from "@/lib/granth-mapping";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export type GranthResolveKind = "gathas" | "pages";
@@ -190,7 +190,7 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
   const allRows = repairPageEnds((await fetchAll((from, to) => {
     let query = supabase
       .from("granth_gatha_map")
-      .select("book_id,book_code,pdf_file_name,pdf_url,custom_id,adhikar,gatha,page_start,page_end,next_page_start,anchor_text")
+      .select("book_id,book_code,pdf_file_name,pdf_url,custom_id,adhikar,gatha,unit,page_start,page_end,next_page_start,anchor_text")
       .not("pdf_url", "is", null)
       .range(from, to);
     if (hasBookId) query = query.eq("book_id", bookId);
@@ -202,15 +202,15 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
     throw new GranthResolveError(404, { error: "No gatha mapping found for this selection" });
   }
 
-  const requestedSet = new Set(requested);
+  // Every row stays in allRows for the page ends above; only verses answer a gatha number.
+  const rowsFor = (rows: typeof allRows, gatha: number) =>
+    preferVerseRows(rows.filter((row) => Number(row.gatha) === gatha) as Array<(typeof allRows)[number] & { unit?: string | null }>);
   const scopedRows = adhikar == null ? allRows : allRows.filter((row) => Number(row.adhikar) === adhikar);
   const conflicts = [];
 
   if (adhikar == null && !includeAllIdentifiers) {
     for (const gatha of requested) {
-      const ids = new Set(
-        allRows.filter((row) => Number(row.gatha) === gatha).map((row) => String(row.adhikar ?? "none"))
-      );
+      const ids = new Set(rowsFor(allRows, gatha).map((row) => String(row.adhikar ?? "none")));
       if (ids.size > 1) conflicts.push({ gatha, adhikars: [...ids] });
     }
   }
@@ -223,7 +223,7 @@ export async function resolveGranthSelection(input: GranthResolveInput): Promise
     });
   }
 
-  const matched = scopedRows.filter((row) => requestedSet.has(Number(row.gatha)));
+  const matched = requested.flatMap((gatha) => rowsFor(scopedRows, gatha));
   const found = new Set(matched.map((row) => Number(row.gatha)));
   const missing = requested.filter((gatha) => !found.has(gatha));
   if (missing.length > 0) {

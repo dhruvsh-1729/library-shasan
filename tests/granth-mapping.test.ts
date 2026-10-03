@@ -1,7 +1,17 @@
 // granth_gatha_map page spans: no network, no database.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { repairPageEnds } from "@/lib/granth-mapping";
+import { preferVerseRows, repairPageEnds } from "@/lib/granth-mapping";
+
+test("a gatha number answers with the verse, not the sutra, chapter opening or page note of the same number", () => {
+  const rows = [{ unit: "sutra", p: 1 }, { unit: "niryukti", p: 2 }, { unit: "chapter", p: 3 }, { unit: "other", p: 4 }];
+  assert.deepEqual(preferVerseRows(rows).map((r) => r.p), [2]);
+});
+
+test("a sutra still answers when it is all the book has, and rows from before the unit column count as verses", () => {
+  assert.deepEqual(preferVerseRows([{ unit: "sutra", p: 1 }, { unit: "chapter", p: 2 }]).map((r) => r.p), [1]);
+  assert.deepEqual(preferVerseRows([{ unit: null, p: 1 }, { unit: "sutra", p: 2 }]).map((r) => r.p), [1]);
+});
 
 const row = (book: string, start: number, end: number | null, next: number | null = null) => ({
   book_code: book, pdf_url: `https://x/${book}.pdf`, page_start: start, page_end: end, next_page_start: next,
