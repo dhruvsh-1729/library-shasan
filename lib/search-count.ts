@@ -23,6 +23,14 @@ export type SearchCount = {
 };
 
 const BATCH = 500;
+/**
+ * Above this many index pages no exact count is made (धर्म has 57,000: about
+ * 200 MB of page text, minutes of the one server's time, slowing every other
+ * search meanwhile); the page keeps the index total with its "+".
+ */
+export const MAX_COUNTED_PAGES = 20000;
+
+export class SearchTooBroadError extends Error {}
 const PARALLEL = 6;
 const TTL_MS = 60 * 60 * 1000;
 const cache = new Map<string, { at: number; value: Promise<SearchCount> }>();
@@ -48,17 +56,24 @@ async function runCount({ queries, matchMode, scripts, relPaths }: { queries: st
   const table = prefilter.table;
   const dup = excludeDuplicatesSql(catalog, "p.granth_key");
   const relSql = relPaths.length ? ` AND g.source_rel_path IN (${relPaths.map(() => "?").join(",")})` : "";
+  // Across the whole library the ids come straight from the index (fast);
+  // duplicate copies of a granth are then dropped when the text is read.
   const ids = (
-    await client.execute({
-      sql: `SELECT DISTINCT p.id AS id
-            FROM ${table}
-            JOIN ocr_pages p ON p.id = ${table}.rowid
-            JOIN ocr_granths g ON g.granth_key = p.granth_key
-            WHERE ${table} MATCH ?${relSql}${dup.sql}
-            ORDER BY p.id`,
-      args: [prefilter.match, ...relPaths, ...dup.args],
-    })
+    relPaths.length
+      ? await client.execute({
+          sql: `SELECT DISTINCT p.id AS id
+                FROM ${table}
+                JOIN ocr_pages p ON p.id = ${table}.rowid
+                JOIN ocr_granths g ON g.granth_key = p.granth_key
+                WHERE ${table} MATCH ?${relSql}${dup.sql}
+                ORDER BY p.id`,
+          args: [prefilter.match, ...relPaths, ...dup.args],
+        })
+      : await client.execute({ sql: `SELECT rowid AS id FROM ${table} WHERE ${table} MATCH ? ORDER BY rowid`, args: [prefilter.match] })
   ).rows.map((row) => Number(row.id));
+  if (ids.length > MAX_COUNTED_PAGES) {
+    throw new SearchTooBroadError(`${ids.length} pages are too many to count exactly; the total shown is the index's.`);
+  }
 
   const chunks: number[][] = [];
   for (let i = 0; i < ids.length; i += BATCH) chunks.push(ids.slice(i, i + BATCH));
@@ -71,7 +86,10 @@ async function runCount({ queries, matchMode, scripts, relPaths }: { queries: st
       while (next < chunks.length) {
         const chunk = chunks[next++];
         const rows = (
-          await client.execute({ sql: `SELECT content FROM ocr_pages WHERE id IN (${chunk.map(() => "?").join(",")})`, args: chunk })
+          await client.execute({
+            sql: `SELECT p.content FROM ocr_pages p WHERE p.id IN (${chunk.map(() => "?").join(",")})${relPaths.length ? "" : dup.sql}`,
+            args: relPaths.length ? chunk : [...chunk, ...dup.args],
+          })
         ).rows;
         for (const row of rows) {
           const matches = findOCRSearchMatchesForQueries(String(row.content ?? ""), queries, matchMode, scripts);

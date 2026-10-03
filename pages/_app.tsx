@@ -25,7 +25,9 @@ const devanagariFont = Noto_Serif_Devanagari({
   variable: "--lt-font-deva",
   display: "swap",
 });
-const gujaratiFont = Noto_Serif_Gujarati({ subsets: ["gujarati"], variable: "--lt-font-guj", display: "swap" });
+// Not preloaded: most screens show no Gujarati until results arrive, and its
+// 115 KB would otherwise be fetched up front on every first visit.
+const gujaratiFont = Noto_Serif_Gujarati({ subsets: ["gujarati"], variable: "--lt-font-guj", display: "swap", preload: false });
 
 export default function App({
   Component,

@@ -2,14 +2,15 @@
 //
 //   /_next/static, fonts, icons   cache first (file names change when the content does)
 //   pages (/, /ask, /vyutpatti, /library)
-//                                 network first, the last copy when offline
+//                                 network first; the last copy when offline, or
+//                                 when the network has not answered in 3.5 s
 //   read-only lookups (search, catalog, spellings, compound parts, page text)
 //                                 network first, the last answer when offline
 //   everything else (sign-in, POSTs, PDFs, admin)   never cached
 //
 // Bump VERSION to drop every cache on the next visit.
 
-const VERSION = "v1";
+const VERSION = "v2";
 const STATIC = `granth-static-${VERSION}`;
 const PAGES = `granth-pages-${VERSION}`;
 const DATA = `granth-data-${VERSION}`;
@@ -26,6 +27,8 @@ const DATA_PATHS = [
   "/api/compound-parts",
 ];
 const MAX_DATA_ENTRIES = 300;
+/** On a slow connection a saved page is shown after this long; the network copy still refreshes the cache. */
+const PAGE_TIMEOUT_MS = 3500;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC).then((cache) => cache.addAll([OFFLINE, "/icon-192.png", "/icon-512.png", "/manifest.webmanifest"])));
@@ -60,16 +63,19 @@ async function cacheFirst(request) {
   return response;
 }
 
-async function networkFirst(request, cacheName, fallback) {
-  try {
-    const response = await fetch(request);
-    // A redirect (to sign-in) or an error is not worth keeping.
-    if (response.ok && !response.redirected && response.type === "basic") {
-      const cache = await caches.open(cacheName);
-      await cache.put(request, response.clone());
-      if (cacheName === DATA) trim(DATA, MAX_DATA_ENTRIES);
+async function networkFirst(event, request, cacheName, fallback, timeoutMs = 0) {
+  const network = fetchAndKeep(request, cacheName);
+  // The network copy still lands in the cache after a saved page was shown.
+  event.waitUntil(network.catch(() => undefined));
+  if (timeoutMs) {
+    const cached = await caches.match(request, { ignoreVary: true });
+    if (cached) {
+      const late = new Promise((resolve) => setTimeout(() => resolve(cached), timeoutMs));
+      return Promise.race([network.catch(() => cached), late]);
     }
-    return response;
+  }
+  try {
+    return await network;
   } catch (error) {
     const cached = await caches.match(request, { ignoreVary: true });
     if (cached) return cached;
@@ -79,6 +85,17 @@ async function networkFirst(request, cacheName, fallback) {
     }
     throw error;
   }
+}
+
+async function fetchAndKeep(request, cacheName) {
+  const response = await fetch(request);
+  // A redirect (to sign-in) or an error is not worth keeping.
+  if (response.ok && !response.redirected && response.type === "basic") {
+    const cache = await caches.open(cacheName);
+    await cache.put(request, response.clone());
+    if (cacheName === DATA) trim(DATA, MAX_DATA_ENTRIES);
+  }
+  return response;
 }
 
 self.addEventListener("fetch", (event) => {
@@ -93,11 +110,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (request.mode === "navigate") {
-    if (PAGE_PATHS.has(path)) event.respondWith(networkFirst(request, PAGES, OFFLINE));
+    if (PAGE_PATHS.has(path)) event.respondWith(networkFirst(event, request, PAGES, OFFLINE, PAGE_TIMEOUT_MS));
     else event.respondWith(fetch(request).catch(() => caches.match(OFFLINE)));
     return;
   }
   if (DATA_PATHS.includes(path)) {
-    event.respondWith(networkFirst(request, DATA));
+    event.respondWith(networkFirst(event, request, DATA));
   }
 });

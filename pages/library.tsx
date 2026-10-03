@@ -85,6 +85,12 @@ function displayTitle(row: GranthItem) {
     .trim();
 }
 
+/** A cover through Next's image optimizer: a small WebP of an UploadThing original; any other address as is. */
+function coverThumb(url: string, width: number) {
+  if (!/^https:\/\/([a-z0-9-]+\.ufs\.sh|utfs\.io)\//i.test(url)) return url;
+  return `/_next/image?url=${encodeURIComponent(url)}&w=${width}&q=60`;
+}
+
 export default function HomePage() {
   const { data: session } = useSession();
   const canManageUsers = Boolean(session?.user?.permissions?.includes(PERMISSIONS.usersManage));
@@ -270,7 +276,10 @@ export default function HomePage() {
                 <div className="libraryCover">
                   {showCover ? (
                     <img
-                      src={row.cover_image_url ?? ""}
+                      src={coverThumb(row.cover_image_url ?? "", 384)}
+                      srcSet={[256, 384, 640].map((w) => `${coverThumb(row.cover_image_url ?? "", w)} ${w}w`).join(", ")}
+                      sizes="(max-width: 700px) 112px, 20vw"
+                      decoding="async"
                       alt={`${title} cover`}
                       className="libraryCoverImage"
                       loading="lazy"

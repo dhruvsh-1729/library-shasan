@@ -19,7 +19,6 @@ import {
   type OCRSearchScript,
   type OCRSearchScripts,
   findOCRSearchMatchesForQueries,
-  isTooShortForContains,
   normalizeOCRSearchQueries,
   parseOCRSearchMode,
   parseOCRSearchScripts,
@@ -124,6 +123,10 @@ type SearchSummary = {
   listTotal: number;
   /** A full count is running in the background for a total marked "+". */
   counting: boolean;
+  /** A word too short for "anywhere inside a word" was searched as all its forms. */
+  modeFellBack?: boolean;
+  /** Too common a word for an exact count (the server refuses past 20,000 index pages). */
+  tooBroad?: boolean;
   totalIsExact: boolean;
   occurrences: number;
   occurrencesExact: boolean;
@@ -587,9 +590,6 @@ export default function SearchPage() {
     if (!text) return "Type a word to search.";
     if (Array.from(text).length < 2) return "Type at least 2 letters.";
     if (roman && formsFor !== text && !formsError) return null; // spellings still loading; run() waits for them
-    if (searchMode === "contains" && currentQueries.some(isTooShortForContains)) {
-      return "Contains search needs at least 3 letters once conjuncts are folded (न्द counts as 2).";
-    }
     if (scope === "selected" && selectedIds.length === 0) return "Choose at least one granth, or search all granths.";
     if (scope === "selected" && selectedIds.length > MAX_SELECTED_GRANTHS) {
       return `Choose at most ${MAX_SELECTED_GRANTHS} granths, or search all granths.`;
@@ -709,6 +709,7 @@ export default function SearchPage() {
         queries: json.queries?.length ? json.queries : queries,
         scripts: request.scripts,
         matchMode: parseOCRSearchMode(json.match_mode ?? request.matchMode),
+        modeFellBack: Boolean(json.match_mode && json.match_mode !== request.matchMode),
         scopeLabel: request.scope === "all" ? "all granths" : plural(request.granthIds.length, "chosen granth"),
         granthIds: request.scope === "all" ? [] : request.granthIds,
         missingGranths: json.missing_granths ?? [],
@@ -730,6 +731,8 @@ export default function SearchPage() {
       // background and replace the "+" totals when that is done.
       if (!exact) {
         const countParams = new URLSearchParams(params);
+        // The server may have searched a short word as all its forms instead of anywhere inside a word.
+        if (json.match_mode) countParams.set("matchMode", json.match_mode);
         countParams.delete("limit");
         countParams.delete("page");
         const countAll = async () => {
@@ -737,6 +740,10 @@ export default function SearchPage() {
             const res = await fetch(`/api/search-count?${countParams.toString()}`);
             const count = (await res.json()) as { pages?: number; occurrences?: number; formCounts?: Array<{ form: string; count: number }>; error?: string };
             if (seq !== searchSeqRef.current) return;
+            if (res.status === 422) {
+              setSummary((prev) => (prev ? { ...prev, counting: false, tooBroad: true } : prev));
+              return;
+            }
             if (!res.ok) throw new Error(count.error || "count failed");
             setSummary((prev) =>
               prev
@@ -1379,15 +1386,22 @@ export default function SearchPage() {
                 <div className="ltTally">
                   <p>
                     <strong>
-                      {nf.format(summary.occurrences)}
-                      {summary.occurrencesExact ? "" : "+"}
+                      {/* Until the exact count arrives, the times seen so far are only the first pages'. */}
+                      {summary.occurrencesExact
+                        ? nf.format(summary.occurrences)
+                        : summary.counting
+                          ? "…"
+                          : summary.tooBroad
+                            ? "Many"
+                            : `${nf.format(summary.occurrences)}+`}
                     </strong>
                     <span>times</span>
                   </p>
                   <p className="isSecond">
                     <strong>
+                      {/* Not yet exact, the total is the index's, which can only be higher. */}
+                      {summary.totalIsExact ? "" : "~"}
                       {nf.format(summary.total)}
-                      {summary.totalIsExact ? "" : "+"}
                     </strong>
                     <span>pages</span>
                   </p>
@@ -1400,6 +1414,8 @@ export default function SearchPage() {
                     <>
                       <span className="ltSpinner" aria-hidden="true" /> Counting every page…
                     </>
+                  ) : summary.tooBroad ? (
+                    <>This word is on too many pages to count every one; the page total is an estimate.</>
                   ) : (
                     <>
                       Counted in the first {nf.format(summary.scannedPages)} pages.{" "}
@@ -1416,6 +1432,9 @@ export default function SearchPage() {
                     </>
                   )}
                 </p>
+              ) : null}
+              {summary.modeFellBack ? (
+                <p className="ltWarn">“Anywhere inside a word” needs at least 3 letters, so this short word was searched as the word and all its forms.</p>
               ) : null}
               {summary.missingGranths.length ? (
                 <p className="ltWarn">{plural(summary.missingGranths.length, "chosen book")} could not be found and were left out.</p>

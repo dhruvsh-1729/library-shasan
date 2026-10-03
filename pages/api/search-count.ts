@@ -4,7 +4,7 @@ import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import { getGranthCatalog, relPathsForIds } from "@/lib/granth-catalog";
 import { MAX_SEARCH_QUERIES, normalizeOCRSearchQueries, parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
-import { countSearch } from "@/lib/search-count";
+import { SearchTooBroadError, countSearch } from "@/lib/search-count";
 
 // Exact totals for a search whose /api/search totals carry a "+" (more hit
 // pages than it checks at once). Same parameters as /api/search.
@@ -32,6 +32,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const count = await countSearch({ queries, matchMode, scripts, relPaths });
     return res.status(200).json(count);
   } catch (error) {
+    if (error instanceof SearchTooBroadError) return res.status(422).json({ error: error.message });
     return res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 }
