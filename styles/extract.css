@@ -1,0 +1,678 @@
+/*
+ * The extractor: one question at a time on the Light Table. Each step is a
+ * white slip on the glass; cobalt marks what can be pressed; the trail at the
+ * top holds the choices made so far, each one a way back.
+ */
+
+.exShell {
+  min-height: 100vh;
+  background: var(--lt-glass);
+  color: var(--lt-ink);
+}
+
+.exShell .indic {
+  font-family: var(--lt-indic-font);
+}
+
+.exMain {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: 8px 24px 120px;
+  display: grid;
+  gap: 14px;
+}
+
+/* ------------------------------------------------------------ trail */
+
+.exTrail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.exTrail li:not(.exTrailEnd)::after {
+  content: "›";
+  margin-left: 6px;
+  color: var(--lt-tick);
+}
+
+.exTrail li:nth-last-child(2)::after {
+  content: none;
+}
+
+.exTrail button {
+  border: 1px solid var(--lt-glass-edge);
+  background: var(--lt-glass-lit);
+  color: var(--lt-ink-2);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exTrail button:hover {
+  border-color: var(--lt-cobalt);
+  color: var(--lt-cobalt);
+}
+
+.exTrailEnd {
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------ step slip */
+
+.exStep {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: var(--lt-slip-shadow);
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.exQuestion {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.exQuiet {
+  margin: 0;
+  color: var(--lt-ink-3);
+  font-size: 15px;
+}
+
+.exError,
+.exWarn,
+.exDone {
+  margin: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 15px;
+}
+
+.exError {
+  background: #fdecea;
+  color: #8a1f12;
+}
+
+.exWarn {
+  background: var(--lt-amber-wash);
+  color: var(--lt-amber);
+}
+
+.exDone {
+  background: var(--lt-green-wash);
+  color: var(--lt-green);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------ inputs and buttons */
+
+.exInput {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 17px;
+  background: var(--lt-glass-lit);
+  color: var(--lt-ink);
+}
+
+.exInput:focus {
+  outline: 2px solid var(--lt-cobalt);
+  outline-offset: 1px;
+  background: #fff;
+}
+
+.exInputBig {
+  font-size: 22px;
+  padding: 14px 16px;
+}
+
+.exPrimary,
+.exSecondary,
+.exGhost,
+.exChip {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.exPrimary {
+  background: var(--lt-cobalt);
+  color: #fff;
+  border: 0;
+  padding: 12px 20px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.exPrimary:hover:not(:disabled) {
+  background: var(--lt-cobalt-deep);
+}
+
+.exSecondary {
+  background: var(--lt-cobalt-wash);
+  color: var(--lt-cobalt-deep);
+  border: 1px solid transparent;
+  padding: 12px 20px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.exGhost {
+  background: transparent;
+  border: 1px solid var(--lt-glass-edge);
+  color: var(--lt-ink-2);
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.exGhost:hover {
+  border-color: var(--lt-cobalt);
+  color: var(--lt-cobalt);
+}
+
+.exPrimary:disabled,
+.exSecondary:disabled,
+.exGhost:disabled,
+.exChip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.exWide {
+  width: 100%;
+}
+
+.exChip {
+  background: var(--lt-glass-lit);
+  border: 1px solid var(--lt-glass-edge);
+  color: var(--lt-ink-2);
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------ 1. mode + recents */
+
+.exChoices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.exChoice {
+  text-align: left;
+  border: 1px solid var(--lt-glass-edge);
+  background: var(--lt-glass-lit);
+  border-radius: 12px;
+  padding: 18px;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  font: inherit;
+  color: var(--lt-ink);
+}
+
+.exChoice strong {
+  font-size: 20px;
+}
+
+.exChoice span {
+  color: var(--lt-ink-3);
+  font-size: 15px;
+}
+
+.exChoice:hover {
+  border-color: var(--lt-cobalt);
+  background: var(--lt-cobalt-wash);
+}
+
+.exRecents h2 {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--lt-ink-3);
+}
+
+.exRecents ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.exRecents li {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.exRecent {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 1px solid var(--lt-rule);
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font: inherit;
+  display: grid;
+  gap: 2px;
+}
+
+.exRecent:hover {
+  border-color: var(--lt-cobalt);
+}
+
+.exRecentWhat {
+  font-weight: 600;
+  color: var(--lt-cobalt-deep);
+}
+
+.exRecentWhere {
+  color: var(--lt-ink-3);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exRecentForget {
+  border: 0;
+  background: transparent;
+  color: var(--lt-ink-3);
+  border-radius: 8px;
+  width: 36px;
+  cursor: pointer;
+}
+
+.exRecentForget:hover {
+  background: var(--lt-glass);
+  color: var(--lt-ink);
+}
+
+/* ------------------------------------------------------------ 2. works */
+
+.exWorks,
+.exChapters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.exWorks {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.exWork {
+  width: 100%;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  border: 1px solid var(--lt-rule);
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--lt-ink);
+}
+
+.exWork:hover {
+  border-color: var(--lt-cobalt);
+  box-shadow: var(--lt-shadow);
+}
+
+.exWork img,
+.exWorkNoCover {
+  width: 44px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--lt-glass);
+  flex: none;
+}
+
+.exWorkText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.exWorkText strong {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.exWorkText .indic {
+  font-size: 16px;
+  color: var(--lt-ink-2);
+}
+
+.exWorkText em {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--lt-ink-3);
+}
+
+/* ------------------------------------------------------------ 3. chapters + volumes */
+
+.exChapters {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.exChapter {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--lt-rule);
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--lt-ink);
+  display: grid;
+  gap: 4px;
+}
+
+.exChapter:hover {
+  border-color: var(--lt-cobalt);
+  background: var(--lt-cobalt-wash);
+}
+
+.exChapter strong {
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.exChapter span {
+  color: var(--lt-ink-2);
+  font-size: 15px;
+}
+
+.exChapter em {
+  font-style: normal;
+  color: var(--lt-ink-3);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------ 4. numbers */
+
+.exHave {
+  margin: 0;
+  color: var(--lt-ink-2);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.exNumbers {
+  display: flex;
+  gap: 10px;
+}
+
+.exNumbers .exInput {
+  flex: 1;
+}
+
+.exLive {
+  margin: 0;
+  color: var(--lt-cobalt-deep);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ 5. preview */
+
+.exPassage {
+  border-top: 1px solid var(--lt-rule);
+  padding-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.exPassageHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.exPassageHead h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.exPassageHead p {
+  margin: 2px 0 0;
+  color: var(--lt-ink-3);
+  font-size: 14px;
+}
+
+.exAround {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.exThumbs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.exThumbs button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: zoom-in;
+  display: grid;
+  gap: 4px;
+  font: inherit;
+  color: var(--lt-ink-2);
+  font-size: 13px;
+  text-align: center;
+}
+
+.exThumb {
+  width: 100%;
+  aspect-ratio: 0.7;
+  background: var(--lt-glass-lit);
+  border: 1px solid var(--lt-rule);
+  border-radius: 6px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.exThumb canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.exThumb.is-loading::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.7) 50%, transparent 80%) var(--lt-glass);
+  background-size: 200% 100%;
+  animation: exShimmer 1.2s linear infinite;
+}
+
+.exThumbNote {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--lt-ink-3);
+}
+
+.exThumbs li.isAdded .exThumb {
+  border-style: dashed;
+  border-color: var(--lt-tick);
+  opacity: 0.85;
+}
+
+.exThumbs button:hover .exThumb {
+  border-color: var(--lt-cobalt);
+}
+
+@keyframes exShimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.exBar {
+  position: sticky;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--lt-rule);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: var(--lt-shadow);
+}
+
+.exBar > span {
+  margin-right: auto;
+  font-weight: 600;
+  color: var(--lt-ink-2);
+}
+
+/* ------------------------------------------------------------ export sheet */
+
+.exExport {
+  display: grid;
+  gap: 18px;
+}
+
+.exField {
+  display: grid;
+  gap: 6px;
+}
+
+.exField span,
+.exExportBlock h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--lt-ink-3);
+  font-weight: 600;
+}
+
+.exExportBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.exSaved {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.exSheetActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ------------------------------------------------------------ phones */
+
+@media (max-width: 720px) {
+  .exMain {
+    padding: 4px 16px 120px;
+  }
+
+  .exStep {
+    padding: 18px 16px;
+    border-radius: 12px;
+  }
+
+  .exQuestion {
+    font-size: 21px;
+  }
+
+  .exChoices {
+    grid-template-columns: 1fr;
+  }
+
+  .exWorks,
+  .exChapters {
+    grid-template-columns: 1fr;
+  }
+
+  .exNumbers {
+    flex-direction: column;
+  }
+
+  .exNumbers .exPrimary {
+    min-height: 48px;
+  }
+
+  .exThumbs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .exTrail button {
+    max-width: 200px;
+  }
+
+  .exBar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .exBar > span {
+    width: 100%;
+  }
+
+  .exBar .exPrimary {
+    flex: 1;
+  }
+
+  .exSheetActions {
+    flex-direction: column-reverse;
+  }
+
+  .exSheetActions button {
+    width: 100%;
+  }
+}
