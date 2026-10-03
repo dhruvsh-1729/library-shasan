@@ -1,3 +1,4 @@
+import "@/styles/fonts.css";
 import "@/styles/globals.css";
 import "@/styles/auth.css";
 import "@/styles/admin.css";
@@ -10,7 +11,7 @@ import "@/styles/sheet.css";
 import "@/styles/phone.css";
 import "@/styles/appnav.css";
 import type { AppProps } from "next/app";
-import { Archivo, Noto_Serif_Devanagari, Noto_Serif_Gujarati } from "next/font/google";
+import { Archivo } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import type { Session } from "next-auth";
 import { useEffect } from "react";
@@ -20,14 +21,8 @@ import { useEffect } from "react";
 // traditional face: Tiro Devanagari Sanskrit stacks क्त so it reads as त्त
 // (शक्ति as शत्ति) and क्त्र as क्र, and a reader checking hits cannot tell.
 const uiFont = Archivo({ subsets: ["latin"], axes: ["wdth"], variable: "--lt-font-ui", display: "swap" });
-const devanagariFont = Noto_Serif_Devanagari({
-  subsets: ["devanagari", "latin"],
-  variable: "--lt-font-deva",
-  display: "swap",
-});
-// Not preloaded: most screens show no Gujarati until results arrive, and its
-// 115 KB would otherwise be fetched up front on every first visit.
-const gujaratiFont = Noto_Serif_Gujarati({ subsets: ["gujarati"], variable: "--lt-font-guj", display: "swap", preload: false });
+// The Devanagari and Gujarati faces (Noto Serif, cut to weights 400-700 for
+// slow connections) are self-hosted: styles/fonts.css, preloaded in _document.
 
 export default function App({
   Component,
@@ -41,7 +36,7 @@ export default function App({
   }, []);
   return (
     <SessionProvider session={session}>
-      <div className={`ltFonts ${uiFont.variable} ${devanagariFont.variable} ${gujaratiFont.variable}`}>
+      <div className={`ltFonts ${uiFont.variable}`}>
         <Component {...pageProps} />
       </div>
     </SessionProvider>

@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
   },
   // Search is the home page; the library catalogue moved to /library.
   // Old /search links (with their ?q=… query, which Next carries over) keep working.
+  // public/fonts files are named by their content hash, so they never change.
+  async headers() {
+    return [{ source: "/fonts/:file", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] }];
+  },
   async redirects() {
     return [{ source: "/search", destination: "/", permanent: false }];
   },
