@@ -5,6 +5,7 @@ import type { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
+import { Sheet } from "@/components/Sheet";
 import type { ReaderLine, TableRow } from "@/lib/vyutpatti/format";
 import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
 import { needsDevanagari, toDevanagari } from "@/lib/to-devanagari";
@@ -167,6 +168,11 @@ export default function VyutpattiPage() {
   const [pagesBusy, setPagesBusy] = useState("");
   const [pagesError, setPagesError] = useState("");
   const nextKey = useRef(1);
+  // One question at a time: the vishay, then the results; the PDF in a sheet.
+  const [view, setView] = useState<"input" | "results">("input");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [getOpen, setGetOpen] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const problem = useMemo(() => problemWith(input), [input]);
   // Gujarati or English typed: the Devanagari it will be looked up as.
@@ -235,6 +241,7 @@ export default function VyutpattiPage() {
     if (!parsed.length) return;
     const fresh: Item[] = parsed.map((p) => ({ key: nextKey.current++, ...p, status: "waiting", progress: "Waiting", lines: [], rows: [] }));
     setItems((list) => [...fresh, ...list]);
+    setView("results");
     setRunning(true);
     // One at a time: each reads several page scans.
     for (const item of fresh) await runOne(item);
@@ -313,6 +320,18 @@ export default function VyutpattiPage() {
     update(key, (item) => ({ rows: item.rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)) }));
   const removeRow = (key: number, index: number) => update(key, (item) => ({ rows: item.rows.filter((_, i) => i !== index) }));
 
+  function startAgain() {
+    setItems([]);
+    setInput("");
+    setConfirmClear(false);
+    setGetOpen(false);
+    setView("input");
+  }
+
+  // The kosh-pages download takes at most 80 pages at a time.
+  const MAX_KOSH_PAGES = 80;
+  const working = items.filter((i) => i.status === "waiting" || i.status === "running").length;
+
   return (
     <>
       <Head>
@@ -329,14 +348,51 @@ export default function VyutpattiPage() {
         </header>
 
         <main className="vyMain">
-          <form className="vyForm" onSubmit={onSubmit}>
-            <label className="vyLabel" htmlFor="vy-input">
-              Vishay <span>one per line · Hindi, ગુજરાતી or English</span>
-            </label>
+          {items.length ? (
+            <ol className="exTrail" aria-label="Where you are">
+              <li>
+                <button type="button" onClick={() => setView("input")} aria-current={view === "input" ? "step" : undefined}>
+                  {view === "input" ? "Vishay" : "Add more"}
+                </button>
+              </li>
+              <li>
+                <button type="button" onClick={() => setView("results")} aria-current={view === "results" ? "step" : undefined}>
+                  Results ({items.length}){working ? ` · ${working} working` : ""}
+                </button>
+              </li>
+              <li className="exTrailEnd">
+                {confirmClear ? (
+                  <span className="vyConfirm">
+                    Nothing is saved. Clear all?
+                    <button type="button" className="exGhost" onClick={startAgain} disabled={running}>
+                      Clear
+                    </button>
+                    <button type="button" className="exGhost" onClick={() => setConfirmClear(false)}>
+                      Keep
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" className="exGhost" onClick={() => setConfirmClear(true)} disabled={running}>
+                    Start again
+                  </button>
+                )}
+              </li>
+            </ol>
+          ) : null}
+
+          {view === "input" ? (
+          <form className="vyForm exStep" onSubmit={onSubmit}>
+            <h1 className="exQuestion">
+              <label htmlFor="vy-input">Which vishay?</label>
+            </h1>
+            <p className="vyLabel">
+              <span>One per line · Hindi, ગુજરાતી or English · a number first if it has one</span>
+            </p>
             <textarea
               id="vy-input"
               className="vyInput indic"
               value={input}
+              autoFocus
               rows={Math.min(8, Math.max(2, input.split("\n").length + 1))}
               placeholder={"1.1 अचौर्य\n10.6.6 कायिकहिंसा"}
               lang="hi"
@@ -355,22 +411,6 @@ export default function VyutpattiPage() {
                 {problem}
               </p>
             ) : null}
-            <div className="vyControls">
-              <div className="vyEngine" role="radiogroup" aria-label="Read with">
-                {(["claude", "sarvam"] as Engine[]).map((e) => (
-                  <button key={e} type="button" role="radio" aria-checked={engine === e} className={engine === e ? "isOn" : ""} onClick={() => setEngine(e)}>
-                    {e === "claude" ? "Claude" : "Sarvam"}
-                  </button>
-                ))}
-              </div>
-              <label className="vyBox">
-                Box
-                <input value={box} onChange={(e) => setBox(e.target.value.slice(0, 12))} inputMode="numeric" aria-label="Box No" />
-              </label>
-              <button type="submit" className="vyGo" disabled={running || !input.trim() || Boolean(problem)}>
-                {running ? "Working…" : "Find vyutpatti"}
-              </button>
-            </div>
             {preview ? (
               <div className="vyPreview" aria-live="polite">
                 <span>Will look up as</span>
@@ -380,24 +420,57 @@ export default function VyutpattiPage() {
                 </button>
               </div>
             ) : null}
-            {engine === "sarvam" ? <p className="vyHint">Sarvam cannot read the page scans: check the Gujarati meanings.</p> : null}
-          </form>
-
-          {done.length ? (
-            <div className="vyBar">
-              <button type="button" className="vyGo" onClick={() => download()} disabled={downloading}>
-                {downloading ? "Making PDF…" : done.length === 1 ? "Download PDF" : `Download PDF (${done.length})`}
-              </button>
-              {allPages.length ? (
-                <button type="button" className="vyLink" onClick={() => downloadPages("all", allPages, "kosh pages")} disabled={Boolean(pagesBusy)}>
-                  {pagesBusy === "all" ? "Fetching pages…" : `All kosh pages (${allPages.length})`}
+            {settingsOpen ? (
+              <div className="vyControls">
+                <div className="vyEngine" role="radiogroup" aria-label="Read with">
+                  {(["claude", "sarvam"] as Engine[]).map((e) => (
+                    <button key={e} type="button" role="radio" aria-checked={engine === e} className={engine === e ? "isOn" : ""} onClick={() => setEngine(e)}>
+                      {e === "claude" ? "Claude" : "Sarvam"}
+                    </button>
+                  ))}
+                </div>
+                <label className="vyBox">
+                  Box
+                  <input value={box} onChange={(e) => setBox(e.target.value.slice(0, 12))} inputMode="numeric" aria-label="Box No" />
+                </label>
+                <button type="button" className="vyLink" onClick={() => setSettingsOpen(false)}>
+                  Done
                 </button>
-              ) : null}
-              {downloadError ? <span className="vyProblem">{downloadError}</span> : null}
-              {pagesError ? <span className="vyProblem">{pagesError}</span> : null}
+              </div>
+            ) : (
+              <p className="vySettingsLine">
+                Read with {engine === "claude" ? "Claude" : "Sarvam"} · Box {box || "—"}{" "}
+                <button type="button" className="vyLink" onClick={() => setSettingsOpen(true)}>
+                  Change
+                </button>
+              </p>
+            )}
+            {engine === "sarvam" ? <p className="vyHint">Sarvam cannot read the page scans: check the Gujarati meanings.</p> : null}
+            <button type="submit" className="vyGo exWide" disabled={running || !input.trim() || Boolean(problem)}>
+              {running ? "Working…" : items.length ? "Find these too" : "Find vyutpatti"}
+            </button>
+          </form>
+          ) : null}
+
+          {view === "results" && done.length ? (
+            <div className="vyBar">
+              <span className="vyBarCount">
+                {done.length} ready{working ? ` · ${working} working` : ""}
+              </span>
+              <button type="button" className="exGhost" onClick={() => setView("input")} disabled={running}>
+                Add more
+              </button>
+              <button type="button" className="vyGo" onClick={() => setGetOpen(true)}>
+                Get the PDF
+              </button>
             </div>
           ) : null}
 
+          {view === "results" && !getOpen && (downloadError || pagesError) ? (
+            <p className="exError" role="alert">{downloadError || pagesError}</p>
+          ) : null}
+
+          {view === "results" ? (
           <section className="vyList" aria-live="polite">
             {items.map((item) => (
               <article key={item.key} className={`vyCard is-${item.status}`}>
@@ -587,8 +660,41 @@ export default function VyutpattiPage() {
               </article>
             ))}
           </section>
+          ) : null}
         </main>
       </div>
+      {getOpen ? (
+        <Sheet open title="Get the PDF" subtitle={`${done.length} vishay${done.length === 1 ? "" : "s"} ready`} onClose={() => setGetOpen(false)} busy={downloading || Boolean(pagesBusy)} size="narrow">
+          <div className="exExport">
+            <section className="exExportBlock">
+              <h3>Vyutpatti</h3>
+              <p className="vyHint">Every vishay in the order typed, with your edits: the internal table and the reader page.</p>
+              <button type="button" className="vyGo exWide" onClick={() => download()} disabled={downloading || !done.length}>
+                {downloading ? "Making the PDF…" : done.length === 1 ? "Download PDF" : `Download PDF (${done.length})`}
+              </button>
+            </section>
+            {allPages.length ? (
+              <section className="exExportBlock">
+                <h3>Kosh pages</h3>
+                <p className="vyHint">
+                  The scanned kosh pages these came from, each page once
+                  {allPages.length > MAX_KOSH_PAGES ? ` — ${allPages.length} is over the ${MAX_KOSH_PAGES}-page limit, so the first ${MAX_KOSH_PAGES} are included; download the rest from each card.` : "."}
+                </p>
+                <button
+                  type="button"
+                  className="exSecondary exWide"
+                  onClick={() => downloadPages("all", allPages.slice(0, MAX_KOSH_PAGES), "kosh pages")}
+                  disabled={Boolean(pagesBusy)}
+                >
+                  {pagesBusy === "all" ? "Fetching pages…" : `Download kosh pages (${Math.min(allPages.length, MAX_KOSH_PAGES)})`}
+                </button>
+              </section>
+            ) : null}
+            {downloadError ? <p className="exError">{downloadError}</p> : null}
+            {pagesError ? <p className="exError">{pagesError}</p> : null}
+          </div>
+        </Sheet>
+      ) : null}
       <PdfPageDialog target={pdfTarget} onClose={() => setPdfTarget(null)} />
     </>
   );

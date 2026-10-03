@@ -690,3 +690,29 @@
   font-size: 17px;
   color: var(--lt-ink);
 }
+
+/* ------------------------------------------------------------ steps */
+
+.vyForm.exStep .exQuestion label {
+  cursor: text;
+}
+
+.vySettingsLine {
+  margin: 0;
+  color: var(--lt-ink-3);
+  font-size: 14px;
+}
+
+.vyConfirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--lt-ink-2);
+}
+
+.vyBarCount {
+  margin-right: auto;
+  font-weight: 600;
+  color: var(--lt-ink-2);
+}

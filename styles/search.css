@@ -1135,3 +1135,104 @@
   font-stretch: 88%;
   color: var(--lt-ink-3);
 }
+
+/* ------------------------------------------------------------ steps */
+
+.lt .ltStepQ {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--lt-ink);
+}
+
+.lt .ltStepQ label {
+  cursor: text;
+}
+
+.lt .ltWhereStep {
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #fff;
+}
+
+.lt .ltWhereHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lt .ltWhereHead .ltStepQ {
+  margin: 0;
+  font-size: 19px;
+}
+
+.lt .ltRecents h2 {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--lt-ink-3);
+}
+
+.lt .ltRecents ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.lt .ltRecents li {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.lt .ltRecent {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--lt-rule);
+  border-radius: 10px;
+  background: #fff;
+  text-decoration: none;
+  color: var(--lt-ink);
+}
+
+.lt .ltRecent:hover {
+  border-color: var(--lt-cobalt);
+}
+
+.lt .ltRecentQ {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--lt-cobalt-deep);
+}
+
+.lt .ltRecentHow {
+  font-size: 13px;
+  color: var(--lt-ink-3);
+}
+
+.lt .ltRecentForget {
+  border: 0;
+  background: transparent;
+  color: var(--lt-ink-3);
+  border-radius: 8px;
+  width: 36px;
+  cursor: pointer;
+}
+
+.lt .ltRecentForget:hover {
+  background: var(--lt-glass);
+  color: var(--lt-ink);
+}
+
+.lt .ltTrail {
+  margin: 4px 0 10px;
+}

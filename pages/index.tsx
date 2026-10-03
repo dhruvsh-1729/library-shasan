@@ -268,6 +268,17 @@ export default function SearchPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<SearchRequest | null>(null);
+  // The signed-in reader's recent searches, kept on the server, shown on the first step.
+  const [recents, setRecents] = useState<Array<{ id: number; query: string; url: string; label: string | null }>>([]);
+  const loadRecents = useCallback(() => {
+    fetch("/api/search-history")
+      .then((res) => (res.ok ? res.json() : { items: [] }))
+      .then((json: { items?: Array<{ id: number; query: string; url: string; label: string | null }> }) => setRecents(json.items ?? []))
+      .catch(() => setRecents([]));
+  }, []);
+  useEffect(() => {
+    loadRecents();
+  }, [loadRecents]);
   const [expandedPages, setExpandedPages] = useState<Set<string>>(new Set());
   const searchSeqRef = useRef(0);
   /** Re-runs the background exact count of the last search, when it failed. */
@@ -590,6 +601,26 @@ export default function SearchPage() {
     [optionByGranthKey]
   );
 
+  /** Back to an empty first step: no word, no results, the page's own link. */
+  function startAgain() {
+    searchSeqRef.current += 1;
+    setQ("");
+    setResults([]);
+    setSummary(null);
+    setLastRequest(null);
+    setError(null);
+    setPhase("idle");
+    setSettingsOpen(false);
+    appliedUrlRef.current = "/";
+    void router.push("/", undefined, { shallow: true, scroll: false });
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function forgetRecent(id: number) {
+    setRecents((list) => list.filter((r) => r.id !== id));
+    void fetch(`/api/search-history?id=${id}`, { method: "DELETE" });
+  }
+
   function run(page: number, only?: { granthIds: string[] }) {
     if (only) {
       setScope("selected");
@@ -682,6 +713,17 @@ export default function SearchPage() {
       });
       setLastRequest({ ...request, forms, parts });
       setPhase("done");
+      if (request.page === 1) {
+        const label = [
+          PLAIN_MODE_LABELS[parseOCRSearchMode(request.matchMode)],
+          request.scope === "all" ? "all granths" : plural(request.granthIds.length, "chosen granth"),
+        ].join(" · ");
+        void fetch("/api/search-history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: request.q, url: buildSearchUrl({ ...request, page: 1 }, keyById), label }),
+        }).then(loadRecents, () => undefined);
+      }
       // More hit pages than /api/search checks at once: count them all in the
       // background and replace the "+" totals when that is done.
       if (!exact) {
@@ -1004,6 +1046,11 @@ export default function SearchPage() {
         </header>
 
         <section className="ltSearch" aria-label="Search">
+          {!summary && !loading ? (
+            <h2 className="ltStepQ">
+              <label htmlFor="search-query">What do you want to find?</label>
+            </h2>
+          ) : null}
           <div className="ltBox">
             <input
               ref={inputRef}
@@ -1118,19 +1165,14 @@ export default function SearchPage() {
             </div>
           ) : null}
 
-          <button
-            type="button"
-            className="ltMoreToggle"
-            aria-expanded={settingsOpen}
-            aria-controls="lt-options"
-            onClick={() => setSettingsOpen((open) => !open)}
-          >
-            {settingsOpen ? "Hide options" : "More options"}
-            <LightTableIcon name="chevron" size={14} />
-          </button>
-
           {settingsOpen ? (
-            <div id="lt-options" className="ltOptions">
+            <div id="lt-options" className="ltOptions ltWhereStep" role="group" aria-labelledby="lt-where">
+              <div className="ltWhereHead">
+                <h2 id="lt-where" className="ltStepQ">Where and how?</h2>
+                <button type="button" className="ltPrimary" onClick={() => setSettingsOpen(false)}>
+                  Done
+                </button>
+              </div>
               <div className="ltOption">
                 <span className="ltOptionLabel">Find</span>
                 <div className="ltChoices" role="radiogroup" aria-label="Find">
@@ -1195,10 +1237,13 @@ export default function SearchPage() {
               {[
                 PLAIN_MODE_LABELS[searchMode],
                 scripts ? `only ${scripts.map((s) => SCRIPT_LABELS[s]).join(" + ")}` : "Devanagari + Gujarati",
-                scope === "selected" ? `in ${plural(selectedIds.length, "chosen book")}` : "",
+                scope === "selected" ? `in ${plural(selectedIds.length, "chosen book")}` : "in all books",
               ]
                 .filter(Boolean)
-                .join(" · ")}
+                .join(" · ")}{" "}
+              <button type="button" className="ltLink" aria-controls="lt-options" aria-expanded={false} onClick={() => setSettingsOpen(true)}>
+                Change
+              </button>
             </p>
           )}
 
@@ -1280,7 +1325,46 @@ export default function SearchPage() {
               ) : null}
             </p>
           ) : null}
+
+          {!summary && !loading && recents.length ? (
+            <div className="ltRecents">
+              <h2>Recent searches</h2>
+              <ul>
+                {recents.map((r) => (
+                  <li key={r.id}>
+                    <Link href={r.url} className="ltRecent" scroll={false}>
+                      <span className="ltRecentQ indic">{r.query}</span>
+                      {r.label ? <span className="ltRecentHow">{r.label}</span> : null}
+                    </Link>
+                    <button type="button" className="ltRecentForget" aria-label={`Remove ${r.query}`} onClick={() => forgetRecent(r.id)}>
+                      <LightTableIcon name="close" size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
+
+        {summary && lastRequest ? (
+          <ol className="exTrail ltTrail" aria-label="This search">
+            <li>
+              <button type="button" className="indic" onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); inputRef.current?.focus(); }}>
+                {lastRequest.q}
+              </button>
+            </li>
+            <li>
+              <button type="button" onClick={() => { setSettingsOpen(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+                {summary.scopeLabel} · {PLAIN_MODE_LABELS[summary.matchMode]}
+              </button>
+            </li>
+            <li className="exTrailEnd">
+              <button type="button" className="exGhost" onClick={startAgain}>
+                Start again
+              </button>
+            </li>
+          </ol>
+        ) : null}
 
         <section id="lt-results" className={`ltResults${summary || loading ? " ltGlass" : ""}${phase === "done" ? " isLit" : ""}`} aria-busy={loading} aria-live="polite">
           {loading ? (
