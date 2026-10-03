@@ -668,7 +668,7 @@ export default function VyutpattiPage() {
           <div className="exExport">
             <section className="exExportBlock">
               <h3>Vyutpatti</h3>
-              <p className="vyHint">Every vishay in the order typed, with your edits: the internal table and the reader page.</p>
+              <p className="vyHint">Every vishay in the order typed, with your edits, as the internal table.</p>
               <button type="button" className="vyGo exWide" onClick={() => download()} disabled={downloading || !done.length}>
                 {downloading ? "Making the PDF…" : done.length === 1 ? "Download PDF" : `Download PDF (${done.length})`}
               </button>

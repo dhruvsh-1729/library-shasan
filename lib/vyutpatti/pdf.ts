@@ -11,6 +11,10 @@
 //
 // All the tables come first, then all the reader pages, so the reader part
 // prints as one run. Text is shaped with HarfBuzz (lib/word-list-pdf).
+//
+// For now only the internal table is exported (Dhruv, 3 Oct 2026): the reader
+// page, the layout as it will go in the book, is still being worked on. Its
+// code below is kept and runs again with { readerPages: true }.
 
 import { PDFDocument, type PDFPage, rgb } from "pdf-lib";
 import {
@@ -85,7 +89,11 @@ function cornerMark(page: PDFPage, x: number, baseline: number, size: number) {
   page.drawLine({ start: { x, y: top }, end: { x, y: top - len }, thickness: 1.1, color: BLACK });
 }
 
-export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[]) {
+/** The book-format reader pages are left out of the export until that layout is settled. */
+export const EXPORT_READER_PAGES = false;
+
+export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options: { readerPages?: boolean } = {}) {
+  const readerPages = options.readerPages ?? EXPORT_READER_PAGES;
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
   doc.setTitle(sections.length === 1 ? `${sections[0].vishay} - व्युत्पत्ति` : "व्युत्पत्ति");
@@ -166,7 +174,7 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[]) {
   }
 
   // ---------------------------------------------------------------- reader pages
-  for (const section of sections) {
+  for (const section of readerPages ? sections : []) {
     let page = doc.addPage(A4);
     const top = pageHeight - MARGIN - 40;
     // "1.1 | अचौर्य"
