@@ -1688,6 +1688,23 @@
        36
       ]
      }
+    },
+    {
+     "family": "custom",
+     "unit": "sutra",
+     "unit_label": "સૂત્ર",
+     "options": {
+      "regex": "॥\\s*(?:[०-९]{1,2}\\s*[॥।\\-–]\\s*)?([०-९]{1,2})\\s*॥(?!\\s*\\))",
+      "pageFrom": 264,
+      "pageTo": 299,
+      "restarts": false
+     },
+     "chapters": {
+      "label": "અધ્યયન",
+      "adhikars": [
+       29
+      ]
+     }
     }
    ],
    "checked": [
@@ -1698,10 +1715,11 @@
     "32:1..111 p328-355, mool block before chaya block",
     "33:1@p356 under 33. કર્મપ્રકૃતિ, अट्ठ कम्माइं वोच्छामि … ॥१॥",
     "36:22-47@p390-392 mool before chaya",
-    "36:266@p435 छत्तीसं उत्तरज्झाए … ॥२६६॥, then ઈતિ ઉત્તરાધ્યયનં સૂત્રમ્"
+    "36:266@p435 छत्तीसं उत्तरज्झाए … ॥२६६॥, then ઈતિ ઉત્તરાધ્યયનં સૂત્રમ્",
+    "r2c 29:1@p264 ॥१॥, 2@p265 ॥२॥ (73-bol list), 3@p267 ॥१॥३॥, 24@p277 ॥२२॥२४॥, 47@p287, 48@p288, 66-72@p295, 73@p296, 74-75@p298, 76@p299 ॥७४-७६॥; 30:1@p300"
    ],
-   "notes": "Uttaradhyayan part 2 (adhyayan 18-36), same layout as 083. Re-run after the isContentsPage fix: every adhyayan complete, 0 missing (54,99,60,24,50,89,27,45,53,17,36 | 37,21,111,25,61,21,266). Adhyayan 29 (Samyaktva-parakram, p264-299) left out: its prose sutras carry a dual number ॥२॥४॥ / ॥३-५॥ (bol / running sutra) and it is unclear which number a reader would use. Hence two parts: pageTo=263 → adhyayan 18-28, pageFrom=300 → 30-36.",
-   "batch": "b11"
+   "notes": "Uttaradhyayan part 2 (adhyayan 18-36), same layout as 083. Re-run after the isContentsPage fix: every adhyayan complete, 0 missing (54,99,60,24,50,89,27,45,53,17,36 | 37,21,111,25,61,21,266). Adhyayan 29 (Samyaktva-parakram, p264-299) left out: its prose sutras carry a dual number ॥२॥४॥ / ॥३-५॥ (bol / running sutra) and it is unclear which number a reader would use. Hence two parts: pageTo=263 → adhyayan 18-28, pageFrom=300 → 30-36. | r2c: adhyayan 29 (Samyaktva-parakram, p264-299) added as unit sutra, keyed on the RUNNING sutra number 1-76 (the second number of the mool closing ॥bol॥sutra॥ / ॥bol-sutra॥; sutras 1-2 carry only ॥1॥ ॥2॥). The Sanskrit chaya repeats the same running number as ॥N॥) — the regex skips those (no ')' after). 76/76 found; the Gujarati gloss ends '૧-૩.', '૨-૪.' (bol-sutra) confirming the pairing.",
+   "batch": "r2c"
   },
   {
    "key": "115",
@@ -1758,7 +1776,8 @@
     "20@p265 (head p264 '૧૯-૨૦', verse on 265)"
    ],
    "notes": "Dharmasangraha (Manavijaya) Gitarth Ganga ed., vol 1. Mool shlok printed in Devanagari digits after 'શ્લોક :-' (custom regex = Devanagari-digit danda only; the Gujarati anvayartha/shlokartha repeats use Gujarati digits, quoted verses are excluded by the continuous chain). Shloka numbering is continuous across the 5 volumes (vol1 1-20, vol2 21-29, vol3 30-59, vol4 60-61, vol5 62-65). Shlokas 1-4 precede the 'પ્રથમ અધિકાર' heading (p41) and get no adhikar; 5-20 are adhikar 1. Every unit cross-checked against the running head 'ધર્મસંગ્રહ ભાગ-૧ / પ્રથમ અધિકાર / શ્લોક-n'.",
-   "batch": "b11"
+   "batch": "b11",
+   "round2": "[सू. 59..122] p162-213 are Dharmabindu sutras quoted inside the commentary on shlok 19 (running head 'પ્રથમ અધિકાર / શ્લોક-૧૯'); not Dharmasangraha units. Round-1 decision stands unchanged."
   },
   {
    "key": "171",
@@ -2346,13 +2365,15 @@
    "key": "100",
    "action": "skip",
    "reason": "Upamiti vol1: verses are numbered per small verse passage inside the prose (dozens of local runs with no printed section number to name a chapter); vol1 also prints the pithabandha with hundreds dropped (॥१॥ after ॥१००॥). No readable book-level numbering to tie to chapters.",
-   "batch": "b07"
+   "batch": "b07",
+   "round2": "Still skip: same structure as vol 2 - dozens of local verse runs inside the prose narrative, no printed chapter/section numbers, pithabandha hundreds dropped."
   },
   {
    "key": "101",
    "action": "skip",
    "reason": "Upamiti vol2: verses are numbered per small verse passage inside the prose (dozens of local runs with no printed section number to name a chapter); vol1 also prints the pithabandha with hundreds dropped (॥१॥ after ॥१००॥). No readable book-level numbering to tie to chapters.",
-   "batch": "b07"
+   "batch": "b07",
+   "round2": "Still skip: the 247..733 run (p293-339) is the tail of one long story-verse passage numbered 1..733 from p234; vol 2 is ~28 such local verse passages inside the prose with no printed section number to name them, so there is no book-level unit to map."
   },
   {
    "key": "102",
@@ -4616,6 +4637,38 @@
       "pageTo": 260,
       "restarts": false
      }
+    },
+    {
+     "family": "custom",
+     "unit": "sutra",
+     "unit_label": "सू",
+     "options": {
+      "regex": "अ०\\s*[०-९]+\\s*[।/]\\s*(?:उ|३|४)?०\\s*[०-९]+\\s*[।/]\\s*(?:नि०[^।/\\]]*[।/]\\s*)?(?:सू|सु)०?\\s*([०-९]{1,3})",
+      "pageFrom": 50,
+      "pageTo": 385,
+      "restarts": false,
+      "maxPageGap": 50
+     },
+     "exclude": [
+      22,
+      26,
+      37,
+      45,
+      52,
+      62,
+      63,
+      69,
+      73,
+      75,
+      81,
+      85,
+      87,
+      89,
+      93,
+      95,
+      103,
+      105
+     ]
     }
    ],
    "checked": [
@@ -4626,10 +4679,18 @@
     "152@p178",
     "164-166@p192, 167-168@p193, 169-172@p194 (single-number regex avoids churni range ॥१६४-१७१॥)",
     "173@p212",
-    "196-197@p252 mool gathas before उद्देशक colophon"
+    "196-197@p252 mool gathas before उद्देशक colophon",
+    "r2c sutra 1@p55 'सुयं मे आउसं' under head सू०१",
+    "2@p74",
+    "11@p109 'संति पाणा पुढो सिता ॥११॥'",
+    "25@p133",
+    "41@p168 'जे गुणे से आवट्टे'",
+    "64@p256 'अप्पं च खलु आउं'",
+    "66@p269, 72@p287, 78@p305 'इणमेव णावकंखंति', 79@p308, 94@p356 'से तं जाणह जमहं बेमि'",
+    "rejected 22 (starts p129 'लोगं च आणाए…'), 81 (starts p315 under '॥ चउत्थो उद्देसओ ॥')"
    ],
-   "notes": "Acharang churni+vritti vol 1 (adhy 1-2). Only the niryukti gathas are mapped (continuous 1..197, running heads नि०N agree). Sutras (also ॥N॥, interleaved, 1..~105) NOT mapped: long sutras are split by commentary so the closing ॥N॥ lands 2-10 pages after the sutra starts (e.g. sutra 41 starts p168 closes p172; 64 starts ~p256 closes p266). Single-number regex is deliberate: the default danda family prefers churni range closings and put 65-66, 167-171 a page early.",
-   "batch": "b06"
+   "notes": "Acharang churni+vritti vol 1 (adhy 1-2). Only the niryukti gathas are mapped (continuous 1..197, running heads नि०N agree). Sutras (also ॥N॥, interleaved, 1..~105) NOT mapped: long sutras are split by commentary so the closing ॥N॥ lands 2-10 pages after the sutra starts (e.g. sutra 41 starts p168 closes p172; 64 starts ~p256 closes p266). Single-number regex is deliberate: the default danda family prefers churni range closings and put 65-66, 167-171 a page early. | r2c: sutras added, keyed on the running head '[श्रु०१। अ०N। उ०N। सू०N]' (OCR variants / and ३० for उ०), not on the closing ॥N॥: the head names the first sutra whose mool begins in that page's [सू०] block (or the commented sutra on a commentary-only page), so its first page is where the sutra starts. Excluded where that fails: uddeshak-opening pages carry no head (63, 69, 75, 81, 87, 95 start one+ page before their first head), and pages where the mool block runs on from ॥N-1॥ straight into sutra N (22, 26, 37, 45, 52, 62, 73, 85, 89, 93, 103, 105 — found by checking the line after ॥N-1॥ on the previous page). Numbers never in a head (16-17, 24, 30-31, 35, 38, 43, 46-47, 50, 53-54, 57-58, 60) come back as between-neighbour fills. Pages 386+ are appendices (sutra-text concordance).",
+   "batch": "r2c"
   },
   {
    "key": "068",
@@ -4646,6 +4707,45 @@
       "maxPageGap": 80,
       "restarts": false
      }
+    },
+    {
+     "family": "custom",
+     "unit": "sutra",
+     "unit_label": "सू",
+     "options": {
+      "regex": "अ०\\s*[०-९]+\\s*[।/]\\s*(?:उ|३|४)?०\\s*[०-९]+\\s*[।/]\\s*(?:नि०[^।/\\]]*[।/]\\s*)?(?:सू|सु)०?\\s*([०-९]{1,3})",
+      "pageFrom": 30,
+      "pageTo": 270,
+      "restarts": false,
+      "maxPageGap": 50
+     },
+     "exclude": [
+      112,
+      122,
+      128,
+      134,
+      140,
+      143,
+      152,
+      157,
+      162,
+      166,
+      172,
+      120,
+      129,
+      131,
+      133,
+      146,
+      148,
+      149,
+      151,
+      154,
+      158,
+      161,
+      165,
+      171,
+      176
+     ]
     }
    ],
    "checked": [
@@ -4656,10 +4756,18 @@
     "224@p106 (।। २२४ ।।)",
     "229@p135",
     "237@p161",
-    "246@p167"
+    "246@p167",
+    "r2c sutra 106@p34 'सुत्ता अमुणी, सया मुणिणो जागरंति'",
+    "123@p74 (p73 block ends ॥१२२॥ then चू०)",
+    "132@p110 'से बेमि- जे य …'",
+    "147@p169 'आवंती केआवंती लोयंसि'",
+    "150@p179",
+    "168@p245 'तमेव सच्चं णीसंकं'",
+    "169@p246",
+    "rejected 131 (mool on p98 after ॥१३०॥), 134 (starts p119 under 'बितीओ उद्देसओ')"
    ],
-   "notes": "Acharang vol 2 (adhy 3-5) niryukti 199..246, continuing vol 1 (067 ends 197). maxN=246 on purpose: churni for 246-250 is printed on p168 BEFORE the mool gathas 247-250 (p182-183), so 247-250 would be mapped 14 pages early; left missing. Sutras 106..~190 not mapped (same split-sutra problem as 067). minN=196 keeps sutra closings out.",
-   "batch": "b06"
+   "notes": "Acharang vol 2 (adhy 3-5) niryukti 199..246, continuing vol 1 (067 ends 197). maxN=246 on purpose: churni for 246-250 is printed on p168 BEFORE the mool gathas 247-250 (p182-183), so 247-250 would be mapped 14 pages early; left missing. Sutras 106..~190 not mapped (same split-sutra problem as 067). minN=196 keeps sutra closings out. | r2c: sutras 106-175 added on the running head, same method as 067. Excluded: first sutras of uddeshaks whose opening page has no head (112,122,128,134,140,143,152,157,162,166,172) and sutras whose mool begins on the previous page right after ॥N-1॥ or whose position there was unclear (120,129,131,133,146,148,149,151,154,158,161,165,171,176). Body ends p270 (sutra 176); p271+ are parishishts.",
+   "batch": "r2c"
   },
   {
    "key": "113",
@@ -4739,7 +4847,8 @@
     "every chosen page = first page carrying ॥४/N॥ (scripted cross-check)"
    ],
    "notes": "Tattvartha adhyay 4 complete (53 sutras). Before the detector fix 21 and 26 were 6 and 1 pages late; after the fix the plain config is exact.",
-   "batch": "b06"
+   "batch": "b06",
+   "round2": "Complete already: adhyay 4 has all 53 sutras. The 220..242 danda run (p199-200) and the dandaSlash run (p193-198) are parishisht 7, the Agama source passages for the sutras, not units of this book."
   },
   {
    "key": "131",
@@ -4773,7 +4882,8 @@
     "35@p454"
    ],
    "notes": "Tattvartha adhyay 1 with Siddhasena tika + Gujarati, all 35 sutras printed as ॥ १-N ॥; commentary closings are ॥ N ॥ so they are excluded. 19 missing (OCR).",
-   "batch": "b06"
+   "batch": "b06",
+   "round2": "Complete already: adhyay 1 has all 35 sutras (॥ १-N ॥)."
   },
   {
    "key": "311",
@@ -5169,7 +5279,8 @@
    "key": "130",
    "action": "skip",
    "reason": "unsure: Tattvartha Shlokavartika prints the mool sutras with the same '॥ n ॥' marker and line shape as the vartika verses, which restart at 1 for every sutra. The two series cannot be told apart with a marker regex, so no reliable sutra→page map is possible.",
-   "batch": "b08"
+   "batch": "b08",
+   "round2": "Still skip: Shlokavartika prints the mool sutras ('सम्यग्दर्शनज्ञानचारित्राणि मोक्षमार्गः ॥ १ ॥', p62; 'तत्त्वार्थश्रद्धानं सम्यग्दर्शनम् ॥ २ ॥', p88) in exactly the same line shape as the vartika verses, which restart at 1 under every sutra; the marker tool works line by line, so the two series cannot be separated."
   },
   {
    "key": "142",
@@ -5275,7 +5386,8 @@
     "10:1@p485 अथ दशमोऽध्यायः"
    ],
    "notes": "Sarvarthasiddhi: Tattvartha sutras 1-10 (33/53/39/42/42/27/39/26/47/9). Pages before 121 are the introduction, which quotes Shatkhandagama and Panini. The regex needs a double danda in front of the number, so Panini references like 'पा. म. भा. 3।1।2' cannot become sutra 1. Without it, 2:1 landed on p220 instead of p225. maxPageGap is 50 because sutra 1.8 (p139) and 1.9 (p185) are far apart. pageTo=492 drops an appendix whose ॥10॥ would have been read as sutra 10.10.",
-   "batch": "b08"
+   "batch": "b08",
+   "round2": "Complete already: all 10 adhyayas mapped with the full Digambara sutra counts (33/53/39/42/42/27/39/26/47/9); the stray ॥n॥ outside the mapped pages are the introduction's Panini/Shatkhandagama references and an appendix."
   },
   {
    "key": "300",
@@ -5303,6 +5415,30 @@
       "pageFrom": 372,
       "minN": 42
      }
+    },
+    {
+     "family": "custom",
+     "unit": "shlok",
+     "unit_label": "श्लोक",
+     "options": {
+      "regex": "श्लोक\\s*-\\s*१७\\s*,\\s*१८\\s*,\\s*([०-९]{1,2})",
+      "pageFrom": 208,
+      "pageTo": 208,
+      "restarts": false
+     }
+    },
+    {
+     "family": "custom",
+     "unit": "shlok",
+     "unit_label": "श्लोक",
+     "options": {
+      "regex": "(?:॥|।।)\\s*([०-९]{1,2})\\s*(?:॥|।।)",
+      "pageFrom": 370,
+      "pageTo": 370,
+      "minN": 41,
+      "maxN": 41,
+      "restarts": false
+     }
     }
    ],
    "checked": [
@@ -5316,10 +5452,12 @@
     "38-39@p368",
     "42@p379",
     "44@p386 एवं सांख्यमतस्यापि … ।।४४।।",
-    "every mapped unit's page carries its ।।n।। marker (script check)"
+    "every mapped unit's page carries its ।।n।। marker (script check)",
+    "r2c 19@p208 head 'श्लोक - १७, १८, १९' with the three verses",
+    "41@p370 'अन्यस्त्वकर्ता … ।।४१।।'"
    ],
-   "notes": "Shaddarshan Samuchchay with Gunaratna's tika and Gujarati anuvad, part 1 (karikas 1-44). The tika quotes hundreds of numbered verses, so the danda chain lands on quotes (2-7 and 38-42 went wrong). Instead the unit is keyed on the running head 'षड्दर्शन समुच्चय भाग - १, श्लोक - n', which matches the page of the mool verse plus its શ્લોકાર્થ. On p371 the head for 41 sits one page after verse 41 (p370), so the parts split there and 41 is dropped. Ranges such as 14-15 and 17-18 come from the heads; 16 and 19 are folded into them.",
-   "batch": "b08"
+   "notes": "Shaddarshan Samuchchay with Gunaratna's tika and Gujarati anuvad, part 1 (karikas 1-44). The tika quotes hundreds of numbered verses, so the danda chain lands on quotes (2-7 and 38-42 went wrong). Instead the unit is keyed on the running head 'षड्दर्शन समुच्चय भाग - १, श्लोक - n', which matches the page of the mool verse plus its શ્લોકાર્થ. On p371 the head for 41 sits one page after verse 41 (p370), so the parts split there and 41 is dropped. Ranges such as 14-15 and 17-18 come from the heads; 16 and 19 are folded into them. | r2c: 19 added on p208 (head 'श्लोक - १७, १८, १९'; the three verses 17-19 are printed together on p208, the old regex read only 17-18). 41 added on p370: the verse 'अन्यस्त्वकर्ता विगुणश्च भोक्ता … ।।४१।।' closes at the foot of p370 (its head only appears on p371).",
+   "batch": "r2c"
   },
   {
    "key": "301",
@@ -5333,7 +5471,7 @@
       "regex": "समुच्चय\\s*भाग\\s*-\\s*[0-9०-९]+\\s*,?\\s*श्लोक\\s*[-,]\\s*([0-9०-९]{1,3})(?:\\s*[-,]\\s*([0-9०-९]{1,3}))?",
       "maxPageGap": 150,
       "restarts": false,
-      "pageTo": 67,
+      "pageTo": 68,
       "minN": 45
      }
     },
@@ -5349,6 +5487,19 @@
       "minN": 50,
       "maxN": 86
      }
+    },
+    {
+     "family": "custom",
+     "unit": "shlok",
+     "unit_label": "श्लोक",
+     "options": {
+      "regex": "(?:॥|।।)\\s*([०-९]{1,2})\\s*(?:॥|।।)",
+      "pageFrom": 439,
+      "pageTo": 439,
+      "minN": 87,
+      "maxN": 87,
+      "restarts": false
+     }
     }
    ],
    "checked": [
@@ -5361,10 +5512,12 @@
     "68@p395 जैमिनीयाः पुनः प्राहुः …",
     "82@p432",
     "86@p437",
-    "every mapped unit's page carries its ।।n।। marker (script check)"
+    "every mapped unit's page carries its ।।n।। marker (script check)",
+    "r2c 48-49@p68 head 'श्लोक, ४८-४९' + both verses",
+    "87@p439 'लोकायतमतेऽप्येवं … ।।८७।।'"
    ],
-   "notes": "Part 2 continues part 1's numbering (45-87), using the same running-head key. 48-49 is dropped because the chain put it on p71 while the verse is on p68. 87 is dropped because the head is on p438 but the verse is on p439. In the danda family, pp.439-455 hold a list of 180 numbered items, which is why the head regex is used.",
-   "batch": "b08"
+   "notes": "Part 2 continues part 1's numbering (45-87), using the same running-head key. 48-49 is dropped because the chain put it on p71 while the verse is on p68. 87 is dropped because the head is on p438 but the verse is on p439. In the danda family, pp.439-455 hold a list of 180 numbered items, which is why the head regex is used. | r2c: 48-49 recovered: part 1 now runs to p68, where the head 'श्लोक, ४८-४९' and both verses (तत्र ज्ञानादिधर्मेभ्यो… / चैतन्यलक्षणो जीवो…) are printed. 87 added on p439 from its closing ।।८७।। (verse 'लोकायतमतेऽप्येवं…' is wholly on p439).",
+   "batch": "r2c"
   },
   {
    "key": "121",
@@ -5441,9 +5594,37 @@
   },
   {
    "key": "001",
-   "action": "skip",
-   "reason": "unsure: Panchgranthi is a compilation of several small Yashovijay works in old Gujarati. Most of its ॥n॥ numbers close prose bol/tabbo points (e.g. 5..101 on pp.32-62) or quoted gathas, not the works' own verses. The works' boundaries and units could not be pinned down reliably.",
-   "batch": "b08"
+   "action": "map",
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "pageFrom": 100,
+      "pageTo": 118,
+      "restarts": false,
+      "maxN": 12
+     },
+     "chapters": {
+      "names": [
+       "कूपदृष्टान्तविशदीकरण"
+      ]
+     }
+    }
+   ],
+   "checked": [
+    "1@p100 'नमिऊण महावीरं … कूवदिट्ठंतं ॥ १ ॥' after 'गाथामाह'",
+    "2@p101 'सपरोवयारजणगं … विण्णेओ । २ ॥'",
+    "3@p103 'संजोयणं कयं तं … ॥ ३ ॥'",
+    "4@p104 (head 'गा० ३-४')",
+    "5,6@p108 (head 'गा० ५-६')",
+    "7@p112 'णिच्छयणओ उ णिच्छई … ॥ ७ ॥'",
+    "8@p113, 9-10@p115, 11@p116",
+    "12@p118 'धुवबन्धा जमसज्झा … ॥ १२ ॥'"
+   ],
+   "notes": "Panchgranthi (Yashovijay compilation). Only the Kupdrishtant-vishadikaran prakaran (p100-139: 12 Prakrit gathas with Yashovijay's tika, running head 'विशदीकरण० गा० N') has its own verse numbering; it is mapped as one chapter named after the work. pageFrom 100 skips the mool-only listing on p98-99; maxN 12 / pageTo 118 keep the Shodashaka verses quoted in the gatha-12 tika (p122-126, ॥1-7॥) out. The 108-bol sangrah (p32-62, numbered prose bols) and the Shilangrath vivaran (local prose runs) have no gatha units and stay unmapped.",
+   "batch": "r2c"
   },
   {
    "key": "111",
@@ -5553,7 +5734,8 @@
    "key": "181",
    "action": "skip",
    "reason": "Navagranthi is nine Yashovijay works, mostly navya-nyaya prose with no unit numbering. The only ॥n॥ runs (pp.260-297) are numbered prose points in old Gujarati (Vicharbindu, Terakathiya varttik). The verse work Yatidinakritya does not show up in the OCR.",
-   "batch": "b08"
+   "batch": "b08",
+   "round2": "Still skip: the only ॥n॥ runs are the Nyayasiddhantamanjari tika's internal references (p196-273, sparse) and numbered prose bols of Vicharbindu / Terakathiya varttik in old Gujarati (p260-297); no verse work's units are in the OCR."
   },
   {
    "key": "227",
@@ -5611,6 +5793,23 @@
      "unit_label": "गाथा",
      "options": {
       "restarts": false,
+      "pageFrom": 130,
+      "pageTo": 145,
+      "minN": 596,
+      "maxN": 716,
+      "hundreds": [
+       5,
+       6,
+       7
+      ]
+     }
+    },
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "restarts": false,
       "pageFrom": 145,
       "minN": 717
      }
@@ -5618,17 +5817,23 @@
    ],
    "checked": [
     "1@p40 opening gatha",
-    "76-77@p50 Prakrit gathas ॥ ७६ ॥ ॥ ७७ ॥",
-    "84-86@p51",
+    "76-77@p50",
     "147-148@p59",
-    "188-196@p67 mool ॥८८॥… + chaya ॥१८८॥…",
     "591-595@p129",
+    "596-601@p130 mool ॥९६॥…॥६००॥ ॥६०१॥ + chaya",
+    "602-603@p130 ॥ २ ॥ ॥ ३ ॥ (mool + chaya)",
+    "604-608@p131",
+    "651-658@p137 ॥५१॥-॥५८॥",
+    "680-687@p141",
+    "700-703@p143 full numbers",
+    "704@p144 chaya ॥ ७०४ ॥",
+    "710-716@p145 mool ॥१०॥-॥१६॥, chaya closes ॥ ७१७ ॥",
     "717@p145",
-    "877-884@p168 mool ॥७७॥-॥८४॥ + chaya ॥८७७॥-॥८८४॥",
+    "877-884@p168",
     "900@p170"
    ],
-   "notes": "Vicharasara prakarana: Prakrit mool plus Sanskrit chaya, 900 gathas. After 99 the mool shows only the last two digits, while the chaya shows the full number on the same page, so the chain uses the chaya numbers. Gathas 602-716 (pp.130-144) are left unmapped: both mool and chaya there print only the last two digits, so the full number cannot be read. The page-by-page comparison of mool and chaya numbers found about 10 gathas whose Prakrit mool ends at the foot of page p while the chaya, and so the mapped page, is p+1. That page still holds the gatha's chaya. Missing 156, 304, 446 (OCR).",
-   "batch": "b08"
+   "notes": "Vicharasara: round-1 parts unchanged (1..595 pp39-130, 717..900 from p145); new middle part maps 596..716 (pp130-145) where both mool and chaya print only the last two digits: hundreds=[5,6,7] chains all 121 with no gap, and the full numbers printed on the pages (600, 601 @p130; 700-703 @p143; 704 @p144) sit on the chained pages. minN/maxN keep the three parts disjoint.",
+   "batch": "r2a"
   },
   {
    "key": "060",
@@ -6565,7 +6770,8 @@
    "key": "unnum_4876995746e6",
    "action": "skip",
    "reason": "unsure: Dharmaratna prakaran part 2 - mool gathas (approx. 4-77) drown among thousands of numbered story verses with the same ॥N॥ form; every chain tried follows the story verses (e.g. 4-54 on pp7-15).",
-   "batch": "b12"
+   "batch": "b12",
+   "round2": "Still skip: the mool gathas (37-76) can be found after '(मूलं)' / '[ मूलं ]' markers (e.g. 41@p148, 48@p246, 57-59@p302, 76@p519), but most gathas are printed in halves/quarters one bheda at a time with long commentary and stories between, and the number appears only after the last part (e.g. 39 closes p116, its first half is pages earlier; 26 closes p91 without dandas). The closing page is often not where the gatha starts, and several numbers are lost/misread (p265 '59', p364 '65' for 66)."
   },
   {
    "key": "unnum_7d81e403b64e",
@@ -6902,6 +7108,17 @@
       "minN": 12,
       "restarts": false
      }
+    },
+    {
+     "family": "custom",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "regex": "गर्हा\\s*गा\\.\\s*([०-९]{1,2})\\s*\\]",
+      "pageFrom": 62,
+      "pageTo": 62,
+      "restarts": false
+     }
     }
    ],
    "checked": [
@@ -6912,10 +7129,11 @@
     "12@p86 सेसाणं च जिणाणं…॥१२॥",
     "41@p107 इह जे मरंति जीवा…",
     "59-60@p123",
-    "70-71@p130 last gathas"
+    "70-71@p130 last gathas",
+    "r2c 11@p62 heading '[… प्रतिक्रमण-निन्दा-गर्हा गा. ११]' + 'इच्छामि भंते! उत्तमटुं पडिक्कमामि' begins; p63 head 'गा. ११'"
    ],
-   "notes": "Atur Pratyakhyan prakirnak, khand 1 (mool + 3 avachuris, running heads 'गा. n' confirm pages). Gatha 8's commentary carries a 1..78 list (p55-60) and gatha 11 is the prose passage of 63 dushdhyan (p63-85, its own 1..63 numbering), so the book is cut into 3 ranges; gatha 11 itself left unmapped (number printed only where it closes on p85). Khand 2 (stories) and khand 3/appendices not mapped.",
-   "batch": "b10"
+   "notes": "Atur Pratyakhyan prakirnak, khand 1 (mool + 3 avachuris, running heads 'गा. n' confirm pages). Gatha 8's commentary carries a 1..78 list (p55-60) and gatha 11 is the prose passage of 63 dushdhyan (p63-85, its own 1..63 numbering), so the book is cut into 3 ranges; gatha 11 itself left unmapped (number printed only where it closes on p85). Khand 2 (stories) and khand 3/appendices not mapped. | r2c: gatha 11 (the prose pratikraman passage) added at p62, keyed on its section heading '[… प्रतिक्रमण-निन्दा-गर्हा गा. ११]' where the mool begins (running head p63 'गा. ११'); it runs to p85. Pages 135-329 are khand 2 (stories, no units) and p330-398 khand 3 = parishishts: 1 re-prints the same 70 mool gathas with balavabodh (duplicate, not added), 2 trishashti durdhyan, 3-4 the separate Laghu-Aurapacchakkhanam texts, 6 alphabetical index, 7 Mulachar comparison gathas keyed 'आतुर० गा० n'. None are new units of this book.",
+   "batch": "r2c"
   },
   {
    "key": "103",
@@ -7038,7 +7256,8 @@
     "K3 63@p205"
    ],
    "notes": "Chatuhsharan prakirnak (63 gathas) printed three times, once per khand: khand 1 brihadvritti p67-122, khand 2 Gunaratna's vritti p126-176, khand 3 avachuri + chaya + Gujarati p180-205; mapped as adhikar = khand. Page ranges skip the balavabodh/front-matter verses on p61-66, p125, p179 that otherwise open fake chapters. K3 gatha 1 (p180) left out: its number only survives in the p181 commentary repeat. Appendices (p206+) not mapped.",
-   "batch": "b10"
+   "batch": "b10",
+   "round2": "234..301 p338-340 is परिशिष्ट-१२, another text (Aradhana/Chatuhsharan-type verses with their own numbering). Round-1 decision stands unchanged."
   },
   {
    "key": "119",
@@ -7165,21 +7384,51 @@
       "startAny": false,
       "bridgeMax": 10
      }
+    },
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "pageFrom": 207,
+      "minN": 1002,
+      "maxN": 1599,
+      "hundreds": [
+       10,
+       11,
+       12,
+       13,
+       14,
+       15
+      ],
+      "hundredsFrom": 207,
+      "restarts": false,
+      "bridgeMax": 10
+     }
     }
    ],
    "checked": [
-    "1@p10 …भव्वाण जाणणनिमित्तं । पवयणसारुद्धारं गुरुवएसा समासेणं (gatha 1 after the vritti's mangala)",
-    "53-61@p13 dvar-list gathas",
+    "1@p10 …पवयणसारुद्धारं गुरुवएसा समासेणं",
+    "53-61@p13",
     "81@p19",
     "303@p63",
-    "313@p65",
     "421@p76",
     "650@p132",
-    "968@p200 ॥९६७॥ १५०॥",
-    "1001@p207"
+    "968@p200",
+    "1001@p207 …विद्धत्थं होइ लोणाई॥१००१॥",
+    "1002-1003@p207 mool ॥ २ ॥ ॥ ३ ॥ after ॥१००१॥",
+    "1038-1060@p214 mool block ॥३५॥…॥६०॥",
+    "1099-1101@p226 full numbers ॥१०९९॥ ॥११००॥ ॥११०१॥",
+    "1200@p239 ॥१२००॥",
+    "1251-1275@p247 mool block of dvara 216 (॥५१॥-॥७५॥) before its vritti pp248-253",
+    "1300@p259 ॥१३००॥",
+    "1400@p282 ॥१४००॥",
+    "1500@p295 ॥१५००॥",
+    "1571@p304 पणनउइ सहस्साई … ॥७१॥ opens dvara 272",
+    "1597-1599@p308 ॥ ९७ ॥ ॥ ९८ ॥ जुम्मं, ॥ १५९९ ॥ last, colophon"
    ],
-   "notes": "Pravachan Saroddhar (Siddhasena vritti), gathas 1-1001 only. After 1000 the edition prints only the last two digits (॥ ४ ॥ for 1004, full number only at ११००, १२००), which the detector cannot turn into 1002-1599 — those are left unmapped. 304-312 lost (p64 trips the page-range contents filter); 965 of 1001 found.",
-   "batch": "b10"
+   "notes": "Pravachan Saroddhar (Siddhasena vritti), 1599 gathas. Part 1 unchanged from round 1 (1-1001). Part 2: above 1000 the edition prints the last two digits (॥ ४ ॥ = 1004) with full numbers at 1099-1101, 1200, 1294, 1300, 1400, 1500, 1599; hundreds=[10..15] from p207 chains 1002..1599 (601 found; 1108, 1160, 1387, 1388 lost) and all 12 full-number occurrences sit on the chained page. Mool gathas are often printed in a block before the vritti (e.g. 1251-1275 on p247, 1518-1551 on p298); the block page is used, as in round 1. minN=1002 keeps the parts disjoint.",
+   "batch": "r2a"
   },
   {
    "key": "240",
@@ -8032,6 +8281,25 @@
        37
       ]
      }
+    },
+    {
+     "family": "danda",
+     "unit": "shlok",
+     "unit_label": "श्लोक",
+     "options": {
+      "pageFrom": 577,
+      "pageTo": 585,
+      "minN": 800,
+      "restarts": false,
+      "bridgeMax": 6,
+      "maxPageGap": 40
+     },
+     "chapters": {
+      "label": "सर्ग",
+      "adhikars": [
+       30
+      ]
+     }
     }
    ],
    "checked": [
@@ -8043,10 +8311,11 @@
     "s28:1072@p519 colophon 'अष्टाविंशः…'",
     "s32:1103@p661 colophon",
     "s34:1@p678 / 415@p699",
-    "s37:75@p725"
+    "s37:75@p725",
+    "r2c 30:804@p577, 820@p578, 850@p579, 900@p581, 930@p583, 981@p585 (last before 'इति … त्रिंशत्तमः सर्गः', s31 1 opens same page)"
    ],
-   "notes": "Lokaprakash (Vinayavijay) 37 sargas, each numbered from 1; one part per sarga cut on the 'अथ … सर्गः' / colophon pages, adhikar = sarga. Single chain made fake chapters inside s7, s20, s28-s32, s37. s7 11-26 lost (p150 trips the page-range contents filter). ~120 missing in ~14,000.",
-   "batch": "b10"
+   "notes": "Lokaprakash (Vinayavijay) 37 sargas, each numbered from 1; one part per sarga cut on the 'अथ … सर्गः' / colophon pages, adhikar = sarga. Single chain made fake chapters inside s7, s20, s28-s32, s37. s7 11-26 lost (p150 trips the page-range contents filter). ~120 missing in ~14,000. | r2c: sarga 30 tail 804-981 (p577-585) added as a second s30 part; 759-803 (p575-576) stay unmapped because those pages carry '१-२-३' combination tables and trip the contents-page filter.",
+   "batch": "r2c"
   },
   {
    "key": "281",
@@ -8118,7 +8387,7 @@
       "pageTo": 190,
       "restarts": false,
       "startAny": false,
-      "bridgeMax": 6,
+      "bridgeMax": 8,
       "maxPageGap": 40
      },
      "chapters": {
@@ -8213,10 +8482,11 @@
     "s5:1@p191",
     "s6:1@p218",
     "s7:1@p237",
-    "s8:1@p268"
+    "s8:1@p268",
+    "r2c 4:1196@p179, 1199-1227@p180 (head 'श्लो० ११७०-१२२७'), 1250@p181, 1345-1374@p185, 1452@p189, 1492@p190 (head 'श्लो० १४५२-१४९२'); 5:1@p191 'पञ्चमः सर्गः'"
    ],
-   "notes": "Vairagyarati (Yashovijay) 8 sargas, numbered per sarga; parts cut at the sarga headings (p52 Gujarati preface no longer opens a fake chapter 1). Sarga 4 1190-~1230 on p180-190 lost (numbers not in OCR). ~50 missing in ~5,100.",
-   "batch": "b10"
+   "notes": "Vairagyarati (Yashovijay) 8 sargas, numbered per sarga; parts cut at the sarga headings (p52 Gujarati preface no longer opens a fake chapter 1). Sarga 4 1190-~1230 on p180-190 lost (numbers not in OCR). ~50 missing in ~5,100. | r2c: sarga 4 actually runs to 1492 (p179-190, running heads 'श्लो० ११७०-१२२७', 'श्लो० १४५२-१४९२'; sarga 5 opens p191). 1190-1195 are OCR'd as ॥१९९०॥..॥१९९५॥ on p179, which broke the chain; bridgeMax 8 for the s4 part steps over them (they come back as fills on p179).",
+   "batch": "r2c"
   },
   {
    "key": "299",
@@ -8449,6 +8719,574 @@
    "action": "skip",
    "reason": "kosh (dictionary): headword entries and verses quoted from other works; no numbering of its own",
    "batch": "b00"
+  },
+  {
+   "key": "284",
+   "action": "map",
+   "document_custom_id": "Shrirang_Library_5-9-2024_OCR__ed__284_vyavahar_sutram_part_03_020936_hr3.pdf__OCR_fa2885a32a84",
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "ગાથા",
+     "options": {
+      "bridgeMax": 6,
+      "restarts": false
+     },
+     "exclude": [
+      1768,
+      2253,
+      2254,
+      2376,
+      2377
+     ]
+    }
+   ],
+   "checked": [
+    "1711@p29 first (after sutras ॥१॥-॥८॥ of uddeshaka 4)",
+    "1800@p98",
+    "1804-1805@p100",
+    "2000@p235",
+    "2078-2079@p300",
+    "2424-2426@p534 last",
+    "PDF text layer (pdftotext of the served PDF) contains the number on the mapped page for 694/702 read units; the 3 others are text-layer misses with the running head range covering them (1746@p55 head 1743-1749)"
+   ],
+   "notes": "Vyavahar bhashya vol 3, gathas 1711..2426 continuing 283 (ends 1710); same unit/label as 283/287, adhikar null. ALIGNMENT: spreadsheet OCR page p = PDF page p for 524/535 pages (token match vs the PDF's own text layer; printed labels 'NNN (A/B)' agree on 496/507), but a few OCR pages carry the text of a NEIGHBOURING PDF page (OCR 70=PDF 71, 413=414, 506=507, 262=261, 348=347, 420=419, 519=516). Units that landed on a forward-shifted page are excluded (1768 is on PDF 71, 2253-2254 on 414, 2376-2377 on 507); the backward duplicates only lose that page's own gathas (filled between neighbours or missing). 14 numbers filled between neighbours.",
+   "batch": "r2a"
+  },
+  {
+   "key": "285",
+   "action": "map",
+   "document_custom_id": "Shrirang_Library_5-9-2024_OCR__ed__285_vyavahar_sutram_part_04_020937_hr3.pdf__OCR_3691d22abd69",
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "ગાથા",
+     "options": {
+      "bridgeMax": 6,
+      "restarts": false
+     }
+    }
+   ],
+   "checked": [
+    "2427@p31 first",
+    "2600@p135",
+    "2916-2921@p339 (running head)",
+    "3000@p387",
+    "3024@p401",
+    "3361@p605 last",
+    "PDF text layer has the number on the mapped page for 925/928 read units; misses 2918,2919@339 and 3025@401 sit inside the printed running-head range of that page"
+   ],
+   "notes": "Vyavahar bhashya vol 4, gathas 2427..3361 continuing 284; OCR page = PDF page for 604/605 pages (OCR 498 duplicates PDF 497; no unit lands there wrongly). 7 numbers filled between neighbours.",
+   "batch": "r2a"
+  },
+  {
+   "key": "286",
+   "action": "map",
+   "document_custom_id": "Shrirang_Library_5-9-2024_OCR__ed__286_vyavahar_sutram_part_05_020938_hr3.pdf__OCR_ece2f64f99c5",
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "ગાથા",
+     "options": {
+      "bridgeMax": 6,
+      "restarts": false
+     }
+    }
+   ],
+   "checked": [
+    "3362@p21 first",
+    "3500@p107",
+    "3506-3508@p112",
+    "3809@p314 last (287 starts 3810)",
+    "PDF text layer has the number on the mapped page for 444/445 read units (3508@p112 is in the OCR and the running head 3504-3510)"
+   ],
+   "notes": "Vyavahar bhashya vol 5, gathas 3362..3809 between 285 and 287. OCR page = PDF page except OCR 8/42/46/90/92 which repeat the previous PDF page (only lose own gathas: 3392, 3399, 3478 filled between neighbours). The second danda series 1..46 is the mool sutras, not mapped (siblings map bhashya gathas only).",
+   "batch": "r2a"
+  },
+  {
+   "key": "369",
+   "action": "map",
+   "supplement": true,
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "shlok",
+     "unit_label": "શ્લોક",
+     "options": {
+      "pageTo": 55,
+      "restarts": false
+     }
+    }
+   ],
+   "checked": [
+    "1@p14 नाम सज्जन इति त्रिवर्णकं … खलोक्तयः ।।१।। after 'શ્લોક :-'",
+    "4@p18",
+    "7@p22",
+    "10@p25",
+    "13@p29",
+    "19@p38",
+    "22@p41",
+    "25@p44",
+    "28@p49",
+    "31@p53",
+    "32 last, contents: shlok 32 printed 41-43 = p54-56"
+   ],
+   "notes": "Sajjanastuti dvatrimshika (no. 32 of Yashovijaya's Dvatrimshad-dvatrimshika): 32 shlokas p14-54. pageTo=55 keeps out the following prashasti of the whole Dvatrimshad-dvatrimshika (its own verses 1-10, p57-67). Index holds one junk 'other' row only.",
+   "batch": "r2a"
+  },
+  {
+   "key": "229",
+   "action": "map",
+   "supplement": true,
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "restarts": false,
+      "pageTo": 41,
+      "maxN": 4
+     }
+    },
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "restarts": false,
+      "maxPageGap": 45,
+      "pageFrom": 43,
+      "minN": 5,
+      "pageTo": 232,
+      "maxRange": 0
+     }
+    }
+   ],
+   "checked": [
+    "1@p25 पणमिय पासजिणिंदं भासरहस्सं … ।।१।। after 'गाथा :-'",
+    "3@p33",
+    "4@p41",
+    "5@p47",
+    "7@p52",
+    "9@p60",
+    "13@p72",
+    "21@p121",
+    "22@p122 जणवयसंमयठवणा… ।।२२।।",
+    "25@p136",
+    "31@p163",
+    "35@p184 आहरणे तद्देसे … ।। ३५ ।। (chaya on p185)",
+    "36@p222 running head ગાથા-૩૬",
+    "37@p226 एवं सच्चा भासा … ।।३७।| last of part 1"
+   ],
+   "notes": "Bhasha Rahasya prakaran part 1 = stabak 1, gathas 1-37 (numbered straight through the work; part 2 continues at 38). Each gatha printed after 'गाथा :-' then chaya. Split at p42 because the vritti on p42 quotes verses ।।५।।-।।९।| that would otherwise take 5-9; maxRange 0 stops a '२१-२२' commentary close pulling 22 onto p121. All 37 pages equal the index's junk 'other' rows (unit other, adhikar 1), which already carry the same gatha numbers/pages; supplement adds them as proper gatha rows (adhikar null), so the extractor will show both until the 'other' rows are dropped.",
+   "batch": "r2a"
+  },
+  {
+   "key": "230",
+   "action": "map",
+   "supplement": true,
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "restarts": false,
+      "minN": 38,
+      "pageTo": 205
+     }
+    }
+   ],
+   "checked": [
+    "38-39@p24 सच्चाए विवरीया … ।।३८ ।। + ।।३९।।",
+    "43@p35",
+    "48@p42",
+    "53@p51",
+    "56-57@p58 both verses",
+    "59@p68",
+    "64@p76 ।।६४।|",
+    "70-71@p90",
+    "80@p126 running head ગાથા-૮૦",
+    "85@p140",
+    "90@p157",
+    "95@p180",
+    "100@p196",
+    "101@p204 last"
+   ],
+   "notes": "Bhasha Rahasya part 2 = stabaks 2-5, gathas 38-101 continuing part 1 (229 ends 37). pageTo 205 drops the prashasti verses ।।१।।-।।९।| (p206-208). 62 markers cover 64 numbers (56-57 and 70-71 printed as pairs). Pages equal the index's 'other' rows except 38-39 (p24, index p25) and 64 (p76, index p77) where the verse is on the earlier page.",
+   "batch": "r2a"
+  },
+  {
+   "key": "252",
+   "action": "map",
+   "supplement": true,
+   "parts": [
+    {
+     "family": "custom",
+     "unit": "sutra",
+     "unit_label": "सूत्र",
+     "options": {
+      "regex": "^\\s*'?[\\u0900-\\u097F ]*णं'?\\s*।।\\s*([०-९]+)\\s*।।\\s*$",
+      "restarts": false,
+      "maxPageGap": 60
+     }
+    }
+   ],
+   "checked": [
+    "1@p96 सूत्र :- 'नमुत्थु णं अरिहंताणं' ।।१।।",
+    "2@p146 भगवंताणं ।।२।।",
+    "3@p150 आइगराणं",
+    "4@p169 तित्थयराणं",
+    "5@p181 सयंसंबुद्धाणं",
+    "7@p209 पुरिससीहाणं",
+    "9@p232 पुरिसवरगन्धहत्थीणं",
+    "11@p249 लोगनाहाणं",
+    "12@p262 लोगहिआणं",
+    "14@p289 लोगपज्जोअगराणं ।।१४।।"
+   ],
+   "notes": "Lalitavistara part 1 (Gitarth Ganga): Namutthunam padas 1-14, each printed once on its own line after 'सूत्र :-' as '<pada>णं ।।n।।' (all 14 'सूत्र :-' blocks in the book match the series 1:1). Same unit/label/adhikar null as sibling 253 (padas 15-33). The danda series of the book is quoted verses (Panjika mangala, Yogadrishti quotes) and is not used.",
+   "batch": "r2a"
+  },
+  {
+   "key": "254",
+   "action": "map",
+   "supplement": true,
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "pageFrom": 115,
+      "pageTo": 159,
+      "maxN": 7,
+      "restarts": false,
+      "startAny": false,
+      "maxPageGap": 40
+     },
+     "chapters": {
+      "names": [
+       "लोगस्स सूत्र"
+      ]
+     }
+    },
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "pageFrom": 160,
+      "pageTo": 211,
+      "maxN": 4,
+      "restarts": false,
+      "startAny": false,
+      "maxPageGap": 40
+     },
+     "chapters": {
+      "names": [
+       "पुक्खरवरदी सूत्र"
+      ]
+     }
+    },
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "pageFrom": 212,
+      "pageTo": 242,
+      "maxN": 3,
+      "restarts": false,
+      "startAny": false,
+      "maxPageGap": 40
+     },
+     "chapters": {
+      "names": [
+       "सिद्धाणं बुद्धाणं सूत्र"
+      ]
+     }
+    },
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "गाथा",
+     "options": {
+      "pageFrom": 253,
+      "pageTo": 260,
+      "maxN": 2,
+      "restarts": false,
+      "startAny": false
+     },
+     "chapters": {
+      "names": [
+       "जय वीयराय सूत्र"
+      ]
+     }
+    }
+   ],
+   "checked": [
+    "लोगस्स 1@p115 लोगस्स उज्जोअगरे … केवली ।।१।।",
+    "लोगस्स 2-3@p126 (सूत्र :- उसभमजिअं … ।।२।। … ।।३।।)",
+    "लोगस्स 4@p127 … वद्धमाणं च ।।४।।",
+    "लोगस्स 5@p128",
+    "लोगस्स 6@p136",
+    "लोगस्स 7@p155 चंदेसु निम्मलयरा",
+    "पुक्खरवरदी 1@p160, 2@p178, 3@p180, 4@p183 सिद्धे भो ! पयओ …",
+    "सिद्धाणं 1@p212, 2@p220 जो देवाण वि देवो, 3@p222 एक्को वि णमोक्कारो",
+    "जय वीयराय 1-2@p253"
+   ],
+   "notes": "Lalitavistara part 3: the gatha-numbered sutras it comments on, each printed after 'सूत्र :-': Logassa 1-7, Pukkharvaradi 1-4, Siddhanam Buddhanam 1-3 (the vritti comments on the first three only), Jay Viyaray 1-2. Each sutra is its own chapter (parent_path = sutra name, adhikar null). The unnumbered sutras (अरिहंतचेइयाणं p24, अन्नत्थ p83, वेयावच्चगराणं p243) have no units. pageTo/maxN per part keep out the commentary's quoted verses (e.g. ।।२।।-।।५।। on p289).",
+   "batch": "r2a"
+  },
+  {
+   "key": "195",
+   "action": "map",
+   "supplement": true,
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "ગાથા",
+     "options": {
+      "minN": 1656,
+      "restarts": false
+     },
+     "chapters": {
+      "prefix": "ભાગ ૭ અનુક્રમણિકા (વસ્તુ ૫)"
+     }
+    }
+   ],
+   "checked": [
+    "1656@p377 मोहेण य मोहित्ता… ॥१६५६॥ (head ગાથા ૧૬૫૫-૧૬૫૬)",
+    "1657@p378",
+    "1658@p380 अबुहो जाईए… ॥१६५८॥ (head ગાથા ૧૬૫૮)",
+    "1679-1680@p407 both verses on page (head ૧૬૭૯-૧૬૮૦)",
+    "1690@p422/423 head ૧૬૮૯-૧૬૯૦",
+    "1700@p437 तेलुक्वमत्थअत्थो… ॥१७००॥",
+    "1706@p444",
+    "1713@p455-456",
+    "1714@p457 head ગાથા ૧૭૧૪",
+    "1715@p458 सीसाण हिअट्ठाए सत्तरस सयाणि… ॥१७१५॥ then ग्रंथाग्रं (last gatha of Panchvastuk)"
+   ],
+   "notes": "Panchvastuk part 7: index stops at 1655 (p376); the body runs on to the final gatha 1715 on p458 under running heads 'ગાથા NNNN'. Adds 1656-1715 (60 rows, all read) to the index's own chapter (adhikar null, parent 'ભાગ ૭ અનુક્રમણિકા (વસ્તુ ૫)'). Index row 1655 has page_end 460 (over-wide; the builder does not touch index rows).",
+   "batch": "r2b"
+  },
+  {
+   "key": "307",
+   "action": "map",
+   "supplement": true,
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "ગાથા",
+     "options": {
+      "pageFrom": 150
+     },
+     "chapters": {
+      "label": "અધિકાર",
+      "prefix": "ભાગ ૩ અનુક્રમણિકા",
+      "adhikars": [
+       6,
+       7,
+       8,
+       9,
+       10,
+       11
+      ]
+     }
+    }
+   ],
+   "checked": [
+    "6:1@p150 heading '૬. શ્રાવક વ્રત અધિકાર', पाणिवह… ॥ १ ॥",
+    "6:80@p194 जूया जलोदरत्तं… ॥ ८० ॥",
+    "6:155@p231 last of adhikar 6",
+    "7:1@p232 heading '૭. સંજ્ઞા અધિકાર'",
+    "7:9@p234",
+    "8:1@p235 heading '૮. લેશ્યા અધિકાર'",
+    "8:31@p246",
+    "9:1@p248 heading '૯. ધ્યાન અધિકાર'",
+    "9:50@p262 जियरागदोसमोहा… ॥ ५० ॥",
+    "9:109@p278",
+    "10:1@p279 heading '૧૦. મિથ્યાત્વ અધિકાર'",
+    "10:50-51@p299",
+    "11:1@p300 heading '૧૧. આલોચના અધિકાર'",
+    "11:70@p334",
+    "11:140@p351, p352 colophon (translation finished)"
+   ],
+   "notes": "Sambodh Prakaran part 3: the index maps only adhikars 3-5 (to p149) but the volume prints adhikars 6-11 in full (p150-351), each restarting at 1 under a numbered heading; Prakrit verse closes with ॥ n ॥ (chaya repeat follows on the same page). 497 rows, 0 missing, 0 unverified. Same unit/label/prefix as the index; chapter word written 'અધિકાર' (the index's own rows read 'પઅધિકાર 3/4/5', an index typo — no collision since 6-11 are new adhikars). Continuous whole-book serials (११२१, १२७६ …) are not used.",
+   "batch": "r2b"
+  },
+  {
+   "key": "077",
+   "action": "map",
+   "supplement": true,
+   "parts": [
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "ગાથા",
+     "options": {
+      "pageFrom": 230,
+      "pageTo": 267,
+      "minN": 1240,
+      "maxN": 1272,
+      "restarts": false
+     },
+     "chapters": {
+      "prefix": "ભાગ ૫ અનુક્રમણિકા"
+     }
+    },
+    {
+     "family": "danda",
+     "unit": "gatha",
+     "unit_label": "ગાથા",
+     "options": {
+      "pageFrom": 296,
+      "pageTo": 397,
+      "restarts": false
+     },
+     "chapters": {
+      "names": [
+       "ભાગ ૫ અનુક્રમણિકા › ધ્યાનશતક"
+      ]
+     },
+     "exclude": [
+      1
+     ]
+    }
+   ],
+   "checked": [
+    "1248@p241 पक्खियचाउम्मासिय… ॥१२४८॥",
+    "1249@p241 भत्तपरिण्णा य तहा… ॥१२४९॥ (commentary closes on p242 where index 1250 starts)",
+    "Dhyana 2@p299 जं थिरमज्झवसाणं… ॥२॥",
+    "Dhyana 8@p307, 10@p309",
+    "Dhyana 30@p326 (head ધ્યા.–૩૦)",
+    "Dhyana 50@p350",
+    "Dhyana 83-84@p386",
+    "Dhyana 104@p396, 105 closes p397 with ग्रन्थाग्रं",
+    "Dhyana 1 is on p296 (head 'ધ્યા.–૧', वीरं सुक्कझाणग्गि… ॥१॥) but the chain puts it on p299 (the tika's closing repeat), so it is excluded"
+   ],
+   "notes": "Avashyak Niryukti part 5. (a) niryukti gathas 1248-1249, missing from the index, both on p241. (b) Dhyanashatak (105 gathas, embedded in Haribhadra's vritti on the pratikraman sutra 'चउहिं झाणेहिं', running heads '(ધ્યા.-n)') p296-397, mapped as its own chapter 'ભાગ ૫ અનુક્રમણિકા › ધ્યાનશતક' (adhikar null) so its 1..105 never mix with the niryukti 1056-1272. 2..105 mapped (9 and 89 filled between neighbours, unverified); 1 excluded (wrong page). Caveat: the builder's last-unit rule gives Dhyana 105 page_end 418 (appendix pages carry '१०५'); the start page is right. Pages 258-295 (Chattari mangalam / Iriyavahi etc. sutras, un-numbered '(सू०)') and p398-418 (parishishta / tippanak) not mapped.",
+   "batch": "r2b"
+  },
+  {
+   "key": "020",
+   "action": "no_change",
+   "reason": "Pages 322-362 are परिशिष्ट-२: a separate listing of quoted Prakrit gathas 636-743 with chaya (another work's numbering); the body (index 1-297, to p315) is complete.",
+   "batch": "r2b"
+  },
+  {
+   "key": "271",
+   "action": "no_change",
+   "reason": "Pages 598-673 are an appendix: 'નિર્યુક્તિની ગાથાઓ … ટીકામાં લીધી નથી' — Avashyak niryukti gathas (146-600, own numbering) left out of Maladhari's tika, with brief Gujarati meaning. Not Visheshavashyak bhashya numbering; index 1-1548 is complete.",
+   "batch": "r2b"
+  },
+  {
+   "key": "017",
+   "action": "no_change",
+   "reason": "Index is complete for all three texts (Upasak adhyayan 1-10, Antagad varga 1-8, Anuttar 1-65, body ends p216 'नवममंगं समत्तं'). Danda hits p24-35 are front matter and p217-278 are parishishtas (churni story, shravakachar, word index).",
+   "batch": "r2b"
+  },
+  {
+   "key": "090",
+   "action": "no_change",
+   "reason": "Index 774-1040 has no gaps; the 1..350 run (p245-260) is a story's Prakrit verses quoted inside the commentary on gatha 975, and later short runs are quoted/appendix verses.",
+   "batch": "r2b"
+  },
+  {
+   "key": "141",
+   "action": "no_change",
+   "reason": "The 3..32 / 1..32 runs p62-92 are the 32 antya-karikas of the Tattvartha bhashya and the prashasti, printed inside the commentary on sutra 10-7 (running head 'સૂત્ર-૭'); not sutras. Index 10:1-7 is complete.",
+   "batch": "r2b"
+  },
+  {
+   "key": "014",
+   "action": "no_change",
+   "reason": "Index 313-606 is complete to p333 (sutra 606, end of text). Pages 334-558 are parishishtas: word/gatha indices, Shatkhandagam/Tiloyapannatti extracts (p492-548 '॥१४६॥' etc.), Katantra vyakarana (p530+).",
+   "batch": "r2b"
+  },
+  {
+   "key": "015",
+   "action": "no_change",
+   "reason": "Index 1-312 complete to p455. The [सू० 1..194] hits p478-489 are the variant-readings (पाठभेद) appendix keyed to sutra numbers; p512-531 are [हा० n] notes on Haribhadra's vivriti. All appendix.",
+   "batch": "r2b"
+  },
+  {
+   "key": "332",
+   "action": "no_change",
+   "reason": "Index 1-234 complete to p340 (end of vibhag 1 text). Pages 341-508 are an appendix of full quotations ('[पृ०२ पं०१२] “…”') the tika cites — Visheshavashyak, Brihatkalpa bhashya (॥१३८२-१४००॥) etc. Note: index rows 233/234 carry page_end 508 (over-wide).",
+   "batch": "r2b"
+  },
+  {
+   "key": "097",
+   "action": "no_change",
+   "reason": "'3927..3949' p324-343 are Brihatkalpa-type verses quoted in the commentary of gatha 116-118 (running head 'ગાથા-૧૧૬/૧૧૮'). Index 52-118 is complete.",
+   "batch": "r2b"
+  },
+  {
+   "key": "222",
+   "action": "no_change",
+   "reason": "Index 61-69 complete; the short danda runs are commentary/quoted verses.",
+   "batch": "r2b"
+  },
+  {
+   "key": "223",
+   "action": "no_change",
+   "reason": "gathaLabel 70..104 p11-24 is the preface's summary ('શ્લોક-NNમાં …'), not the verses; index 70-104 complete.",
+   "batch": "r2b"
+  },
+  {
+   "key": "224",
+   "action": "no_change",
+   "reason": "gathaLabel 32..60 p20-24 is the preface's summary of each shloka; index 30-60 complete.",
+   "batch": "r2b"
+  },
+  {
+   "key": "225",
+   "action": "no_change",
+   "reason": "gathaLabel 2..29 p25-37 is the preface's summary ('શ્લોક-૧૩માં …'); index 1-29 complete.",
+   "batch": "r2b"
+  },
+  {
+   "key": "236",
+   "action": "no_change",
+   "reason": "Index 6060-6490 is the end of the Brihatkalpa bhashya (p217). Pages 218-424 are the closing tika, concordances and gatha/word indices (number tables), and p1-111 front matter / sutra-gatha concordance. Nothing to add.",
+   "batch": "r2b"
+  },
+  {
+   "key": "306",
+   "action": "no_change",
+   "reason": "Index adhikar 2 1-352 runs to p166 (end of Guru adhikar). Pages 167-342 are headed 'પરિશિષ્ટ' — topic explanations with quotes from Dashavaikalik niryukti, Pindavishuddhi etc. Note index row 352 has page_end 342 (over-wide).",
+   "batch": "r2b"
+  },
+  {
+   "key": "x007de34d61",
+   "action": "no_change",
+   "reason": "Nandi: index covers sutras 1-120 and gathas 1-78, 83-87 to p503 (end of text + prashasti p505-506). Pages 507-638 are appendices (quotation sources, indices). Gathas 79-82 are not found as markers anywhere, so they cannot be added from the page.",
+   "batch": "r2b"
+  },
+  {
+   "key": "116",
+   "action": "no_change",
+   "reason": "Jambudvip part 2: index vakshaskar 4-7 complete to sutra 214 p470 ('इति श्रीजम्बूद्वीपप्रज्ञप्तिसूत्रं समाप्तम्' p473). Pages 474-604 are parishishtas (quotation index, name index). Note index row 7:214 has page_end 604.",
+   "batch": "r2b"
+  },
+  {
+   "key": "105",
+   "action": "no_change",
+   "reason": "Kalpa Sutra: index covers mool 1-291 (p24-103), churni and tippanak to p158. Pages 159-255 are the prashasti and a Gujarati translation that reprints the same sutra numbers at line starts — a translation's separate rendering, not new units.",
+   "batch": "r2b"
+  },
+  {
+   "key": "144",
+   "action": "no_change",
+   "reason": "Index covers the 31 sambandh-karikas (p62-157). Pages 158-204 are Siddhasena's tika on the same karikas, restating karikas 7-31 (p186-196) — a second commentary's repeat (karikas 1-6 under it are not printed with numbers; the index's 'श्रीसिद्धसेनगणिप्रणीता 1-5' rows at p158-159 are actually that tika's mangala verses). p204+ is a Gujarati eulogy and parishishtas. Not adding a duplicate karika set.",
+   "batch": "r2b"
   }
  ]
 }

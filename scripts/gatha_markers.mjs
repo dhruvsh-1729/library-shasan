@@ -100,7 +100,16 @@ export const DEFAULTS = { maxStep: 3, stepCost: 0.4, maxPageGap: 25, restartCost
 export function detectUnits(pages, printedPageOf = new Map(), family = "danda", options = {}) {
   const o = { ...DEFAULTS, ...options };
   // A pothi prints its page number between dandas in the head or foot.
-  const all = (o.occurrences ?? occurrences(pages, family, o.regex, o.maxRange)).filter((x) => x.n >= o.minN && (o.maxN == null || x.n <= o.maxN)
+  let source = o.occurrences ?? occurrences(pages, family, o.regex, o.maxRange);
+  // hundreds: [10, 11, …] for editions that print only the last two digits
+  // ("॥ ४ ॥" for 1004): each such number is offered as every listed hundred and
+  // the chain keeps the reading that continues the numbering.
+  if (o.hundreds && !o.occurrences) {
+    source = source.flatMap((x) => (x.n < 100 && (o.hundredsFrom == null || x.page >= o.hundredsFrom)
+      ? [x, ...o.hundreds.map((h) => ({ ...x, n: h * 100 + x.n, to: h * 100 + x.to }))]
+      : [x]));
+  }
+  const all = source.filter((x) => x.n >= o.minN && (o.maxN == null || x.n <= o.maxN)
     && (o.pageFrom == null || x.page >= o.pageFrom) && (o.pageTo == null || x.page <= o.pageTo)
     && !(x.edge && String(printedPageOf.get(x.page)) === String(x.n)));
   const occ = all.filter((x, i) => !(i > 0 && all[i - 1].n === x.n && all[i - 1].page === x.page && all[i - 1].chap === x.chap));
@@ -175,6 +184,9 @@ export function detectUnits(pages, printedPageOf = new Map(), family = "danda", 
  */
 export function seriesList(pages, printedPageOf, family, options = {}, count = 4) {
   let pool = occurrences(pages, family, options.regex, options.maxRange ?? DEFAULTS.maxRange);
+  if (options.hundreds) pool = pool.flatMap((x) => (x.n < 100 && (options.hundredsFrom == null || x.page >= options.hundredsFrom)
+    ? [x, ...options.hundreds.map((h) => ({ ...x, n: h * 100 + x.n, to: h * 100 + x.to }))] : [x]));
+  pool = pool.map((x, i) => ({ ...x, id: i }));
   const out = [];
   for (let k = 0; k < count && pool.length; k += 1) {
     const units = detectUnits(pages, printedPageOf, family, { ...options, occurrences: pool });
@@ -231,7 +243,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const opts = Object.fromEntries(process.argv.slice(2).filter((a) => a.startsWith("--") && a.includes("=")).map((a) => {
     const [k] = a.slice(2).split("=");
     const v = a.slice(a.indexOf("=") + 1);
-    return [k, v === "true" ? true : v === "false" ? false : k === "regex" ? v : Number(v)];
+    return [k, v === "true" ? true : v === "false" ? false : k === "regex" ? v : k === "hundreds" ? v.split(",").map(Number) : Number(v)];
   }));
   const { pages, printed } = await loadGranth(turso, key);
   if (process.argv.includes("--series")) {

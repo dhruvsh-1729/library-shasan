@@ -26,7 +26,7 @@ const SOURCE = "ocr-detected";
 const DECISIONS = "data/gatha-detect/decisions.json";
 const MAX_FILL_SPAN = 6;  // a lost number is kept only when its neighbours are this close
 const MAX_FILL_COUNT = 10;
-const LAST_UNIT_SPAN = 30; // the book's last unit runs to its last repeat within this many pages
+const LAST_UNIT_SPAN = 10; // the book's last unit runs to its last closing repeat within this many pages
 
 const sha = (s) => createHash("sha1").update(s).digest("hex").slice(0, 28);
 
@@ -158,11 +158,12 @@ export function buildRows(decision, pages, printed) {
   return rows;
 }
 
-/** The book's last unit: to the last page within LAST_UNIT_SPAN that still carries its number (the end of its commentary). */
+/** The book's last unit: to the last page that still closes its number between dandas ("॥ ३२ ॥", the end of its commentary), at most LAST_UNIT_SPAN pages on. */
 function lastUnitEnd(pages, row) {
   const forms = [String(row.gatha), ...["०१२३४५६७८९", "૦૧૨૩૪૫૬૭૮૯"].map((d) => String(row.gatha).replace(/[0-9]/g, (c) => d[c]))];
+  const marker = new RegExp(`(?:॥|।।|\\|\\|)\\s*(?:${forms.join("|")})\\s*(?:॥|।।|\\|\\|)`, "u");
   let end = row.page_start;
-  for (const p of pages) if (p.page > row.page_start && p.page <= row.page_start + LAST_UNIT_SPAN && forms.some((f) => p.content.includes(f))) end = p.page;
+  for (const p of pages) if (p.page > row.page_start && p.page <= row.page_start + LAST_UNIT_SPAN && marker.test(p.content)) end = p.page;
   return end;
 }
 
@@ -199,14 +200,33 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   for (const d of decisions) {
     if (d.action !== "map") continue;
     const g = granths.get(d.key);
-    const { data: docRows } = g ? await sb.from("documents").select("custom_id,pdf_name,pdf_url").eq("original_relative_path", g.source_rel_path).limit(2) : { data: [] };
+    // the PDF: by the granth's own path, or the catalog's exact document id
+    // (spreadsheet-OCR granths whose path is the .xlsx)
+    const { data: docRows } = !g ? { data: [] } : d.document_custom_id
+      ? await sb.from("documents").select("custom_id,pdf_name,pdf_url").eq("custom_id", d.document_custom_id).limit(2)
+      : await sb.from("documents").select("custom_id,pdf_name,pdf_url").eq("original_relative_path", g.source_rel_path).limit(2);
     const doc = docRows?.length === 1 ? docRows[0] : null;
     if (!g || !doc?.pdf_url) { console.log(`SKIP ${d.key}: no served PDF`); continue; }
-    const { data: existing } = await sb.from("granth_gatha_map").select("id,source_html_rel_path").eq("book_code", d.key).limit(1000);
-    if ((existing ?? []).some((r) => r.source_html_rel_path !== SOURCE)) { console.log(`SKIP ${d.key}: has index-imported rows`); continue; }
+    const existing = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from("granth_gatha_map").select("id,source_html_rel_path,unit,adhikar,gatha,gatha_to").eq("book_code", d.key).order("id").range(from, from + 999);
+      if (error) throw error;
+      existing.push(...data);
+      if (data.length < 1000) break;
+    }
+    const indexRows = existing.filter((r) => r.source_html_rel_path !== SOURCE);
+    if (indexRows.length && !d.supplement) { console.log(`SKIP ${d.key}: has index-imported rows`); continue; }
 
     const { pages, printed } = await loadGranth(turso, d.key);
-    const rows = buildRows(d, pages, printed);
+    let rows = buildRows(d, pages, printed);
+    if (d.supplement) {
+      // only what the index lacks: a number the index has (in that chapter, or
+      // anywhere when it gives no chapter) is never added again
+      const has = new Set();
+      for (const r of indexRows) for (let k = r.gatha; k <= (r.gatha_to ?? r.gatha); k += 1) { has.add(`${r.unit}|${r.adhikar ?? ""}|${k}`); has.add(`${r.unit}|*|${k}`); }
+      rows = rows.filter((r) => !has.has(`${r.unit}|${r.adhikar ?? ""}|${r.gatha}`) && !(r.adhikar == null && has.has(`${r.unit}|*|${r.gatha}`)));
+      if (!rows.length) { console.log(`ok    ${d.key}: index already has every number found`); continue; }
+    }
     const problems = check(rows, Number(g.page_count));
     const verified = rows.filter((r) => r.verification === "verified").length;
     const chapters = new Set(rows.map((r) => `${r.unit}|${r.parent_path}|${r.adhikar}`)).size;
