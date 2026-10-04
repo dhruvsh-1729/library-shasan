@@ -459,7 +459,7 @@ const LINE_CELL_PAD_Y = 2;
 const LINE_HEADING_SIZE = 12;
 const LINE_BORDER = 0.4;
 // the line list: space above and below each record, the rule between records,
-// and the column for "[पं. line, पृ. page]" beside the line
+// and the column for "[line, page]" beside the line
 const LINE_RECORD_PAD = 4;
 const LINE_RULE = 0.35;
 const LINE_RULE_COLOR = rgb(0.55, 0.55, 0.55);
@@ -570,8 +570,10 @@ export function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room
 /**
  * The line list: for each granth, one record per matched line — the line with
  * the found words bold, wrapped in the left 40% of the page, then
- * "[पं. line, पृ. page]" beside it, and the rest of the width left blank for
- * Maharaj Saheb's notes. No table and no serial numbers (Dhruv, 3 Oct 2026):
+ * "[line, page]" beside it, and the rest of the width left blank for
+ * Maharaj Saheb's notes. The reference carries no पं./पृ. labels (Dhruv,
+ * 4 Oct 2026): line first, page second is understood; only a page with no
+ * printed number keeps its "PDF" mark, so it is not read as a printed page. No table and no serial numbers (Dhruv, 3 Oct 2026):
  * a thin rule across the page separates one record from the next. The
  * granth's 3-digit book number is printed in the footer of each of its pages.
  */
@@ -611,9 +613,9 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
     let y = pageHeight - MARGIN;
 
     section.rows.forEach((row, index) => {
-      const where = row.printedPage ? `पृ. ${toDevanagariDigits(row.printedPage)}` : `PDF ${toDevanagariDigits(row.pdfPage)}`;
+      const where = row.printedPage ? toDevanagariDigits(row.printedPage) : `PDF ${toDevanagariDigits(row.pdfPage)}`;
       const lineWrapped = wrapPieces(text, highlightPieces(row.lineText, row.words), LINE_TEXT_SIZE, lineRoom);
-      const refWrapped = wrapPieces(text, [{ text: `[पं. ${toDevanagariDigits(row.lineNumber)}, ${where}]`, weight: "regular" }], LINE_TEXT_SIZE, refRoom);
+      const refWrapped = wrapPieces(text, [{ text: `[${toDevanagariDigits(row.lineNumber)}, ${where}]`, weight: "regular" }], LINE_TEXT_SIZE, refRoom);
       const height = Math.max(lineWrapped.length, refWrapped.length) * lineHeight + 2 * LINE_RECORD_PAD;
       if (y - height < bottom) {
         page = doc.addPage(A4);
