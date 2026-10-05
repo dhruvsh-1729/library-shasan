@@ -31,6 +31,8 @@ export type SearchPdfSource = {
 
 export type SearchMatchPage = {
   page_number: number;
+  /** The number printed on the page ("91", "73-74"), or null when unknown or unverified. */
+  printed_page: string | null;
   occurrence_count: number;
   snippet: string;
 };
@@ -630,9 +632,14 @@ export async function loadSearchMatchPages(
             )
           SELECT
             p.page_number,
-            p.content
+            p.content,
+            pp.printed_page
           FROM unique_hits
           JOIN ocr_pages p ON p.id = unique_hits.page_id
+          LEFT JOIN ocr_printed_pages pp
+            ON pp.granth_key = p.granth_key AND pp.page_number = p.page_number
+            -- a page whose text and image readings disagree shows its PDF page instead
+            AND (pp.verified IS NULL OR pp.verified <> 'conflict')
           ORDER BY p.page_number ASC
           LIMIT ?`,
     args: [...hits.args, boundedLimit + 1],
@@ -658,6 +665,7 @@ export async function loadSearchMatchPages(
 
     byPage.set(pageNumber, {
       page_number: pageNumber,
+      printed_page: String(row.printed_page ?? "").trim() || null,
       occurrence_count: matches.length,
       snippet: buildOCRSearchExcerptForQueries(content, queries, matchMode, 260, scripts),
     });

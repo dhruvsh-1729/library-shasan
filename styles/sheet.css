@@ -675,6 +675,27 @@
   box-shadow: 0 0 0 3px var(--lt-cobalt-wash, #e4edf7);
 }
 
+.sheetFieldRow {
+  display: flex;
+  gap: 8px;
+}
+
+.sheetFieldRow input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sheetFieldButton {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid var(--lt-cobalt, #1f5390);
+  border-radius: 12px;
+  background: var(--lt-cobalt-wash, #e4edf7);
+  color: var(--lt-cobalt, #1f5390);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .sheetOr {
   display: flex;
   align-items: center;

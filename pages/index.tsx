@@ -13,6 +13,7 @@ import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog"
 import { EXPORT_ENDPOINTS, SearchExportDialog, type ExportFormat } from "@/components/SearchExportDialog";
 import { downloadBlob, fileSafe, filenameFromResponse } from "@/lib/download-file";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
+import { parseGranthPageInput, pdfPagesForGranthPages } from "@/lib/granth-pages";
 import {
   OCR_SEARCH_MODE_OPTIONS,
   type OCRSearchMode,
@@ -70,7 +71,7 @@ type SearchResult = {
   matched_queries?: string[];
 };
 
-type SearchMatchPage = { page_number: number; occurrence_count: number; snippet: string };
+type SearchMatchPage = { page_number: number; printed_page: string | null; occurrence_count: number; snippet: string };
 
 type SearchMatchPreview = {
   custom_id: string;
@@ -99,6 +100,10 @@ type DownloadPreviewState = {
   preview: SearchMatchPreview | null;
   selectedPages: number[];
   contextPages: number;
+  /** Granth page numbers the reader typed to choose pages by. */
+  granthPagesInput: string;
+  /** What choosing by granth page found, or null before it is used. */
+  granthPagesNote: string | null;
 };
 
 type GranthOption = {
@@ -827,6 +832,8 @@ export default function SearchPage() {
       preview: null,
       selectedPages: [],
       contextPages: DEFAULT_CONTEXT_PAGE_RADIUS,
+      granthPagesInput: "",
+      granthPagesNote: null,
     });
     try {
       let preview = previewCacheRef.current.get(cacheKey);
@@ -869,6 +876,21 @@ export default function SearchPage() {
       const pages = new Set(prev.selectedPages);
       update(pages, prev.preview);
       return { ...prev, selectedPages: [...pages].sort((a, b) => a - b) };
+    });
+  }
+
+  /** Chooses exactly the matching pages printed with the typed granth page numbers. */
+  function chooseGranthPages() {
+    setDownloadPreview((prev) => {
+      if (!prev?.preview) return prev;
+      const wanted = parseGranthPageInput(prev.granthPagesInput);
+      if (wanted.length === 0) return { ...prev, granthPagesNote: "Type granth page numbers, e.g. 86 88 301-303." };
+      const { pdfPages, missing } = pdfPagesForGranthPages(prev.preview.pages, wanted);
+      const found = `Chose ${plural(pdfPages.length, "page")}.`;
+      const notFound = missing.length
+        ? ` Not among the matching pages: ${missing.join(", ")}.`
+        : "";
+      return { ...prev, selectedPages: pdfPages, granthPagesNote: found + notFound };
     });
   }
 
@@ -1575,6 +1597,32 @@ export default function SearchPage() {
                       </div>
                     </details>
 
+                    <form
+                      className="sheetField"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        chooseGranthPages();
+                      }}
+                    >
+                      <label htmlFor="granth-pages-input">Choose by granth page</label>
+                      <div className="sheetFieldRow">
+                        <input
+                          id="granth-pages-input"
+                          inputMode="numeric"
+                          placeholder="86 88 301-303"
+                          value={downloadPreview.granthPagesInput}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setDownloadPreview((prev) => (prev ? { ...prev, granthPagesInput: value } : prev));
+                          }}
+                        />
+                        <button type="submit" className="sheetFieldButton">Choose</button>
+                      </div>
+                      <p className="sheetSmall">
+                        {downloadPreview.granthPagesNote ?? "The page numbers printed in the book. Only these pages are kept."}
+                      </p>
+                    </form>
+
                     <section className="sheetSection">
                       <div className="sheetSectionHead">
                         <h3>Pages</h3>
@@ -1601,7 +1649,11 @@ export default function SearchPage() {
                                 }
                               />
                               <span className="sheetRowMain">
-                                <strong>Page {page.page_number}{isCover ? " · cover" : ""}</strong>
+                                <strong>
+                                  {page.printed_page ? `Page ${page.printed_page}` : `PDF page ${page.page_number}`}
+                                  {isCover ? " · cover" : ""}
+                                </strong>
+                                {page.printed_page ? <small>PDF page {page.page_number}</small> : null}
                                 <span className="indic">
                                   {ringAll(page.snippet, downloadPreview.queries, downloadPreview.matchMode, downloadPreview.scripts)}
                                 </span>
