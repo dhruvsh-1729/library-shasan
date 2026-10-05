@@ -223,20 +223,16 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const requestedPages = parseSelectedPages(body.pages);
 
       const source = await resolveSearchPdfSource(customId, sourceRelPath);
-      const { pages: matchingPages } = await loadSearchMatchPages(
-        sourceRelPath || source.sourceRelPath,
-        queries,
-        matchMode,
-        undefined,
-        undefined,
-        scripts
-      );
-      const matchingPageSet = new Set(matchingPages.map((page) => page.page_number));
-      const requested = requestedPages ?? matchingPages.map((page) => page.page_number);
-      const selectedPages = requested.filter((page) => matchingPageSet.has(page));
+      // The reader may choose any page of the book (the pages around a match
+      // as well), so chosen pages are kept whether or not the word is on them.
+      const selectedPages =
+        requestedPages ??
+        (
+          await loadSearchMatchPages(sourceRelPath || source.sourceRelPath, queries, matchMode, undefined, undefined, scripts)
+        ).pages.map((page) => page.page_number);
 
       if (selectedPages.length === 0) {
-        throw new SearchMatchError(400, "Select at least one matching page before downloading.");
+        throw new SearchMatchError(400, "Select at least one page before downloading.");
       }
 
       const expandedPages = expandPagesWithContext(selectedPages, contextPages);

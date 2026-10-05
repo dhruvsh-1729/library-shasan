@@ -36,12 +36,16 @@ export function printedPageNumbers(label: string | null | undefined): number[] {
 }
 
 /**
- * The PDF pages holding the wanted granth pages, and the granth pages that are
- * not among `pages` (the word is not on them, or their printed number is unknown).
+ * The PDF pages holding the wanted granth pages, and the granth pages that
+ * could not be placed. `pages` is the book's printed-page map; a granth page
+ * missing from it (its number was not read) is placed by the offset its
+ * nearest numbered neighbours on both sides agree on, as front matter and
+ * covers shift the whole book by the same count.
  */
 export function pdfPagesForGranthPages(
   pages: Array<{ page_number: number; printed_page: string | null }>,
-  granthPages: number[]
+  granthPages: number[],
+  pageCount = 0
 ) {
   const byGranthPage = new Map<number, number>();
   for (const page of pages) {
@@ -49,11 +53,32 @@ export function pdfPagesForGranthPages(
       if (!byGranthPage.has(printed)) byGranthPage.set(printed, page.page_number);
     }
   }
+  const known = [...byGranthPage.entries()].sort((a, b) => a[0] - b[0]);
+
+  const offsetBetween = (granthPage: number) => {
+    let below: [number, number] | undefined;
+    let above: [number, number] | undefined;
+    for (const entry of known) {
+      if (entry[0] < granthPage) below = entry;
+      else if (entry[0] > granthPage) {
+        above = entry;
+        break;
+      }
+    }
+    if (!below || !above) return null;
+    const offset = below[1] - below[0];
+    return above[1] - above[0] === offset ? offset : null;
+  };
+
   const pdfPages = new Set<number>();
   const missing: number[] = [];
   for (const granthPage of granthPages) {
-    const pdfPage = byGranthPage.get(granthPage);
-    if (pdfPage) pdfPages.add(pdfPage);
+    let pdfPage = byGranthPage.get(granthPage);
+    if (!pdfPage) {
+      const offset = offsetBetween(granthPage);
+      if (offset !== null) pdfPage = granthPage + offset;
+    }
+    if (pdfPage && pdfPage > 0 && (!pageCount || pdfPage <= pageCount)) pdfPages.add(pdfPage);
     else missing.push(granthPage);
   }
   return { pdfPages: [...pdfPages].sort((a, b) => a - b), missing };

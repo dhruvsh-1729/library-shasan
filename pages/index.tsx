@@ -80,6 +80,10 @@ type SearchMatchPreview = {
   cover_page: number;
   pages: SearchMatchPage[];
   total_matched_pages: number;
+  /** PDF pages in the book. */
+  page_count?: number;
+  /** [PDF page, printed page] for every page of the book whose printed number is known. */
+  printed_pages?: Array<[number, string]>;
   truncated?: boolean;
   max_download_pages: number;
   match_mode: OCRSearchMode;
@@ -885,11 +889,16 @@ export default function SearchPage() {
       if (!prev?.preview) return prev;
       const wanted = parseGranthPageInput(prev.granthPagesInput);
       if (wanted.length === 0) return { ...prev, granthPagesNote: "Type granth page numbers, e.g. 86 88 301-303." };
-      const { pdfPages, missing } = pdfPagesForGranthPages(prev.preview.pages, wanted);
-      const found = `Chose ${plural(pdfPages.length, "page")}.`;
-      const notFound = missing.length
-        ? ` Not among the matching pages: ${missing.join(", ")}.`
-        : "";
+      const bookPages = (prev.preview.printed_pages ?? []).map(([page_number, printed_page]) => ({ page_number, printed_page }));
+      const { pdfPages, missing } = pdfPagesForGranthPages(
+        bookPages.length ? bookPages : prev.preview.pages,
+        wanted,
+        prev.preview.page_count ?? 0
+      );
+      const matched = new Set(prev.preview.pages.map((page) => page.page_number));
+      const withoutWord = pdfPages.filter((page) => !matched.has(page)).length;
+      const found = `Chose ${plural(pdfPages.length, "page")}${withoutWord ? `, ${withoutWord} without the word` : ""}.`;
+      const notFound = missing.length ? ` Not found in this book: ${missing.join(", ")}.` : "";
       return { ...prev, selectedPages: pdfPages, granthPagesNote: found + notFound };
     });
   }
@@ -1522,6 +1531,17 @@ export default function SearchPage() {
             const expanded = expandPagesWithContext(downloadPreview.selectedPages, downloadPreview.contextPages);
             const finalPageCount = selectedCount > 0 ? [1, ...expanded.filter((page) => page !== 1)].length : 0;
             const tooManyPages = Boolean(maxPages && finalPageCount > maxPages);
+            // The matching pages, and any other page the reader chose by its number.
+            const pageRows: SearchMatchPage[] = (() => {
+              const preview = downloadPreview.preview;
+              if (!preview) return [];
+              const matched = new Set(preview.pages.map((page) => page.page_number));
+              const printed = new Map(preview.printed_pages ?? []);
+              const extra = downloadPreview.selectedPages
+                .filter((page) => !matched.has(page))
+                .map((page) => ({ page_number: page, printed_page: printed.get(page) ?? null, occurrence_count: 0, snippet: "" }));
+              return [...preview.pages, ...extra].sort((a, b) => a.page_number - b.page_number);
+            })();
             const close = () => {
               setDeliveryFormat(null);
               setDownloadPreview(null);
@@ -1619,7 +1639,8 @@ export default function SearchPage() {
                         <button type="submit" className="sheetFieldButton">Choose</button>
                       </div>
                       <p className="sheetSmall">
-                        {downloadPreview.granthPagesNote ?? "The page numbers printed in the book. Only these pages are kept."}
+                        {downloadPreview.granthPagesNote ??
+                          "Any page numbers printed in the book, with or without the word, e.g. 86 88 89 301-303. Only these pages are kept."}
                       </p>
                     </form>
 
@@ -1636,7 +1657,7 @@ export default function SearchPage() {
                         </div>
                       </div>
                       <div className="sheetList">
-                        {downloadPreview.preview.pages.map((page) => {
+                        {pageRows.map((page) => {
                           const isCover = page.page_number === 1;
                           return (
                             <label key={page.page_number} className="sheetRow">
@@ -1654,11 +1675,17 @@ export default function SearchPage() {
                                   {isCover ? " · cover" : ""}
                                 </strong>
                                 {page.printed_page ? <small>PDF page {page.page_number}</small> : null}
-                                <span className="indic">
-                                  {ringAll(page.snippet, downloadPreview.queries, downloadPreview.matchMode, downloadPreview.scripts)}
-                                </span>
+                                {page.occurrence_count > 0 ? (
+                                  <span className="indic">
+                                    {ringAll(page.snippet, downloadPreview.queries, downloadPreview.matchMode, downloadPreview.scripts)}
+                                  </span>
+                                ) : (
+                                  <small>Chosen by page number; the word is not on this page.</small>
+                                )}
                               </span>
-                              <span className="sheetRowSide">{plural(page.occurrence_count, "match", "matches")}</span>
+                              <span className="sheetRowSide">
+                                {page.occurrence_count > 0 ? plural(page.occurrence_count, "match", "matches") : "No match"}
+                              </span>
                             </label>
                           );
                         })}
@@ -1678,11 +1705,11 @@ export default function SearchPage() {
                       }
                       fileLabel={
                         deliveryFormat === "csv"
-                          ? `${plural(selectedCount, "matching page")}, one row per matching line`
+                          ? `${plural(selectedCount, "chosen page")}, one row per matching line`
                           : deliveryFormat === "wordlist"
-                            ? `${plural(selectedCount, "matching page")}, one row per matching word`
+                            ? `${plural(selectedCount, "chosen page")}, one row per matching word`
                             : deliveryFormat === "linelist"
-                              ? `${plural(selectedCount, "matching page")}, one row per matching line`
+                              ? `${plural(selectedCount, "chosen page")}, one row per matching line`
                               : `${plural(finalPageCount, "PDF page")}, cover first`
                       }
                       busy={busy}

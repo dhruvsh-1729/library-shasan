@@ -23,5 +23,15 @@ test("maps granth pages to PDF pages and reports the rest", () => {
     { page_number: 200, printed_page: null },
     { page_number: 300, printed_page: "73-74" },
   ];
-  assert.deepEqual(pdfPagesForGranthPages(pages, [86, 87, 88, 74]), { pdfPages: [112, 114, 300], missing: [87] });
+  assert.deepEqual(pdfPagesForGranthPages(pages, [86, 88, 74, 20]), { pdfPages: [112, 114, 300], missing: [20] });
+});
+
+test("a page whose number was not read is placed by its neighbours' offset", () => {
+  const pages = [
+    { page_number: 112, printed_page: "86" },
+    { page_number: 116, printed_page: "90" },
+    { page_number: 130, printed_page: "100" },
+  ];
+  // 88 sits between 86 and 90, both 26 pages on; 95 sits where the offset changes
+  assert.deepEqual(pdfPagesForGranthPages(pages, [88, 95, 500], 488), { pdfPages: [114], missing: [95, 500] });
 });

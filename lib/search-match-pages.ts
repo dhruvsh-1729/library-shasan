@@ -677,3 +677,38 @@ export async function loadSearchMatchPages(
     queries,
   };
 }
+
+export type PrintedPageMap = {
+  /** PDF pages in the book. */
+  page_count: number;
+  /** [PDF page, printed page] for every page whose printed number is known. */
+  pages: Array<[number, string]>;
+};
+
+/**
+ * Every page's printed (granth) number in one book, so a reader can choose
+ * any granth page to export, not only the ones the word is on.
+ */
+export async function loadPrintedPageMap(sourceRelPath: string): Promise<PrintedPageMap> {
+  const client = getTursoClient();
+  const [book, rows] = await Promise.all([
+    client.execute({ sql: "SELECT page_count FROM ocr_granths WHERE source_rel_path = ? LIMIT 1", args: [sourceRelPath] }),
+    client.execute({
+      sql: `SELECT pp.page_number, pp.printed_page
+            FROM ocr_printed_pages pp
+            JOIN ocr_granths g ON g.granth_key = pp.granth_key
+            WHERE g.source_rel_path = ?
+              -- a page whose text and image readings disagree shows its PDF page instead
+              AND (pp.verified IS NULL OR pp.verified <> 'conflict')
+            ORDER BY pp.page_number ASC`,
+      args: [sourceRelPath],
+    }),
+  ]);
+  const pages: Array<[number, string]> = [];
+  for (const row of rows.rows) {
+    const printed = String(row.printed_page ?? "").trim();
+    const pageNumber = toInt(row.page_number);
+    if (printed && pageNumber > 0) pages.push([pageNumber, printed]);
+  }
+  return { page_count: toInt(book.rows[0]?.page_count), pages };
+}

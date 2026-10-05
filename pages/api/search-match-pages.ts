@@ -5,6 +5,7 @@ import { warmPdfIndex } from "@/lib/pdf-highlight-builder";
 import {
   MAX_MATCH_PAGE_DOWNLOAD,
   SearchMatchError,
+  loadPrintedPageMap,
   loadSearchMatchPages,
   resolveSearchPdfSource,
   validateSearchDownloadQueries,
@@ -37,14 +38,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       // The reader is looking at this granth's matched pages and may download
       // them next: read the PDF's index now so the download fetches pages only.
       warmPdfIndex(source.pdfUrl);
-      const { pages, truncated } = await loadSearchMatchPages(
-        sourceRelPath || source.sourceRelPath,
-        queries,
-        matchMode,
-        undefined,
-        undefined,
-        scripts
-      );
+      const relPath = sourceRelPath || source.sourceRelPath;
+      const [{ pages, truncated }, pageMap] = await Promise.all([
+        loadSearchMatchPages(relPath, queries, matchMode, undefined, undefined, scripts),
+        loadPrintedPageMap(relPath),
+      ]);
 
       return {
         custom_id: source.customId,
@@ -55,6 +53,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         pages,
         total_matched_pages: pages.length,
         truncated,
+        page_count: pageMap.page_count,
+        printed_pages: pageMap.pages,
         max_download_pages: MAX_MATCH_PAGE_DOWNLOAD,
         match_mode: matchMode,
         queries,
