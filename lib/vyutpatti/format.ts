@@ -167,7 +167,8 @@ export function tableRowForEntry(entry: VyutpattiEntry, stamp: string): TableRow
     granthNo: /^\d{3}$/.test(entry.granthKey) ? entry.granthKey : undefined,
     shastraPath: `${lineHead(entry)}${head ? ` - ${head}` : ""} (${koshReference(entry)})`,
     pubRem: "",
-    inRem: `${stamp} ${meaningPhrase(entry.meaningGu)}${flags}`.trim(),
+    // The full Gujarati meaning; when the reading gave only the vishay's sense, that sense (never an empty cell).
+    inRem: `${stamp} ${meaningPhrase(entry.meaningGu || entry.relevantGu)}${flags}`.trim(),
     source: "kosh",
   };
 }

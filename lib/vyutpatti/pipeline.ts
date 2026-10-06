@@ -220,9 +220,10 @@ Split the vishay into the words to look up in a Sanskrit/Prakrit kosh, in the or
 - A word that is itself one ordinary kosh word (हिंसा, उपाध्याय, द्रव्य, सामायिक, प्रत्याख्यान) is not split further; a technical term a kosh prints as one headword (कायोत्सर्ग, उपसंपदा, प्रतिवासुदेव) is kept whole.
 - Mark the negation particle (अ / अन्) and any upasarga written apart with "prefix": true; it is not looked up.
 - The vishay may mix in Gujarati words written in Devanagari letters (ना, नी, नो, मां, थी, ने, करनार, छतां, संबंधी, बे, कितना) and numbers: list them with "skip": true; they are not looked up. Look up the Sanskrit/Prakrit words only.
+- A Gujarati word with its Gujarati ending stays whole and is skipped: खूणामां (Gujarati "in the corner"), बेठेली, घरमां, साधुओनी — never cut it into a stem to look up (not खूणा + मां).
 - A sentence or maxim (a न्याय, a quoted line) is not split word by word: give at most ${MAX_LOOKED_UP} of its key technical nouns and adjectives, as stems; skip its verb forms (तारयति, अनुवर्तते) and particles (च, न, इति, तु, एव, अपि, हि) with "skip": true; vigraha "".
 - Split off कु-, सु-, दुस्-, निस्- and the negation as prefixes (कुगुरु = कु- + गुरु) unless a kosh prints the whole as one word.
-- vigraha: the samāsa vigraha of the whole vishay in Sanskrit (e.g. "न चौर्यम् इति अचौर्यम्", "कायिकी चासौ हिंसा च कायिकहिंसा"); "" when the vishay is a single plain word, a phrase of several separate words, or a sentence.
+- vigraha: the samāsa vigraha of the whole vishay in Sanskrit (e.g. "न चौर्यम् इति अचौर्यम्", "कायिकी चासौ हिंसा च कायिकहिंसा"); "" when the vishay is a single plain word, a phrase of several separate words, or a sentence. It uses the members as the vishay writes them and ends with the vishay exactly as written ("श्रमणानां पर्षदा श्रमणपर्षदा", not "… श्रमणपर्षद्").
 - samasa: its type in Sanskrit (नञ्तत्पुरुषः, कर्मधारयः, षष्ठीतत्पुरुषः, द्वन्द्वः, बहुव्रीहिः …), or "".
 
 JSON: {"parts":[{"word":"","text":"","prefix":false,"skip":false}],"vigraha":"","samasa":""}`;
@@ -470,8 +471,12 @@ type Missing = { kind: "split"; parts: Array<{ word: string; prefix: boolean }> 
 const MAX_SPLIT_COST_PER_PART = 1.2;
 
 export async function resolveMissing(word: string): Promise<Missing> {
-  const split = compoundParts(word, getLexicon());
+  let split = compoundParts(word, getLexicon());
   const scored = splitCompound(word, getLexicon(), { forbidWhole: true });
+  // The word list may know the whole as one word (भवनपति, from the Agamic kosh's word list) although
+  // no kosh prints an entry for it: then the best cut into kosh words is used (भवन + पति).
+  const wholeOnly = (split?.parts ?? []).filter((p) => p.kind === "word" || p.kind === "unknown").length === 1;
+  if (split && wholeOnly && scored && scored.parts.length >= 2) split = { ...split, parts: scored.parts };
   const wordParts = (split?.parts ?? []).filter((p) => p.kind === "word" || p.kind === "unknown");
   // Every piece is a real kosh headword of two syllables or more, and the split is a cheap one.
   const clean =
