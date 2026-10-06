@@ -5,7 +5,7 @@
 //
 //   npx tsx --env-file=.env scripts/vyutpatti/batch_vyutpatti.mts <list.txt> <outDir> [--json=<dir>] [--max-usd=4]
 //       [--single=<file.pdf>]   also (or, with --no-each, only) one PDF with every vishay, one after another
-//       [--full-width]          tables across the whole page (no notes margin on the right)
+//       [--notes-margin]        the old layout: table in the left 60%, right 40% blank for notes
 //       [--no-each]             no per-vishay PDFs
 //
 // list.txt: one vishay per line in Devanagari, optionally "number<TAB>vishay<TAB>box".
@@ -20,7 +20,7 @@ const opt = (n: string) => args.find((a) => a.startsWith(`--${n}=`))?.split("=")
 const jsonDir = opt("json");
 const maxUsd = Number(opt("max-usd") ?? 4);
 const single = opt("single");
-const fullWidth = args.includes("--full-width");
+const fullWidth = !args.includes("--notes-margin");   // full width is the default, as on the page
 const each = !args.includes("--no-each");
 const sections: Parameters<typeof buildVyutpattiPdf>[0] = [];
 if (!listPath || !outDir) {

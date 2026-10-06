@@ -3,9 +3,10 @@
 //
 //   1. the internal table (the box sheet): the vishay as a heading,
 //      "BOX No - n", and Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem with
-//      one row per kosh entry, the kosh named by its 3-digit granth number. Like
-//      the line list, the table takes the left 60% of the page and the right
-//      40% stays blank for Maharaj Saheb's notes;
+//      one row per kosh entry, the kosh named by its 3-digit granth number. The
+//      table spans the full page width (Dhruv, 6 Oct 2026: the file sent to
+//      Maharaj Saheb); { fullWidth: false } gives the old left-60% layout with
+//      the right 40% blank for notes;
 //   2. the reader page: "1.1 | अचौर्य" large, then "व्युत्पत्तिअर्थ" and one line
 //      per word, each starting with a corner mark.
 //
@@ -50,7 +51,8 @@ const CELL_PAD_Y = 2.5;
 const TABLE_BORDER = 0.6;
 // Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem, in the table's 60% of the page
 const TABLE_COLUMNS = [18, 22, 38, 0, 46, 70];
-// Full page width (no notes margin), for batch files: the extra room goes to ShastraPath and In.Rem.
+// Full page width (the default): the extra room goes to ShastraPath and In.Rem, and the Granth
+// column fits समासविग्रह on one line.
 const FULL_WIDTH_COLUMNS = [20, 24, 62, 0, 46, 150];
 const TABLE_HEADER = ["Sr.", "V.T", "Granth", "ShastraPath", "Pub.Rem", "In.Rem"];
 
@@ -108,8 +110,9 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
   const ascentOf = (size: number) => (reference.ascender / reference.upem) * size;
 
   // ---------------------------------------------------------------- tables
-  const tableWidth = options.fullWidth ? width : NOTES_TABLE_RIGHT - MARGIN;
-  const cols = [...(options.fullWidth ? FULL_WIDTH_COLUMNS : TABLE_COLUMNS)];
+  const fullWidth = options.fullWidth ?? true;
+  const tableWidth = fullWidth ? width : NOTES_TABLE_RIGHT - MARGIN;
+  const cols = [...(fullWidth ? FULL_WIDTH_COLUMNS : TABLE_COLUMNS)];
   cols[3] = tableWidth - cols.reduce((a, b) => a + b, 0);
   const colX = cols.map((_, i) => MARGIN + cols.slice(0, i).reduce((a, b) => a + b, 0));
   const lineHeight = TABLE_SIZE * TABLE_LEADING;
