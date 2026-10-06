@@ -50,6 +50,8 @@ const CELL_PAD_Y = 2.5;
 const TABLE_BORDER = 0.6;
 // Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem, in the table's 60% of the page
 const TABLE_COLUMNS = [18, 22, 38, 0, 46, 70];
+// Full page width (no notes margin), for batch files: the extra room goes to ShastraPath and In.Rem.
+const FULL_WIDTH_COLUMNS = [20, 24, 62, 0, 46, 150];
 const TABLE_HEADER = ["Sr.", "V.T", "Granth", "ShastraPath", "Pub.Rem", "In.Rem"];
 
 // ------------------------------------------------------------------ reader
@@ -92,7 +94,7 @@ function cornerMark(page: PDFPage, x: number, baseline: number, size: number) {
 /** The book-format reader pages are left out of the export until that layout is settled. */
 export const EXPORT_READER_PAGES = false;
 
-export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options: { readerPages?: boolean } = {}) {
+export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options: { readerPages?: boolean; fullWidth?: boolean } = {}) {
   const readerPages = options.readerPages ?? EXPORT_READER_PAGES;
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
@@ -106,8 +108,8 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
   const ascentOf = (size: number) => (reference.ascender / reference.upem) * size;
 
   // ---------------------------------------------------------------- tables
-  const tableWidth = NOTES_TABLE_RIGHT - MARGIN;
-  const cols = [...TABLE_COLUMNS];
+  const tableWidth = options.fullWidth ? width : NOTES_TABLE_RIGHT - MARGIN;
+  const cols = [...(options.fullWidth ? FULL_WIDTH_COLUMNS : TABLE_COLUMNS)];
   cols[3] = tableWidth - cols.reduce((a, b) => a + b, 0);
   const colX = cols.map((_, i) => MARGIN + cols.slice(0, i).reduce((a, b) => a + b, 0));
   const lineHeight = TABLE_SIZE * TABLE_LEADING;
