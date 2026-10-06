@@ -35,12 +35,12 @@ export async function submitPdf(pdfPath) {
   return res.json(); // { id, pages }
 }
 
-/** Polls every 30 s (the app sleeps after ~10 min without traffic, so polling also keeps it awake). */
+/** Polls every 5 s (the Modal engine reads pages in parallel, so jobs finish fast). */
 export async function waitForJob(id, onProgress) {
   for (;;) {
     const s = await getJson(`/jobs/${id}`);
     onProgress?.(s);
     if (s.status === "done") return getJson(`/jobs/${id}/result`);
-    await new Promise((r) => setTimeout(r, 30000));
+    await new Promise((r) => setTimeout(r, 5000));
   }
 }
