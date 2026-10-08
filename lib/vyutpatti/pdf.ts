@@ -119,7 +119,7 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
   const plain = (value: string, weight: Weight = "regular"): Piece[] => [{ text: value, weight }];
 
   const rowLayout = (cells: string[], weight: Weight) => {
-    // A cell keeps its own line breaks (In.Rem: date, then the meaning).
+    // A cell keeps its own line breaks.
     const wrapped = cells.map((cell, col) =>
       String(cell ?? "")
         .split("\n")

@@ -3,9 +3,10 @@
 //
 //   reader line   चोर - पुं. (चोरयतीति चुर्+अच्) - ચોરી કરનાર, ચોર અર્થમાં. [शब्दरत्नमहोदधि भाग-2, पृ. 868]
 //                 अचौर्य - न चौर्यं इति अचौर्यम्। [समासविग्रह]
-//   table row     Sr | व्यु. | शब्दरत्नमहोदधि भाग-1 | कायिक - त्रि. (कायस्येदं ठक् वा) (शब्दरत्नमहोदधि भाग-1, पृ. 574) | | 18-04-2023 18:33 શરીરથી … અર્થમાં
+//   table row     Sr | व्यु. | शब्दरत्नमहोदधि भाग-1 | कायिक - त्रि. (कायस्येदं ठक् वा) (शब्दरत्नमहोदधि भाग-1, पृ. 574) | | શરીરથી … અર્થમાં
 //
 // The reader page is what goes to readers; the table is for internal use.
+// The In.Rem cell carries no date (Sahebji's marks on the parṣadā sheets, 7 Oct 2026).
 
 export type EntrySource = "kosh" | "ai" | "vigraha";
 
@@ -144,22 +145,7 @@ export function readerLineForVigraha(vishay: string, vigraha: string): ReaderLin
   return { head: vishay, body: ` - ${text}। [समासविग्रह]`, source: "vigraha", note: "Samasa vigraha written by AI. Verify before use." };
 }
 
-/** "18-04-2023 18:33", India time, as the sample's In.Rem column prints it. */
-export function remarkStamp(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("day")}-${get("month")}-${get("year")} ${get("hour")}:${get("minute")}`;
-}
-
-export function tableRowForEntry(entry: VyutpattiEntry, stamp: string): TableRow {
+export function tableRowForEntry(entry: VyutpattiEntry): TableRow {
   const head = grammar(entry.gender, entry.derivation);
   const flags = entry.checked ? "" : " (પાના સાથે ચકાસો)";
   return {
@@ -168,29 +154,30 @@ export function tableRowForEntry(entry: VyutpattiEntry, stamp: string): TableRow
     shastraPath: `${lineHead(entry)}${head ? ` - ${head}` : ""} (${koshReference(entry)})`,
     pubRem: "",
     // The full Gujarati meaning; when the reading gave only the vishay's sense, that sense (never an empty cell).
-    inRem: `${stamp} ${meaningPhrase(entry.meaningGu || entry.relevantGu)}${flags}`.trim(),
+    inRem: `${meaningPhrase(entry.meaningGu || entry.relevantGu)}${flags}`.trim(),
     source: "kosh",
   };
 }
 
-export function tableRowForAi(ai: AiDerivation, stamp: string): TableRow {
+export function tableRowForAi(ai: AiDerivation): TableRow {
   const head = grammar(ai.gender, ai.derivation);
   return {
     granth: ai.source || "AI",
     shastraPath: `${ai.word}${head ? ` - ${head}` : ""}${ai.source ? ` (${ai.source})` : ""}`,
     pubRem: "",
-    inRem: `${stamp} ${meaningPhrase(ai.meaningGu)} કોઈ કોશમાં નથી, AI દ્વારા; ચકાસવું.`.trim(),
+    inRem: `${meaningPhrase(ai.meaningGu)} કોઈ કોશમાં નથી, AI દ્વારા; ચકાસવું.`.trim(),
     source: "ai",
   };
 }
 
-export function tableRowForVigraha(vishay: string, vigraha: string, samasa: string, stamp: string): TableRow {
+/** The vigraha row: always the engine's, so its In.Rem is left blank (Sahebji struck the "AI દ્વારા" note out). */
+export function tableRowForVigraha(vishay: string, vigraha: string, samasa: string): TableRow {
   const text = String(vigraha ?? "").trim().replace(/\s*।?\s*$/u, "");
   return {
     granth: "समासविग्रह",
     shastraPath: `${vishay} - ${text}।${samasa ? ` (${samasa})` : ""}`,
     pubRem: "",
-    inRem: `${stamp} સમાસવિગ્રહ AI દ્વારા; ચકાસવું.`,
+    inRem: "",
     source: "vigraha",
   };
 }

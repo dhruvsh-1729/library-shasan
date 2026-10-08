@@ -20,9 +20,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { extractPdfPagesByRange } from "@/lib/pdf-range-subset.mjs";
-import { headwordKeys } from "@/lib/kosh-headwords.mjs";
+import { headwordKeys, vyutpattiKosh } from "@/lib/kosh-headwords.mjs";
 import { SOURCE, aksharaCount, compoundParts, createLexicon, searchableParts, splitCompound } from "@/lib/sanskrit-compound.mjs";
 import { foldSanskrit } from "@/lib/sanskrit-fold.mjs";
+import { type EntryReading, cacheKey, loadReadings, saveReadings } from "@/lib/vyutpatti/entry-cache";
 import { type Engine, LlmError, type LlmFile, type Usage, askJson, newUsage } from "@/lib/vyutpatti/llm";
 import { type Candidate, findApteSubentry, findCandidates, headwordTiers } from "@/lib/vyutpatti/lookup";
 import {
@@ -35,7 +36,6 @@ import {
   readerLineForAi,
   readerLineForEntry,
   readerLineForVigraha,
-  remarkStamp,
   tableRowForAi,
   tableRowForEntry,
   tableRowForVigraha,
@@ -223,7 +223,7 @@ Split the vishay into the words to look up in a Sanskrit/Prakrit kosh, in the or
 - A Gujarati word with its Gujarati ending stays whole and is skipped: खूणामां (Gujarati "in the corner"), बेठेली, घरमां, साधुओनी — never cut it into a stem to look up (not खूणा + मां).
 - A sentence or maxim (a न्याय, a quoted line) is not split word by word: give at most ${MAX_LOOKED_UP} of its key technical nouns and adjectives, as stems; skip its verb forms (तारयति, अनुवर्तते) and particles (च, न, इति, तु, एव, अपि, हि) with "skip": true; vigraha "".
 - Split off कु-, सु-, दुस्-, निस्- and the negation as prefixes (कुगुरु = कु- + गुरु) unless a kosh prints the whole as one word.
-- vigraha: the samāsa vigraha of the whole vishay in Sanskrit (e.g. "न चौर्यम् इति अचौर्यम्", "कायिकी चासौ हिंसा च कायिकहिंसा"); "" when the vishay is a single plain word, a phrase of several separate words, or a sentence. It uses the members as the vishay writes them and ends with the vishay exactly as written ("श्रमणानां पर्षदा श्रमणपर्षदा", not "… श्रमणपर्षद्").
+- vigraha: the samāsa vigraha of the whole vishay in Sanskrit (e.g. "न चौर्यम् इति अचौर्यम्", "कायिकी चासौ हिंसा च कायिकहिंसा"); "" when the vishay is a single plain word, a phrase of several separate words, or a sentence. It uses the members as the vishay writes them and ends with the vishay exactly as written ("श्रमणानां पर्षदा श्रमणपर्षदा", not "… श्रमणपर्षद्"). A member that is itself a compound gets its own vigraha first, as its own clause, before the whole's: "भवनानां पतिः इति भवनपतिः, भवनपतीनां देवीनां पर्षदा भवनपतिदेवीपर्षदा" (Maharaj Saheb's correction). A member made of a noun and a verbal noun (उपपद) is explained with the finite verb: "कुम्भं करोति इति कुम्भकारः", never "कुम्भं कारः".
 - samasa: its type in Sanskrit (नञ्तत्पुरुषः, कर्मधारयः, षष्ठीतत्पुरुषः, द्वन्द्वः, बहुव्रीहिः …), or "".
 
 JSON: {"parts":[{"word":"","text":"","prefix":false,"skip":false}],"vigraha":"","samasa":""}`;
@@ -254,20 +254,12 @@ JSON: {"parts":[{"word":"","text":"","prefix":false,"skip":false}],"vigraha":"",
 
 // ------------------------------------------------------------------ reading entries
 
-type Reading = {
+type Reading = EntryReading & {
   id: string;
-  is_entry?: boolean;
-  why?: string;
   fits_vishay?: boolean;
   derivation_fits?: boolean;
   relevant_gender?: string;
-  head?: string;
-  gender?: string;
-  derivation?: string;
-  meaning?: string;
-  meaning_gu?: string;
   relevant_gu?: string;
-  base?: string | null;
 };
 
 const SCAN_CACHE = new Map<string, Promise<Uint8Array>>();
@@ -287,9 +279,174 @@ function scanOf(url: string, page: number) {
 
 const LANGUAGE = { gu: "Gujarati", hi: "Hindi", sa: "Sanskrit" } as const;
 
-/** At most this many scans and candidates go in one call, to keep calls small. */
-const MAX_SCANS_PER_CALL = 6;
-const MAX_CANDIDATES_PER_CALL = 8;
+/** At most this many candidates (each one or two page scans) go in one call, to keep calls small. */
+const MAX_CANDIDATES_PER_CALL = 5;
+const MAX_SENSES_PER_CALL = 16;
+
+/** Readings being made right now, so two vishays run side by side share one reading of an entry. */
+const PENDING = new Map<string, Promise<EntryReading | undefined>>();
+
+/**
+ * What each candidate entry prints, read once and kept (lib/vyutpatti/entry-cache):
+ * the same entry reads the same in every vishay. Nothing here depends on the vishay.
+ */
+async function readEntries(
+  engine: Engine,
+  asks: Array<{ word: string; candidates: Candidate[] }>,
+  usage: Usage,
+  notes: string[]
+): Promise<Map<string, EntryReading>> {
+  const all = asks.flatMap((a) => a.candidates.map((c) => ({ word: a.word, c, key: cacheKey(c.id, foldSanskrit(a.word)) })));
+  const out = new Map<string, EntryReading>();
+  const kept = await loadReadings(all.map((x) => ({ entryId: x.c.id, wordKey: foldSanskrit(x.word) })), engine);
+  const toRead: typeof all = [];
+  const waits: Array<Promise<void>> = [];
+  for (const x of all) {
+    if (out.has(x.key)) continue;
+    const hit = kept.get(x.key);
+    if (hit) {
+      out.set(x.key, hit);
+      continue;
+    }
+    const pending = PENDING.get(x.key);
+    if (pending) {
+      waits.push(pending.then((r) => void (r && out.set(x.key, r))));
+      continue;
+    }
+    if (toRead.some((y) => y.key === x.key)) continue;
+    toRead.push(x);
+  }
+  const resolvers = new Map<string, (r: EntryReading | undefined) => void>();
+  for (const x of toRead) PENDING.set(x.key, new Promise((resolve) => resolvers.set(x.key, resolve)));
+
+  const batches: Array<typeof toRead> = [];
+  for (let i = 0; i < toRead.length; i += MAX_CANDIDATES_PER_CALL) batches.push(toRead.slice(i, i + MAX_CANDIDATES_PER_CALL));
+  const fresh: Array<{ entryId: string; wordKey: string; reading: EntryReading }> = [];
+  // A long compound has many words: its batches are read side by side, and a
+  // batch whose answer runs too long is read again in halves.
+  const readOne = async (batch: typeof toRead): Promise<void> => {
+    const files: LlmFile[] = [];
+    const scanName = new Map<string, string>();
+    if (engine === "claude") {
+      await Promise.all(
+        batch
+          .filter(({ c }) => c.kosh.readFromScan && c.pdfUrl)
+          .flatMap(({ c }) =>
+            [c.pdfPage, ...(c.continues ? [c.pdfPage + 1] : [])].map(async (page) => {
+              const name = `${c.granthKey}-p${page}.pdf`;
+              try {
+                const pdf = await scanOf(c.pdfUrl as string, page);
+                if (!files.some((f) => f.name === name)) files.push({ name, pdf });
+                scanName.set(c.id, [scanName.get(c.id), name].filter(Boolean).join(", "));
+              } catch {
+                notes.push(`The scan of ${c.citation}, PDF page ${page}, could not be opened; its entry was read from the OCR text.`);
+              }
+            })
+          )
+      );
+    }
+    const blocks = batch.map(({ word, c }) => {
+      const scan = scanName.get(c.id);
+      return `--- id: ${c.id}
+word: ${word}
+kosh: ${c.citation} (meanings in ${LANGUAGE[c.kosh.language as keyof typeof LANGUAGE] ?? "Sanskrit"})${c.kosh.family === "avpk" ? "; format: headword-gender-shloka no.-Gujarati meaning, then ☐ synonyms, then a * line with the derivation, which often runs on over two or more printed lines" : ""}${c.kosh.tier === 2 && c.kosh.family !== "agamic" ? "; a Prakrit kosh: the headword is Prakrit, and the Sanskrit form after it (in brackets, or after the dash) is NOT a derivation" : ""}
+${scan ? `page scan attached: ${scan} — read the entry from the IMAGE, all of it to its last line; the OCR below may misread Gujarati as Devanagari letters, mix the page's two columns, or stop early` : "read from the OCR text below (it may have small OCR errors)"}
+OCR text:
+${c.text}`;
+    });
+    const prompt = `Each block below is a place in a kosh where the entry of the block's own "word" may begin. Read each entry exactly as the kosh prints it. What you return is kept and printed for every topic that cites this entry, so it must be the whole entry, word for word, never a summary.
+
+${blocks.join("\n\n")}
+
+For each id return:
+- is_entry: true when this is the entry of the block's word: its printed headword is that word or that word's nominative/stem form (कथा, कायिकः for कायिक, चौर्यम् for चौर्य; for a Prakrit kosh, the Sanskrit form given for the headword is that word). False for a different word, a longer compound beginning with it, a synonym list, or a running head.
+- why: when is_entry is false, the reason in a few English words; otherwise "".
+- head: the headword as printed.
+- gender: the grammar label as printed (पुं., स्त्री., न., त्रि., वि., अव्य. …).
+- derivation: the derivation as printed, complete to its last word — the text in the first round or square brackets after the label (Shabda Ratna Mahodadhi, Apte), or AVPK's * line with every line it runs on to (a line ending in "-" continues on the next) — without the brackets or star; "" if the entry prints none. Never put a Prakrit kosh's Sanskrit form here.
+- meaning: every meaning as printed, in the kosh's language, OCR errors corrected only where certain; leave out illustrative quotations.
+- meaning_gu: every meaning of the entry in Gujarati script (ગુજરાતી લિપિ, never Devanagari letters), in the printed order, all senses and labels, complete: never shortened, summarised, or cut with "વગેરે" where the kosh lists more — copied when printed in Gujarati, otherwise a faithful full translation.
+- base: the word (a noun/adjective stem, in Devanagari) this word is derived from according to the derivation, e.g. चौर for चौर्य ("चौरस्य भावः"), चोर for चौर ("चोर एव अण्"); null when it comes straight from a dhātu (चुर्+अच्) or none is given.
+
+JSON: [{"id":"","is_entry":true,"why":"","head":"","gender":"","derivation":"","meaning":"","meaning_gu":"","base":null}]`;
+    let reply: unknown;
+    try {
+      reply = await askJson(engine, { system: SYSTEM, prompt, files, maxTokens: 1500 + 1200 * batch.length }, usage);
+    } catch (error) {
+      if (!(error instanceof LlmError) || error.status === 503 || batch.length < 2) throw error;
+      const half = Math.ceil(batch.length / 2);
+      await Promise.all([readOne(batch.slice(0, half)), readOne(batch.slice(half))]);
+      return;
+    }
+    const byId = new Map((Array.isArray(reply) ? (reply as Reading[]) : []).filter((r) => r?.id).map((r) => [String(r.id), r]));
+    for (const x of batch) {
+      const r = byId.get(x.c.id);
+      if (!r) continue;
+      const reading: EntryReading = {
+        is_entry: r.is_entry,
+        why: r.why,
+        head: r.head,
+        gender: r.gender,
+        derivation: r.derivation,
+        meaning: r.meaning,
+        meaning_gu: r.meaning_gu,
+        base: r.base ?? null,
+      };
+      out.set(x.key, reading);
+      // Kept only when read as intended: a scan that failed to open gave an OCR reading.
+      const meant = engine !== "claude" || !x.c.kosh.readFromScan || !x.c.pdfUrl || scanName.has(x.c.id);
+      if (meant) fresh.push({ entryId: x.c.id, wordKey: foldSanskrit(x.word), reading });
+    }
+  };
+  try {
+    await Promise.all(batches.map((batch) => readOne(batch)));
+    await saveReadings(fresh, engine);
+  } finally {
+    for (const x of toRead) {
+      resolvers.get(x.key)?.(out.get(x.key));
+      PENDING.delete(x.key);
+    }
+  }
+  await Promise.all(waits);
+  return out;
+}
+
+/** Which sense of each entry the vishay uses: judged on every run, from the kept readings. */
+async function judgeSenses(
+  engine: Engine,
+  vishay: string,
+  items: Array<{ id: string; word: string; citation: string; reading: EntryReading }>,
+  usage: Usage
+): Promise<Map<string, Reading>> {
+  const out = new Map<string, Reading>();
+  const batches: Array<typeof items> = [];
+  for (let i = 0; i < items.length; i += MAX_SENSES_PER_CALL) batches.push(items.slice(i, i + MAX_SENSES_PER_CALL));
+  await Promise.all(
+    batches.map(async (batch) => {
+      const blocks = batch.map(
+        ({ id, word, citation, reading: r }) => `--- id: ${id}
+word: ${word}
+kosh: ${citation}
+entry: ${[r.head, r.gender, r.derivation ? `(${r.derivation})` : ""].filter(Boolean).join(" ")}
+meanings: ${r.meaning_gu || r.meaning || ""}`
+      );
+      const prompt = `We are preparing the vyutpatti of the vishay "${vishay}" word by word. Below are kosh entries of its words. Judge every block on its own word's sense in the vishay.
+
+${blocks.join("\n\n")}
+
+For each id return:
+- fits_vishay: whether the entry has the meaning the word has in the vishay "${vishay}". The vishays are Jain topics. Answer false only for a clearly different meaning: काय as the root of the little finger does not fit कायिकहिंसा (it means body there); मूलगुण as an arithmetical multiplier does not fit a vishay on vows; अमुक्त as "a weapon held in the hand" does not fit अमुक्तमां मुक्तसंज्ञा. An entry whose only meaning is one particular person (the mother of a tīrthaṅkara, a named queen) or a form of address used in plays does not fit a general term (देवी in a vishay on goddesses). The ordinary meaning of a plain word fits (कथा as talk or story fits अकथा). An entry that only notes how the word is used, not what it means (AVPK's पति: "added to a word, it makes a word for master"), does not fit. An entry that has the vishay's sense among others fits. When unsure, true.
+- derivation_fits: whether the printed derivation belongs to that same sense (Shabda Ratna Mahodadhi's काय prints "कः प्रजापतिर्देवताऽस्य" for the Prajāpati sense, not for "body": false for कायिकहिंसा).
+- relevant_gender: the label printed for that sense, when the entry gives the senses different labels; else the entry's label.
+- relevant_gu: only the sense(s) that fit the vishay, in Gujarati, complete in itself (never "see above" or a reference to another entry).
+
+JSON: [{"id":"","fits_vishay":true,"derivation_fits":true,"relevant_gender":"","relevant_gu":""}]`;
+      const reply = await askJson(engine, { system: SYSTEM, prompt, maxTokens: 400 + 250 * batch.length }, usage);
+      for (const r of Array.isArray(reply) ? (reply as Reading[]) : []) if (r?.id) out.set(String(r.id), r);
+    })
+  );
+  return out;
+}
 
 async function readCandidates(
   engine: Engine,
@@ -298,72 +455,29 @@ async function readCandidates(
   usage: Usage,
   notes: string[]
 ): Promise<Map<string, Reading>> {
-  const all = asks.flatMap((a) => a.candidates.map((c) => ({ word: a.word, c })));
+  const read = await readEntries(engine, asks, usage, notes);
+  const entries = asks.flatMap((a) =>
+    a.candidates
+      .map((c) => ({ id: c.id, word: a.word, citation: c.citation, reading: read.get(cacheKey(c.id, foldSanskrit(a.word))) }))
+      .filter((x): x is typeof x & { reading: EntryReading } => Boolean(x.reading?.is_entry))
+  );
+  const senses = entries.length ? await judgeSenses(engine, vishay, entries, usage) : new Map<string, Reading>();
   const out = new Map<string, Reading>();
-  const batches: Array<typeof all> = [];
-  for (let i = 0; i < all.length; i += MAX_CANDIDATES_PER_CALL) batches.push(all.slice(i, i + MAX_CANDIDATES_PER_CALL));
-  // A long compound has many words: its batches are read side by side, and a
-  // batch whose answer runs too long is read again in halves.
-  const readOne = async (batch: typeof all): Promise<void> => {
-    const files: LlmFile[] = [];
-    const scanName = new Map<string, string>();
-    if (engine === "claude") {
-      const wanted = batch.filter(({ c }) => c.kosh.readFromScan && c.pdfUrl).slice(0, MAX_SCANS_PER_CALL);
-      await Promise.all(
-        wanted.flatMap(({ c }) =>
-          [c.pdfPage, ...(c.continues ? [c.pdfPage + 1] : [])].map(async (page) => {
-            const name = `${c.granthKey}-p${page}.pdf`;
-            if (files.some((f) => f.name === name)) return;
-            try {
-              files.push({ name, pdf: await scanOf(c.pdfUrl as string, page) });
-              scanName.set(c.id, [scanName.get(c.id), name].filter(Boolean).join(", "));
-            } catch {
-              notes.push(`The scan of ${c.citation}, PDF page ${page}, could not be opened; its entry was read from the OCR text.`);
-            }
-          })
-        )
-      );
+  for (const a of asks) {
+    for (const c of a.candidates) {
+      const reading = read.get(cacheKey(c.id, foldSanskrit(a.word)));
+      if (!reading) continue;
+      const sense = senses.get(c.id);
+      out.set(c.id, {
+        ...reading,
+        id: c.id,
+        fits_vishay: sense?.fits_vishay,
+        derivation_fits: sense?.derivation_fits,
+        relevant_gender: sense?.relevant_gender,
+        relevant_gu: sense?.relevant_gu,
+      });
     }
-    const blocks = batch.map(({ word, c }) => {
-      const scan = scanName.get(c.id);
-      return `--- id: ${c.id}
-word: ${word}
-kosh: ${c.citation} (meanings in ${LANGUAGE[c.kosh.language as keyof typeof LANGUAGE] ?? "Sanskrit"})${c.kosh.family === "avpk" ? "; format: headword-gender-shloka no.-Gujarati meaning, then ☐ synonyms, then a * line with the derivation" : ""}${c.kosh.tier === 2 && c.kosh.family !== "agamic" ? "; a Prakrit kosh: the headword is Prakrit, and the Sanskrit form after it (in brackets, or after the dash) is NOT a derivation" : ""}
-${scan ? `page scan attached: ${scan} — read the entry from the IMAGE; the OCR below misreads Gujarati as Devanagari letters` : "read from the OCR text below (it may have small OCR errors)"}
-OCR text:
-${c.text}`;
-    });
-    const prompt = `We are preparing the vyutpatti of the vishay "${vishay}" word by word. Each block below is a place in a kosh where the entry of the block's own "word" may begin. Judge every block on its own word, never on the vishay: a block whose word is कथा is the entry of कथा even when the vishay is अकथा.
-
-${blocks.join("\n\n")}
-
-For each id return:
-- is_entry: true when this is the entry of the block's word: its printed headword is that word or that word's nominative/stem form (कथा, कायिकः for कायिक, चौर्यम् for चौर्य; for a Prakrit kosh, the Sanskrit form given for the headword is that word). False for a different word, a longer compound beginning with it, a synonym list, or a running head.
-- why: when is_entry is false, the reason in a few English words; otherwise "".
-- fits_vishay: whether the entry's meaning is the one the word has in the vishay "${vishay}". The vishays are Jain topics. Answer false only for a clearly different meaning: काय as the root of the little finger does not fit कायिकहिंसा (it means body there); मूलगुण as an arithmetical multiplier does not fit a vishay on vows; अमुक्त as "a weapon held in the hand" does not fit अमुक्तमां मुक्तसंज्ञा. The ordinary meaning of a plain word fits (कथा as talk or story fits अकथा). When unsure, true.
-- derivation_fits: whether the printed derivation belongs to that same sense (Shabda Ratna Mahodadhi's काय prints "कः प्रजापतिर्देवताऽस्य" for the Prajāpati sense, not for "body": false for कायिकहिंसा).
-- relevant_gender: the label printed for that sense, when the entry gives the senses different labels; else the same as gender.
-- head: the headword as printed.
-- gender: the grammar label as printed (पुं., स्त्री., न., त्रि., वि., अव्य. …).
-- derivation: the derivation as printed — the text in the first round or square brackets after the label (Shabda Ratna Mahodadhi, Apte), or AVPK's * line — without the brackets or star; "" if the entry prints none. Never put a Prakrit kosh's Sanskrit form here.
-- meaning: the meanings as printed, in the kosh's language, OCR errors corrected only where certain; leave out illustrative quotations.
-- meaning_gu: the meaning in Gujarati script (ગુજરાતી લિપિ, never Devanagari letters) — copied when printed in Gujarati, otherwise a faithful translation.
-- relevant_gu: only the sense(s) of meaning_gu that fit the vishay "${vishay}", in Gujarati, complete in itself (never "see above" or a reference to another entry).
-- base: the word (a noun/adjective stem, in Devanagari) this word is derived from according to the derivation, e.g. चौर for चौर्य ("चौरस्य भावः"), चोर for चौर ("चोर एव अण्"); null when it comes straight from a dhātu (चुर्+अच्) or none is given.
-
-JSON: [{"id":"","is_entry":true,"why":"","fits_vishay":true,"derivation_fits":true,"relevant_gender":"","head":"","gender":"","derivation":"","meaning":"","meaning_gu":"","relevant_gu":"","base":null}]`;
-    let reply: unknown;
-    try {
-      reply = await askJson(engine, { system: SYSTEM, prompt, files, maxTokens: 1200 + 700 * batch.length }, usage);
-    } catch (error) {
-      if (!(error instanceof LlmError) || error.status === 503 || batch.length < 2) throw error;
-      const half = Math.ceil(batch.length / 2);
-      await Promise.all([readOne(batch.slice(0, half)), readOne(batch.slice(half))]);
-      return;
-    }
-    for (const r of Array.isArray(reply) ? (reply as Reading[]) : []) if (r?.id) out.set(String(r.id), r);
-  };
-  await Promise.all(batches.map((batch) => readOne(batch)));
+  }
   return out;
 }
 
@@ -508,7 +622,6 @@ export async function buildVyutpatti(input: VishayInput, engine: Engine, progres
   const vishay = cleanVishay(input.vishay);
   const usage = newUsage();
   const notes: string[] = [];
-  const stamp = remarkStamp();
   if (engine === "sarvam") notes.push("Read with Sarvam: Shabda Ratna Mahodadhi's Gujarati meanings come from OCR text, not the scan. Check them against the page.");
 
   progress("Splitting");
@@ -621,23 +734,21 @@ export async function buildVyutpatti(input: VishayInput, engine: Engine, progres
   const ordered = orderWords(kept, looked, whole);
   const lines: ReaderLine[] = [];
   const rows: TableRow[] = [];
+  // The kosh's other senses (w.otherSense) are not printed: Sahebji struck every
+  // "આ વિષયમાં આ અર્થ નથી" row out on the parṣadā sheets (7 Oct 2026).
   for (const w of ordered) {
     if (w.entries.length) {
-      lines.push(readerLineForEntry(primaryEntry(w.entries)));
-      for (const e of w.entries) rows.push(tableRowForEntry(e, stamp));
+      const shown = byKoshPriority(w.entries);
+      lines.push(readerLineForEntry(primaryEntry(shown)));
+      for (const e of shown) rows.push(tableRowForEntry(e));
     } else if (w.ai) {
       lines.push(readerLineForAi(w.ai));
-      rows.push(tableRowForAi(w.ai, stamp));
-    }
-    // The kosh's other senses, for the internal record only.
-    for (const e of w.otherSense ?? []) {
-      const row = tableRowForEntry(e, stamp);
-      rows.push({ ...row, inRem: `${row.inRem} (આ વિષયમાં આ અર્થ નથી)` });
+      rows.push(tableRowForAi(w.ai));
     }
   }
   if (plan.vigraha && whole && !wholeIsPart) {
     lines.push(readerLineForVigraha(whole, plan.vigraha));
-    rows.push(tableRowForVigraha(whole, plan.vigraha, plan.samasa, stamp));
+    rows.push(tableRowForVigraha(whole, plan.vigraha, plan.samasa));
   }
   for (const w of words) if (w.role === "base" && !w.entries.length && !w.otherSense) notes.push(`${w.word} (the base of ${w.of}) is not in the koshes and is left out.`);
   for (const line of lines) {
@@ -660,6 +771,19 @@ export async function buildVyutpatti(input: VishayInput, engine: Engine, progres
     costUsd: Math.round(usage.costUsd * 10000) / 10000,
     notes,
   };
+}
+
+/**
+ * Maharaj Saheb's order is AVPK, then Shabda Ratna Mahodadhi, then Apte: Apte
+ * is cited only when one of the first two lacks the word in the vishay's sense.
+ * On the parṣadā sheets (7 Oct 2026) he struck out Apte's देव, पर्षद्, भवन
+ * where both had them, and kept Apte's व्यंतर (no Shabda Ratna Mahodadhi entry)
+ * and देवी (AVPK's देवी is only Aranath's mother or a queen).
+ */
+export function byKoshPriority(entries: VyutpattiEntry[]) {
+  const family = (e: VyutpattiEntry) => vyutpattiKosh(e.granthKey)?.family;
+  const has = (f: string) => entries.some((e) => e.fitsVishay && family(e) === f);
+  return has("avpk") && has("srm") ? entries.filter((e) => family(e) !== "apte") : entries;
 }
 
 /**

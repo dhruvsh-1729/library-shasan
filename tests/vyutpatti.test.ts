@@ -8,12 +8,11 @@ import {
   normalizeGender,
   readerLineForEntry,
   readerLineForVigraha,
-  remarkStamp,
   tableRowForEntry,
 } from "@/lib/vyutpatti/format";
 import { parseJsonReply } from "@/lib/vyutpatti/llm";
 import { readingOrder, cutEntry } from "@/lib/vyutpatti/lookup";
-import { VishayInputError, baseCandidates, baseIsInDerivation, cleanVishay, parseVishayLines, primaryEntry, splitContext } from "@/lib/vyutpatti/pipeline";
+import { VishayInputError, baseCandidates, byKoshPriority, baseIsInDerivation, cleanVishay, parseVishayLines, primaryEntry, splitContext } from "@/lib/vyutpatti/pipeline";
 
 const entry = (over: Partial<VyutpattiEntry> = {}): VyutpattiEntry => ({
   id: "381:61:14",
@@ -46,14 +45,21 @@ test("a kosh entry is written as in Maharaj Saheb's sample", () => {
   assert.equal(`${vigraha.head}${vigraha.body}`, "अचौर्य - न चौर्यं इति अचौर्यम्। [समासविग्रह]");
 });
 
-test("the internal table row cites the kosh page and dates the remark", () => {
+test("the internal table row cites the kosh page, with no date in the remark", () => {
   const row = tableRowForEntry(
-    entry({ word: "कायिक", head: "कायिक", citation: "शब्दरत्नमहोदधि भाग-1", printedPage: "574", gender: "त्रि.", derivation: "कायस्येदं ठक् वा", meaningGu: "શરીરથી કરેલ પુણ્ય-પાપ વગેરે કર્મ" }),
-    "18-04-2023 18:33"
+    entry({ word: "कायिक", head: "कायिक", citation: "शब्दरत्नमहोदधि भाग-1", printedPage: "574", gender: "त्रि.", derivation: "कायस्येदं ठक् वा", meaningGu: "શરીરથી કરેલ પુણ્ય-પાપ વગેરે કર્મ" })
   );
-  assert.equal(row.shastraPath, "कायिक - त्रि. (कायस्येदं ठक् वा) (शब्दरत्नमहोदधि भाग-1, पृ. 574)");
-  assert.equal(row.inRem, "18-04-2023 18:33 શરીરથી કરેલ પુણ્ય-પાપ વગેરે કર્મ અર્થમાં.");
-  assert.match(remarkStamp(new Date("2023-04-18T13:03:00Z")), /^18-04-2023 18:33$/);
+  assert.equal(row.shastraPath, "कायिक - त्रि. (कायस्येदं ठक् वा) (शब्दरत्नमहोदधि भाग-1, पृ.\u00a0574)");
+  assert.equal(row.inRem, "શરીરથી કરેલ પુણ્ય-પાપ વગેરે કર્મ અર્થમાં.");
+});
+
+test("Apte is cited only when AVPK or Shabda Ratna Mahodadhi lacks the word", () => {
+  const avpk = entry({ id: "371:1:1", granthKey: "371" });
+  const srm = entry({ id: "381:1:1", granthKey: "381" });
+  const apte = entry({ id: "375:1:1", granthKey: "375" });
+  assert.deepEqual(byKoshPriority([avpk, srm, apte]).map((e) => e.granthKey), ["371", "381"]);
+  assert.deepEqual(byKoshPriority([avpk, apte]).map((e) => e.granthKey), ["371", "375"]);
+  assert.deepEqual(byKoshPriority([srm, apte]).map((e) => e.granthKey), ["381", "375"]);
 });
 
 test("a sense that does not fit the vishay is not given its derivation", () => {
