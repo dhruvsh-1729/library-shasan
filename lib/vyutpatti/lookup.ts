@@ -25,6 +25,8 @@ export type Candidate = {
   sanskrit: string | null;
   /** The entry as the OCR has it, in reading order. */
   text: string;
+  /** The whole page's OCR text (and the next page's, when the entry runs on), for checking a reading made from the scan. */
+  pageText: string;
   /** The entry runs on to the next PDF page (its first lines are in `text`). */
   continues: boolean;
   pdfUrl: string | null;
@@ -218,6 +220,7 @@ async function buildCandidates(picked: Picked[]): Promise<Candidate[]> {
           head: row.head,
           sanskrit: row.sanskrit,
           text: lines.join("\n").trim(),
+          pageText: [page, next].filter(Boolean).map((p) => p!.lines.join("\n")).join("\n"),
           continues: entry.continues,
           pdfUrl,
         });

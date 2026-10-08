@@ -223,7 +223,7 @@ Split the vishay into the words to look up in a Sanskrit/Prakrit kosh, in the or
 - A Gujarati word with its Gujarati ending stays whole and is skipped: खूणामां (Gujarati "in the corner"), बेठेली, घरमां, साधुओनी — never cut it into a stem to look up (not खूणा + मां).
 - A sentence or maxim (a न्याय, a quoted line) is not split word by word: give at most ${MAX_LOOKED_UP} of its key technical nouns and adjectives, as stems; skip its verb forms (तारयति, अनुवर्तते) and particles (च, न, इति, तु, एव, अपि, हि) with "skip": true; vigraha "".
 - Split off कु-, सु-, दुस्-, निस्- and the negation as prefixes (कुगुरु = कु- + गुरु) unless a kosh prints the whole as one word.
-- vigraha: the samāsa vigraha of the whole vishay in Sanskrit (e.g. "न चौर्यम् इति अचौर्यम्", "कायिकी चासौ हिंसा च कायिकहिंसा"); "" when the vishay is a single plain word, a phrase of several separate words, or a sentence. It uses the members as the vishay writes them and ends with the vishay exactly as written ("श्रमणानां पर्षदा श्रमणपर्षदा", not "… श्रमणपर्षद्"). A member that is itself a compound gets its own vigraha first, as its own clause, before the whole's: "भवनानां पतिः इति भवनपतिः, भवनपतीनां देवीनां पर्षदा भवनपतिदेवीपर्षदा" (Maharaj Saheb's correction). A member made of a noun and a verbal noun (उपपद) is explained with the finite verb: "कुम्भं करोति इति कुम्भकारः", never "कुम्भं कारः".
+- vigraha: the samāsa vigraha of the whole vishay in Sanskrit (e.g. "न चौर्यम् इति अचौर्यम्", "कायिकी चासौ हिंसा च कायिकहिंसा"); "" when the vishay is a single plain word, a phrase of several separate words, or a sentence. It uses the members as the vishay writes them and ends with the vishay exactly as written ("श्रमणानां पर्षदा श्रमणपर्षदा", not "… श्रमणपर्षद्"). A member written in the vishay that is itself a compound gets its own vigraha first, as its own clause, before the whole's (only such a member: never add a word or a compound the vishay does not have; ज्योतिष्कदेवीपर्षदा has no ज्योतिष्कदेव, so "ज्योतिष्काणां देवीनां पर्षदा ज्योतिष्कदेवीपर्षदा"): "भवनानां पतिः इति भवनपतिः, भवनपतीनां देवीनां पर्षदा भवनपतिदेवीपर्षदा" (Maharaj Saheb's correction). A member made of a noun and a verbal noun (उपपद) is explained with the finite verb: "कुम्भं करोति इति कुम्भकारः", never "कुम्भं कारः".
 - samasa: its type in Sanskrit (नञ्तत्पुरुषः, कर्मधारयः, षष्ठीतत्पुरुषः, द्वन्द्वः, बहुव्रीहिः …), or "".
 
 JSON: {"parts":[{"word":"","text":"","prefix":false,"skip":false}],"vigraha":"","samasa":""}`;
@@ -294,11 +294,13 @@ async function readEntries(
   engine: Engine,
   asks: Array<{ word: string; candidates: Candidate[] }>,
   usage: Usage,
-  notes: string[]
+  notes: string[],
+  readAgain: boolean
 ): Promise<Map<string, EntryReading>> {
   const all = asks.flatMap((a) => a.candidates.map((c) => ({ word: a.word, c, key: cacheKey(c.id, foldSanskrit(a.word)) })));
   const out = new Map<string, EntryReading>();
-  const kept = await loadReadings(all.map((x) => ({ entryId: x.c.id, wordKey: foldSanskrit(x.word) })), engine);
+  // readAgain: every entry is read again and the kept reading replaced (an entry found misread).
+  const kept = readAgain ? new Map<string, EntryReading>() : await loadReadings(all.map((x) => ({ entryId: x.c.id, wordKey: foldSanskrit(x.word) })), engine);
   const toRead: typeof all = [];
   const waits: Array<Promise<void>> = [];
   for (const x of all) {
@@ -453,9 +455,10 @@ async function readCandidates(
   vishay: string,
   asks: Array<{ word: string; candidates: Candidate[] }>,
   usage: Usage,
-  notes: string[]
+  notes: string[],
+  readAgain: boolean
 ): Promise<Map<string, Reading>> {
-  const read = await readEntries(engine, asks, usage, notes);
+  const read = await readEntries(engine, asks, usage, notes, readAgain);
   const entries = asks.flatMap((a) =>
     a.candidates
       .map((c) => ({ id: c.id, word: a.word, citation: c.citation, reading: read.get(cacheKey(c.id, foldSanskrit(a.word))) }))
@@ -506,8 +509,10 @@ function toEntry(word: string, c: Candidate, r: Reading, engine: Engine): Vyutpa
     relevantGender: String(r.relevant_gender ?? ""),
     readFrom,
     // The derivation is Devanagari, which the OCR reads well even where it
-    // garbled the Gujarati: a reading it does not support is flagged.
-    checked: agreement(derivation, c.text) >= 0.6,
+    // garbled the Gujarati: a reading it does not support is flagged. It is
+    // checked against the whole page, since on a page whose columns the OCR
+    // mixed, the end of a long derivation is not in the entry's own lines.
+    checked: agreement(derivation, c.pageText || c.text) >= 0.6,
   };
 }
 
@@ -618,7 +623,17 @@ const MAX_BASE_DEPTH = 3;
 
 export type Progress = (message: string) => void;
 
-export async function buildVyutpatti(input: VishayInput, engine: Engine, progress: Progress = () => {}): Promise<VyutpattiResult> {
+export type BuildOptions = {
+  /** Read every kosh entry again instead of using the kept readings, and keep the new ones. */
+  fresh?: boolean;
+};
+
+export async function buildVyutpatti(
+  input: VishayInput,
+  engine: Engine,
+  progress: Progress = () => {},
+  options: BuildOptions = {}
+): Promise<VyutpattiResult> {
   const vishay = cleanVishay(input.vishay);
   const usage = newUsage();
   const notes: string[] = [];
@@ -665,7 +680,7 @@ export async function buildVyutpatti(input: VishayInput, engine: Engine, progres
     );
     const withCandidates = found.filter((f) => f.candidates.length);
     if (withCandidates.length) progress(`Reading ${withCandidates.reduce((n, f) => n + f.candidates.length, 0)} kosh entries`);
-    const readings = withCandidates.length ? await readCandidates(engine, vishay, withCandidates, usage, notes) : new Map<string, Reading>();
+    const readings = withCandidates.length ? await readCandidates(engine, vishay, withCandidates, usage, notes, Boolean(options.fresh)) : new Map<string, Reading>();
 
     for (const f of found) {
       const entries = f.candidates

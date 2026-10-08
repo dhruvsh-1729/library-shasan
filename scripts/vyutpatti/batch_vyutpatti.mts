@@ -7,6 +7,7 @@
 //       [--single=<file.pdf>]   also (or, with --no-each, only) one PDF with every vishay, one after another
 //       [--notes-margin]        the old layout: table in the left 60%, right 40% blank for notes
 //       [--no-each]             no per-vishay PDFs
+//       [--fresh]               read every kosh entry again (replacing the kept readings), e.g. after one was found misread
 //
 // list.txt: one vishay per line in Devanagari, optionally "number<TAB>vishay<TAB>box".
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -22,6 +23,7 @@ const maxUsd = Number(opt("max-usd") ?? 4);
 const single = opt("single");
 const fullWidth = !args.includes("--notes-margin");   // full width is the default, as on the page
 const each = !args.includes("--no-each");
+const fresh = args.includes("--fresh");
 const sections: Parameters<typeof buildVyutpattiPdf>[0] = [];
 if (!listPath || !outDir) {
   console.error("usage: batch_vyutpatti.mts <list.txt> <outDir> [--json=<dir>] [--max-usd=4]");
@@ -41,7 +43,7 @@ for (const [i, item] of items.entries()) {
   if (total >= maxUsd) { console.log(`stopping: spent $${total.toFixed(2)} (limit $${maxUsd})`); break; }
   const t = Date.now();
   try {
-    const r = await buildVyutpatti(item, "claude", (m) => process.stdout.write(`  ${m}\r`));
+    const r = await buildVyutpatti(item, "claude", (m) => process.stdout.write(`  ${m}\r`), { fresh });
     total += r.costUsd;
     const section = { number: r.number, vishay: r.vishay, box: r.box, rows: r.rows, lines: r.lines };
     sections.push(section);
