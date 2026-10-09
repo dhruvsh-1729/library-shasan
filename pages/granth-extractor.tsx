@@ -440,7 +440,7 @@ export default function GranthExtractor() {
               {!works && !worksError ? <p className="exQuiet">Loading the library…</p> : null}
               {works ? (
                 <ul className="exWorks">
-                  {listed.slice(0, 60).map((w) => (
+                  {listed.map((w) => (
                     <li key={w.id}>
                       <button type="button" className="exWork" onClick={() => chooseWork(w)}>
                         {w.cover ? <img src={w.cover} alt="" loading="lazy" /> : <span className="exWorkNoCover" />}
@@ -457,7 +457,6 @@ export default function GranthExtractor() {
                     </li>
                   ))}
                   {!listed.length ? <li className="exQuiet">No granth matches “{query}”.</li> : null}
-                  {listed.length > 60 ? <li className="exQuiet">{listed.length - 60} more — type more of the name.</li> : null}
                 </ul>
               ) : null}
             </section>
