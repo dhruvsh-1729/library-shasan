@@ -1,9 +1,11 @@
 // The vyutpatti PDF, in the two layouts of Maharaj Saheb's sample (WhatsApp
 // scan, 28 Sep 2026 17.19):
 //
-//   1. the internal table (the box sheet): the vishay as a heading,
-//      "BOX No - n", and Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem with
-//      one row per kosh entry, the kosh named by its 3-digit granth number. The
+//   1. the internal table (the box sheet): Sr | V.T | Granth | ShastraPath |
+//      Pub.Rem | In.Rem with one row per kosh entry, the kosh named by its
+//      3-digit granth number, and under the table a key of those numbers to the
+//      koshes' names. The sample's vishay heading, "BOX No - n" and the vishay
+//      band across the table are left out (Sahebji, 9 Oct 2026). The
 //      table spans the full page width (Dhruv, 6 Oct 2026: the file sent to
 //      Maharaj Saheb); { fullWidth: false } gives the old left-60% layout with
 //      the right 40% blank for notes;
@@ -55,6 +57,8 @@ const TABLE_COLUMNS = [18, 22, 38, 0, 46, 70];
 // column fits समासविग्रह on one line.
 const FULL_WIDTH_COLUMNS = [20, 24, 62, 0, 46, 150];
 const TABLE_HEADER = ["Sr.", "V.T", "Granth", "ShastraPath", "Pub.Rem", "In.Rem"];
+// space between the table and the key to its Granth column
+const LEGEND_GAP = 12;
 
 // ------------------------------------------------------------------ reader
 
@@ -136,33 +140,12 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
     return top - layout.height;
   };
 
-  const centred = (page: PDFPage, value: string, y: number, size: number, weight: Weight, left = MARGIN, room = width) => {
-    const runs = text.layout(value, weight);
-    const w = text.width(runs, size);
-    text.draw(page, runs, left + Math.max(0, (room - w) / 2), y, size);
-  };
-
   for (const section of sections) {
-    const heading = [section.number, section.vishay].filter(Boolean).join(" - ");
+    // No heading, "BOX No" line or vishay band: the sheet is the table alone
+    // (Sahebji, 9 Oct 2026). No organisation's name or mark either.
     let page = doc.addPage(A4);
-    let y = pageHeight - MARGIN - 12;
-    // No organisation's name or mark on the sheet (Sahebji's instruction):
-    // the heading alone, set smaller when a long vishay would not fit.
-    const headingRuns = text.layout(heading, "regular");
-    const headingSize = Math.max(7, Math.min(12, (12 * tableWidth) / Math.max(1, text.width(headingRuns, 12))));
-    centred(page, heading, y, headingSize, "regular", MARGIN, tableWidth);
-    y -= 24;
-    text.draw(page, text.layout(`BOX No - ${section.box || "1"}`, "regular"), MARGIN, y, 11);
-    y -= 8;
-
     const header = rowLayout(TABLE_HEADER, "regular");
-    y = drawRow(page, y, header);
-    // The vishay across the whole table, as in the sample.
-    const bandHeight = lineHeight + 2 * CELL_PAD_Y + 4;
-    strokeRect(page, MARGIN, y - bandHeight, tableWidth, bandHeight, TABLE_BORDER);
-    const bandSize = Math.max(7, Math.min(TABLE_SIZE + 0.5, ((TABLE_SIZE + 0.5) * (tableWidth - 8)) / Math.max(1, text.width(text.layout(heading, "regular"), TABLE_SIZE + 0.5))));
-    centred(page, heading, y - CELL_PAD_Y - 2 - ascentOf(TABLE_SIZE), bandSize, "regular", MARGIN, tableWidth);
-    y -= bandHeight;
+    let y = drawRow(page, pageHeight - MARGIN, header);
 
     section.rows.forEach((row, index) => {
       const cells = [String(index + 1), "व्यु.", row.granthNo || row.granth, row.shastraPath, row.pubRem, row.inRem];
@@ -175,7 +158,24 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
     });
     if (!section.rows.length) {
       text.draw(page, text.layout("No kosh entry was found.", "regular"), MARGIN, y - 18, 10);
+      continue;
     }
+
+    // The key to the Granth column: each kosh's 3-digit granth number and its
+    // name, so the numbers need no explaining (Sahebji asked what they were).
+    const legend = new Map<string, string>();
+    for (const row of section.rows) if (row.granthNo && !legend.has(row.granthNo)) legend.set(row.granthNo, row.granth);
+    if (!legend.size) continue;
+    const legendLines = [...legend].sort(([a], [b]) => a.localeCompare(b)).flatMap(([no, name]) =>
+      wrapPieces(text, plain(`${no} - ${name}`), TABLE_SIZE, tableWidth)
+    );
+    const needed = (legendLines.length + 1) * lineHeight + LEGEND_GAP;
+    if (y - needed < MARGIN) {
+      page = doc.addPage(A4);
+      y = pageHeight - MARGIN;
+    } else y -= LEGEND_GAP;
+    drawWrapped(text, page, wrapPieces(text, plain("Granth no.", "bold"), TABLE_SIZE, tableWidth), MARGIN, y - ascentOf(TABLE_SIZE), TABLE_SIZE, TABLE_LEADING);
+    drawWrapped(text, page, legendLines, MARGIN, y - ascentOf(TABLE_SIZE) - lineHeight, TABLE_SIZE, TABLE_LEADING);
   }
 
   // ---------------------------------------------------------------- reader pages

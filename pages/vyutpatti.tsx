@@ -158,7 +158,8 @@ function AutoGrow({ value, onChange, className, label }: { value: string; onChan
 
 export default function VyutpattiPage() {
   const [input, setInput] = useState("");
-  const [box, setBox] = useState("1");
+  // The sheet no longer prints a box number (Sahebji, 9 Oct 2026); "1" is still sent with each run.
+  const box = "1";
   const [engine, setEngine] = useState<Engine>("claude");
   const [items, setItems] = useState<Item[]>([]);
   const [running, setRunning] = useState(false);
@@ -426,17 +427,13 @@ export default function VyutpattiPage() {
                     </button>
                   ))}
                 </div>
-                <label className="vyBox">
-                  Box
-                  <input value={box} onChange={(e) => setBox(e.target.value.slice(0, 12))} inputMode="numeric" aria-label="Box No" />
-                </label>
                 <button type="button" className="vyLink" onClick={() => setSettingsOpen(false)}>
                   Done
                 </button>
               </div>
             ) : (
               <p className="vySettingsLine">
-                Read with {engine === "claude" ? "Claude" : "Sarvam"} · Box {box || "—"}{" "}
+                Read with {engine === "claude" ? "Claude" : "Sarvam"}{" "}
                 <button type="button" className="vyLink" onClick={() => setSettingsOpen(true)}>
                   Change
                 </button>

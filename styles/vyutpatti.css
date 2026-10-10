@@ -98,28 +98,6 @@
   color: #fff;
 }
 
-.vyBox {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--lt-ink-2);
-}
-
-.vyBox input {
-  width: 56px;
-  min-height: 40px;
-  padding: 6px 8px;
-  border: 1px solid var(--lt-glass-edge);
-  border-radius: 6px;
-  font: inherit;
-  font-size: 16px;
-  color: var(--lt-ink);
-  background: #fff;
-  text-align: center;
-}
-
 .vyGo {
   grid-column: 1 / -1;
   min-height: 48px;
