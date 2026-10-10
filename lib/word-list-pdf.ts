@@ -442,38 +442,33 @@ export type LineListRow = {
   /** Printed page ("91", "73-74"), or null when unknown. */
   printedPage: string | null;
   pdfPage: number;
-  lineNumber: number;
-  lineText: string;
-  /** The words found on the line, as printed there. */
-  words: string[];
+  /** The page's lines that hold a match (a passage can hold several close together). */
+  hitLines: number[];
+  /** The matched lines with two lines of text above and below, as one run; found words are hits. */
+  pieces: Array<{ text: string; hit: boolean }>;
 };
 
 /** `heading` is the granth's 3-digit book number, printed in the footer of each of its pages. */
 export type LineListSection = { heading: string; rows: LineListRow[] };
 
 const LINE_TEXT_SIZE = 10.5;
-// tight leading and padding so as many lines as possible fit on a page
+// tight leading so as many lines as possible fit on a page
 const LINE_LEADING = 1.25;
-const LINE_CELL_PAD_X = 5;
-const LINE_CELL_PAD_Y = 2;
 const LINE_HEADING_SIZE = 12;
-const LINE_BORDER = 0.4;
-// the line list: space above and below each record, the rule between records,
-// and the column for "[line, page]" beside the line
+// the line list: space above and below each record, and the rule between records
 const LINE_RECORD_PAD = 4;
 const LINE_RULE = 0.35;
 const LINE_RULE_COLOR = rgb(0.55, 0.55, 0.55);
-const LINE_REF_GAP = 10;
-const LINE_REF_WIDTH = 92;
+const UNDERLINE = 0.6;
 /**
- * The table takes the left 60% of the page; the right 40% stays blank for
- * Maharaj Saheb's handwritten notes.
+ * The vyutpatti table's old layout: the table in the left 60% of the page, the
+ * right 40% blank for Maharaj Saheb's handwritten notes.
  */
 export const NOTES_TABLE_RIGHT = A4[0] * 0.6;
 /** Room kept at the bottom of each page for the footer. */
 export const FOOTER_ROOM = 22;
 
-/** The book number centred under the table, at the foot of the page. */
+/** The book number centred at the foot of the page. */
 export function drawFooter(text: TextDrawer, page: PDFPage, value: string, left = MARGIN, right = NOTES_TABLE_RIGHT) {
   if (!value) return;
   const runs = text.layout(value, "bold");
@@ -481,30 +476,10 @@ export function drawFooter(text: TextDrawer, page: PDFPage, value: string, left 
   text.draw(page, runs, left + Math.max(0, (right - left - width) / 2), MARGIN - 6, LINE_HEADING_SIZE);
 }
 
-export type Piece = { text: string; weight: Weight };
-
-/**
- * The line split into pieces, the found words bold: marks every character
- * inside an occurrence of a found word, then groups runs of marked and
- * unmarked text.
- */
-function highlightPieces(line: string, words: string[]): Piece[] {
-  const mark = new Uint8Array(line.length);
-  for (const word of words.filter(Boolean).sort((a, b) => b.length - a.length)) {
-    for (let at = line.indexOf(word); at >= 0; at = line.indexOf(word, at + word.length)) mark.fill(1, at, at + word.length);
-  }
-  const pieces: Piece[] = [];
-  for (let i = 0; i < line.length; ) {
-    let j = i;
-    while (j < line.length && mark[j] === mark[i]) j += 1;
-    pieces.push({ text: line.slice(i, j), weight: mark[i] ? "bold" : "regular" });
-    i = j;
-  }
-  return pieces;
-}
+export type Piece = { text: string; weight: Weight; underline?: boolean };
 
 export type Word = {
-  parts: Array<{ runs: ShapedRun[] }>;
+  parts: Array<{ runs: ShapedRun[]; underline?: boolean }>;
   width: number;
   space: number;
   /** a later piece of a word too wide for the cell: starts a new line, no space */
@@ -524,14 +499,14 @@ function breakWord(text: TextDrawer, pieces: Piece[], size: number, room: number
     for (const { segment } of AKSHARAS.segment(piece.text)) {
       const w = text.width(text.layout(chunk + segment, piece.weight), size);
       if (width + w > room && (chunk || parts.length)) {
-        if (chunk) parts.push({ runs: text.layout(chunk, piece.weight) });
+        if (chunk) parts.push({ runs: text.layout(chunk, piece.weight), underline: piece.underline });
         flush();
         chunk = segment;
       } else chunk += segment;
     }
     if (chunk) {
       const runs = text.layout(chunk, piece.weight);
-      parts.push({ runs });
+      parts.push({ runs, underline: piece.underline });
       width += text.width(runs, size);
     }
   }
@@ -553,7 +528,7 @@ export function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room
   }
   const spaceWidth = text.width(text.layout(" ", "regular"), size);
   const shaped: Word[] = words.filter((w) => w.length).flatMap((w) => {
-    const parts = w.map((p) => ({ runs: text.layout(p.text, p.weight) }));
+    const parts = w.map((p) => ({ runs: text.layout(p.text, p.weight), underline: p.underline }));
     const width = parts.reduce((sum, p) => sum + text.width(p.runs, size), 0);
     return width > room ? breakWord(text, w, size, room, spaceWidth) : [{ parts, width, space: spaceWidth }];
   });
@@ -568,14 +543,33 @@ export function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room
 }
 
 /**
- * The line list: for each granth, one record per matched line — the line with
- * the found words bold, wrapped in the left 40% of the page, then
- * "[line, page]" beside it, and the rest of the width left blank for
- * Maharaj Saheb's notes. The reference carries no पं./पृ. labels (Dhruv,
- * 4 Oct 2026): line first, page second is understood; only a page with no
- * printed number keeps its "PDF" mark, so it is not read as a printed page. No table and no serial numbers (Dhruv, 3 Oct 2026):
- * a thin rule across the page separates one record from the next. The
- * granth's 3-digit book number is printed in the footer of each of its pages.
+ * "[५, २८४]": the line, then the page, the page underlined (Sahebji, 9 Oct
+ * 2026). In a file of several granths the page follows the granth's book
+ * number, in English digits: "[५, 073/२८४]". A page with no printed number
+ * says so in full: "[५, PDF page number १२]". No-break spaces keep a
+ * reference on one line.
+ */
+function referencePieces(row: LineListRow, book: string | null): Piece[] {
+  const page = row.printedPage ? toDevanagariDigits(row.printedPage) : toDevanagariDigits(row.pdfPage);
+  const pageLabel = row.printedPage ? "" : "PDF\u00a0page\u00a0number\u00a0";
+  return row.hitLines.flatMap((line, i): Piece[] => [
+    { text: `${i ? " " : "\u00a0"}[${toDevanagariDigits(line)},\u00a0${book ? `${book}/` : ""}${pageLabel}`, weight: "regular" },
+    { text: page, weight: "regular", underline: true },
+    { text: "]", weight: "regular" },
+  ]);
+}
+
+/**
+ * The line list: for each granth, one record per matched line with two lines
+ * of text above and below it (Sahebji, 9 Oct 2026), the found words bold and
+ * the "[line, page]" reference right after the passage's last word. Matches
+ * close enough for their passages to overlap or touch share one record, which
+ * carries a reference for each. The text spans the full page width (for the
+ * next month or so, so the longer records print on fewer pages); the old
+ * left-40% column with the rest blank for notes is gone. The book number is
+ * printed in the footer of each page, and in a file of several granths also in
+ * every reference. No table and no serial numbers: a thin rule across the page
+ * separates one record from the next.
  */
 export async function buildLineListPdf(options: { word: string; sections: LineListSection[] }) {
   const faces = await loadFaces();
@@ -586,14 +580,12 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
   const text = new TextDrawer(faces, embedder);
   const [pageWidth, pageHeight] = A4;
   const bottom = MARGIN + FOOTER_ROOM;
-  // the line | its line and page numbers | (blank, for notes)
-  const lineX = MARGIN;
-  const lineRoom = pageWidth * 0.4;
-  const refX = lineX + lineRoom + LINE_REF_GAP;
-  const refRoom = LINE_REF_WIDTH;
+  const room = pageWidth - 2 * MARGIN;
   const lineHeight = LINE_TEXT_SIZE * LINE_LEADING;
   const reference = faces.devanagari.regular;
   const ascent = (reference.ascender / reference.upem) * LINE_TEXT_SIZE;
+  const descent = (-reference.descender / reference.upem) * LINE_TEXT_SIZE;
+  const severalGranths = options.sections.length > 1;
 
   const drawLines = (page: PDFPage, lines: Word[][], x: number, top: number) =>
     lines.forEach((words, i) => {
@@ -601,7 +593,14 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
       let at = x;
       words.forEach((w, k) => {
         if (k) at += w.space;
-        for (const part of w.parts) at = text.draw(page, part.runs, at, baseline, LINE_TEXT_SIZE);
+        for (const part of w.parts) {
+          const start = at;
+          at = text.draw(page, part.runs, at, baseline, LINE_TEXT_SIZE);
+          if (part.underline) {
+            const y = baseline - descent * 0.45;
+            page.drawLine({ start: { x: start, y }, end: { x: at, y }, thickness: UNDERLINE, color: rgb(0, 0, 0) });
+          }
+        }
       });
     });
   const rule = (page: PDFPage, y: number) =>
@@ -609,24 +608,24 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
 
   for (const section of options.sections) {
     let page = doc.addPage(A4);
-    drawFooter(text, page, section.heading);
+    drawFooter(text, page, section.heading, MARGIN, pageWidth - MARGIN);
     let y = pageHeight - MARGIN;
 
     section.rows.forEach((row, index) => {
-      const where = row.printedPage ? toDevanagariDigits(row.printedPage) : `PDF ${toDevanagariDigits(row.pdfPage)}`;
-      const lineWrapped = wrapPieces(text, highlightPieces(row.lineText, row.words), LINE_TEXT_SIZE, lineRoom);
-      const refWrapped = wrapPieces(text, [{ text: `[${toDevanagariDigits(row.lineNumber)}, ${where}]`, weight: "regular" }], LINE_TEXT_SIZE, refRoom);
-      const height = Math.max(lineWrapped.length, refWrapped.length) * lineHeight + 2 * LINE_RECORD_PAD;
+      const pieces: Piece[] = [
+        ...row.pieces.map((piece): Piece => ({ text: piece.text, weight: piece.hit ? "bold" : "regular" })),
+        ...referencePieces(row, severalGranths ? section.heading : null),
+      ];
+      const wrapped = wrapPieces(text, pieces, LINE_TEXT_SIZE, room);
+      const height = wrapped.length * lineHeight + 2 * LINE_RECORD_PAD;
       if (y - height < bottom) {
         page = doc.addPage(A4);
-        drawFooter(text, page, section.heading);
+        drawFooter(text, page, section.heading, MARGIN, pageWidth - MARGIN);
         y = pageHeight - MARGIN;
       }
       // a thin rule between two records, none above the first on a page
       if (index > 0 && y < pageHeight - MARGIN) rule(page, y);
-      const top = y - LINE_RECORD_PAD;
-      drawLines(page, lineWrapped, lineX, top);
-      drawLines(page, refWrapped, refX, top);
+      drawLines(page, wrapped, MARGIN, y - LINE_RECORD_PAD);
       y -= height;
     });
   }

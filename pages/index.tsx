@@ -1564,7 +1564,7 @@ export default function SearchPage() {
                   downloadPreview.preview ? (
                     <ExportActions
                       hint={blocked ?? (tooManyPages ? `Full PDF: choose ${maxPages} PDF pages or fewer.` : null)}
-                      secondary={{ id: "linelist", label: "Line list", detail: "A PDF table of every matching line with its page and line number", busyLabel: "Building", ...choice("linelist") }}
+                      secondary={{ id: "linelist", label: "Line list", detail: "A PDF of every matching line with two lines above and below, and its line and page number", busyLabel: "Building", ...choice("linelist") }}
                       primary={{ id: "pdf", label: "Full PDF", detail: "The chosen pages as one PDF, cover first", busyLabel: "Building", ...choice("pdf") }}
                       more={[
                         { id: "wordlist", label: "Word list (PDF)", detail: "Each matching word with the book's page number", busyLabel: "Building word list", ...choice("wordlist") },

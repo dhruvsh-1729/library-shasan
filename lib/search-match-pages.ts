@@ -339,6 +339,109 @@ export function findMatchLinesInPageContent(
     }));
 }
 
+export type SearchMatchPassage = {
+  page_number: number;
+  /** The number printed on the page ("91", "73-74"), or null when unknown or unverified. */
+  printed_page: string | null;
+  /** The page's lines that hold a match, in order (1-based, counted as in the line list). */
+  hit_lines: number[];
+  /** The passage as one run of text, the found words (whole words) marked as hits. */
+  pieces: Array<{ text: string; hit: boolean }>;
+};
+
+/** Lines of text kept above and below each matched line in the line list (Sahebji, 9 Oct 2026). */
+export const PASSAGE_CONTEXT_LINES = 2;
+
+/**
+ * The matched lines of a page with `context` lines of text above and below
+ * each (blank lines are not counted), from that page only. Hits close enough
+ * for their passages to overlap or touch become one passage. A passage's lines
+ * are joined into one run; a word hyphenated across a line break stays joined.
+ */
+export function findMatchPassagesInPageContent(
+  content: string,
+  queries: string[],
+  matchMode: OCRSearchMode,
+  scripts: OCRSearchScripts = null,
+  context = PASSAGE_CONTEXT_LINES
+): Array<Pick<SearchMatchPassage, "hit_lines" | "pieces">> {
+  const normalized = normalizeLineBreaks(content);
+  const matches = findOCRSearchMatchesForQueries(normalized, queries, matchMode, scripts);
+  if (matches.length === 0) return [];
+
+  const lines = normalized.split("\n");
+  const lineStarts: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    lineStarts.push(offset);
+    offset += line.length + 1;
+  }
+  const lineOf = (at: number) => {
+    let lo = 0;
+    let hi = lineStarts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineStarts[mid] <= at) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
+
+  const marked = new Uint8Array(normalized.length);
+  const hitLines = new Set<number>();
+  for (const match of matches) {
+    hitLines.add(lineOf(match.start));
+    for (const [a, b] of wholeWordPieces(normalized, match.start, match.end)) marked.fill(1, a, b);
+  }
+
+  // positions among the page's non-blank lines, so context counts lines of text
+  const textLines = lines.map((line, i) => (line.trim() ? i : -1)).filter((i) => i >= 0);
+  const rank = new Map(textLines.map((line, r) => [line, r]));
+  const windows: Array<{ from: number; to: number; hits: number[] }> = [];
+  for (const line of [...hitLines].sort((a, b) => a - b)) {
+    const r = rank.get(line);
+    if (r == null) continue;
+    const from = Math.max(0, r - context);
+    const to = Math.min(textLines.length - 1, r + context);
+    const last = windows[windows.length - 1];
+    if (last && from <= last.to + 1) {
+      last.to = Math.max(last.to, to);
+      last.hits.push(line);
+    } else windows.push({ from, to, hits: [line] });
+  }
+
+  return windows.map((window) => {
+    const pieces: Array<{ text: string; hit: boolean }> = [];
+    const push = (text: string, hit: boolean) => {
+      if (!text) return;
+      const last = pieces[pieces.length - 1];
+      if (last && last.hit === hit) last.text += text;
+      else pieces.push({ text, hit });
+    };
+    for (let r = window.from; r <= window.to; r += 1) {
+      const index = textLines[r];
+      const line = lines[index];
+      const start = lineStarts[index];
+      // trim the line, keeping each character's position for its mark
+      const lead = line.length - line.trimStart().length;
+      const body = line.trim();
+      if (r > window.from) {
+        const previous = pieces[pieces.length - 1];
+        // "हिंसाद्यष्ट-" + "दशपापस्थान" stays one word
+        if (!previous || !/-$/.test(previous.text)) push(" ", false);
+      }
+      for (let i = 0; i < body.length; ) {
+        const hit = marked[start + lead + i] === 1;
+        let j = i;
+        while (j < body.length && (marked[start + lead + j] === 1) === hit) j += 1;
+        push(body.slice(i, j).replace(/\s+/g, " "), hit);
+        i = j;
+      }
+    }
+    return { hit_lines: window.hits.map((line) => line + 1), pieces };
+  });
+}
+
 /**
  * Lists every granth that has at least one matching page for the search, so a
  * multi-granth or all-granth search can be exported in one file.
@@ -436,25 +539,10 @@ async function loadVerifiedGranths(
 /**
  * Page-and-line level matches for one granth, used by the CSV export.
  */
-export async function loadSearchMatchLines(
-  sourceRelPath: string,
-  query: string | string[],
-  matchMode: OCRSearchMode,
-  options: {
-    pages?: number[] | null;
-    maxRows?: number;
-    queryVariants?: string | string[] | null;
-    scripts?: OCRSearchScripts;
-    /** Longest line text kept (the CSV keeps 400 characters). */
-    maxLineChars?: number;
-  } = {}
-) {
-  const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
-  const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
-  const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
+/** The text and printed page number of every page of one granth the index lists for the search, in page order. */
+async function loadHitPageContents(sourceRelPath: string, queries: string[], matchMode: OCRSearchMode) {
   const hits = await buildHitQuery(queries, matchMode, [sourceRelPath]);
-
-  const result = await getTursoClient().execute({
+  return getTursoClient().execute({
     sql: `WITH hits AS (${hits.sql}),
             unique_hits AS (
               SELECT page_id
@@ -475,6 +563,25 @@ export async function loadSearchMatchLines(
           LIMIT ?`,
     args: [...hits.args, MAX_MATCH_PAGE_PREVIEW + 1],
   });
+}
+
+export async function loadSearchMatchLines(
+  sourceRelPath: string,
+  query: string | string[],
+  matchMode: OCRSearchMode,
+  options: {
+    pages?: number[] | null;
+    maxRows?: number;
+    queryVariants?: string | string[] | null;
+    scripts?: OCRSearchScripts;
+    /** Longest line text kept (the CSV keeps 400 characters). */
+    maxLineChars?: number;
+  } = {}
+) {
+  const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
+  const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
+  const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
+  const result = await loadHitPageContents(sourceRelPath, queries, matchMode);
 
   const lines: SearchMatchLine[] = [];
   const matchedPages = new Set<number>();
@@ -509,6 +616,46 @@ export async function loadSearchMatchLines(
   return { lines, matched_pages: [...matchedPages].sort((a, b) => a - b), truncated, queries };
 }
 
+/** The line list's records: each matched line with the lines around it (see findMatchPassagesInPageContent). */
+export async function loadSearchMatchPassages(
+  sourceRelPath: string,
+  query: string | string[],
+  matchMode: OCRSearchMode,
+  options: {
+    pages?: number[] | null;
+    maxRows?: number;
+    queryVariants?: string | string[] | null;
+    scripts?: OCRSearchScripts;
+  } = {}
+) {
+  const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
+  const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
+  const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
+  const result = await loadHitPageContents(sourceRelPath, queries, matchMode);
+
+  const passages: SearchMatchPassage[] = [];
+  let truncated = result.rows.length > MAX_MATCH_PAGE_PREVIEW;
+
+  for (const row of result.rows.slice(0, MAX_MATCH_PAGE_PREVIEW)) {
+    const pageNumber = toInt(row.page_number);
+    if (pageNumber <= 0) continue;
+    if (pageFilter && !pageFilter.has(pageNumber)) continue;
+
+    const found = findMatchPassagesInPageContent(String(row.content ?? ""), queries, matchMode, options.scripts ?? null);
+    const printedPage = String(row.printed_page ?? "").trim() || null;
+    for (const passage of found) {
+      if (passages.length >= maxRows) {
+        truncated = true;
+        break;
+      }
+      passages.push({ page_number: pageNumber, printed_page: printedPage, ...passage });
+    }
+    if (truncated) break;
+  }
+
+  return { passages, truncated, queries };
+}
+
 export type SearchMatchOccurrence = {
   page_number: number;
   /** The number printed on the page ("91", "73-74" for a two-page scan), or null when unknown. */
@@ -524,6 +671,11 @@ const BREAK_BEFORE = /-[ \t]*\n[ \t]*$/;
 
 /** Widens a match to the whole word around it, joining a word hyphenated across lines. */
 function wholeWordAt(text: string, start: number, end: number) {
+  return wholeWordPieces(text, start, end).map(([a, b]) => text.slice(a, b)).join("");
+}
+
+/** The [start, end) ranges of the whole word around a match: one, or more for a word hyphenated across lines. */
+function wholeWordPieces(text: string, start: number, end: number) {
   const pieces: Array<[number, number]> = [[start, end]];
   for (;;) {
     const first = pieces[0];
@@ -541,7 +693,7 @@ function wholeWordAt(text: string, start: number, end: number) {
     if (!brk || !WORD_CHAR.test(text[nextStart] ?? "")) break;
     pieces.push([nextStart, nextStart]);
   }
-  return pieces.map(([a, b]) => text.slice(a, b)).join("");
+  return pieces;
 }
 
 /**
@@ -562,29 +714,7 @@ export async function loadSearchMatchOccurrences(
   const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
   const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
   const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
-  const hits = await buildHitQuery(queries, matchMode, [sourceRelPath]);
-
-  const result = await getTursoClient().execute({
-    sql: `WITH hits AS (${hits.sql}),
-            unique_hits AS (
-              SELECT page_id
-              FROM hits
-              GROUP BY page_id
-            )
-          SELECT
-            p.page_number,
-            p.content,
-            pp.printed_page
-          FROM unique_hits
-          JOIN ocr_pages p ON p.id = unique_hits.page_id
-          LEFT JOIN ocr_printed_pages pp
-            ON pp.granth_key = p.granth_key AND pp.page_number = p.page_number
-            -- a page whose text and image readings disagree shows its PDF page instead
-            AND (pp.verified IS NULL OR pp.verified <> 'conflict')
-          ORDER BY p.page_number ASC
-          LIMIT ?`,
-    args: [...hits.args, MAX_MATCH_PAGE_PREVIEW + 1],
-  });
+  const result = await loadHitPageContents(sourceRelPath, queries, matchMode);
 
   const occurrences: SearchMatchOccurrence[] = [];
   let truncated = result.rows.length > MAX_MATCH_PAGE_PREVIEW;

@@ -318,7 +318,7 @@ export function SearchExportDialog({
           : format === "wordlist"
             ? `Word list downloaded${rowCount ? ` with ${rowCount} word(s)` : ""}${cutOff}.`
             : format === "linelist"
-              ? `Line list downloaded${rowCount ? ` with ${rowCount} line(s)` : ""}${cutOff}.`
+              ? `Line list downloaded${rowCount ? ` with ${rowCount} passage(s)` : ""}${cutOff}.`
               : `CSV downloaded${rowCount ? ` with ${rowCount} row(s)` : ""}${cutOff}.`
       );
     } catch (exportError) {
@@ -355,7 +355,7 @@ export function SearchExportDialog({
             secondary={{
               id: "linelist",
               label: "Line list",
-              detail: "A PDF table of every matching line: page, line number, the line and the word",
+              detail: "A PDF of every matching line with two lines above and below, and its line and page number",
               busyLabel: "Building",
               ...choice("linelist"),
             }}

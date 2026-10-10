@@ -9,15 +9,12 @@ import {
   MAX_CSV_GRANTHS,
   MAX_CSV_ROWS,
   SearchMatchError,
-  loadSearchMatchLines,
   loadSearchMatchOccurrences,
+  loadSearchMatchPassages,
   resolveSearchPdfSources,
   validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
 import { type LineListSection, type WordListSection, buildLineListPdf, buildWordListPdf } from "@/lib/word-list-pdf";
-
-/** The line list keeps whole lines (the CSV cuts them at 400 characters). */
-const LINE_LIST_MAX_LINE_CHARS = 2000;
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 
@@ -125,8 +122,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   let workDir: string | null = null;
 
   try {
-    // ?layout=lines: one row per matched line (granth page, line number, the
-    // line with the words marked, the words); otherwise one row per word.
+    // ?layout=lines: one record per matched line, with the lines around it and
+    // its line and page number; otherwise one row per word.
     const lineLayout = String(req.query.layout || "") === "lines";
     const body = (req.body || {}) as WordListBody;
     const delivery = body.delivery === "email" ? "email" : "download";
@@ -184,23 +181,21 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         break;
       }
       if (lineLayout) {
-        const { lines, truncated: granthTruncated } = await loadSearchMatchLines(entry.relPath, queries, matchMode, {
+        const { passages, truncated: granthTruncated } = await loadSearchMatchPassages(entry.relPath, queries, matchMode, {
           pages: entry.pages,
           maxRows: MAX_CSV_ROWS - rowCount,
           scripts,
-          maxLineChars: LINE_LIST_MAX_LINE_CHARS,
         });
         if (granthTruncated) truncated = true;
-        if (lines.length === 0) continue;
-        rowCount += lines.length;
+        if (passages.length === 0) continue;
+        rowCount += passages.length;
         lineSections.push({
           heading: bookNumber(entry.relPath, entry.granthName),
-          rows: lines.map((line) => ({
-            printedPage: line.printed_page,
-            pdfPage: line.page_number,
-            lineNumber: line.line_number,
-            lineText: line.line_text,
-            words: line.matched_words,
+          rows: passages.map((passage) => ({
+            printedPage: passage.printed_page,
+            pdfPage: passage.page_number,
+            hitLines: passage.hit_lines,
+            pieces: passage.pieces,
           })),
         });
         continue;
