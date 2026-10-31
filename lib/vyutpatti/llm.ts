@@ -10,6 +10,13 @@ import { chat as sarvamChat } from "@/lib/sarvam-chat";
 
 export type Engine = "claude" | "sarvam";
 
+/**
+ * The AI is switched off for now (31 Oct 2026): the vyutpatti is made from the
+ * koshes alone (kept readings, else the OCR text), so a model that is down
+ * never stops the page. Set VYUTPATTI_AI=on on the server to switch it back on.
+ */
+export const AI_ENABLED = process.env.VYUTPATTI_AI === "on";
+
 export const ENGINES: Engine[] = ["claude", "sarvam"];
 
 export function parseEngine(value: unknown): Engine {
@@ -114,6 +121,7 @@ async function sarvam(request: LlmRequest, usage: Usage) {
 
 /** Asks the engine and parses its JSON answer; one retry when the JSON is broken. */
 export async function askJson(engine: Engine, request: LlmRequest, usage: Usage): Promise<unknown> {
+  if (!AI_ENABLED) throw new LlmError("The AI is switched off.", 503);
   const ask = engine === "claude" ? claude : sarvam;
   try {
     return parseJsonReply(await ask(request, usage));

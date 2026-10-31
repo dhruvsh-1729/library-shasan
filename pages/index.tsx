@@ -1529,7 +1529,7 @@ export default function SearchPage() {
             const selectedCount = downloadPreview.selectedPages.length;
             const maxPages = downloadPreview.preview?.max_download_pages ?? 0;
             const expanded = expandPagesWithContext(downloadPreview.selectedPages, downloadPreview.contextPages);
-            const finalPageCount = selectedCount > 0 ? [1, ...expanded.filter((page) => page !== 1)].length : 0;
+            const finalPageCount = selectedCount > 0 ? expanded.length : 0;
             const tooManyPages = Boolean(maxPages && finalPageCount > maxPages);
             // The matching pages, and any other page the reader chose by its number.
             const pageRows: SearchMatchPage[] = (() => {

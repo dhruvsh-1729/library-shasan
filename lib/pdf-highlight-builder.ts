@@ -241,7 +241,7 @@ async function markedSource(source: CombinedPdfSource, mark: MarkOptions | null)
   return { doc, pages, rings };
 }
 
-/** Pages in the order asked for, duplicates dropped (the cover page 1 comes first). */
+/** Pages in the order asked for, duplicates dropped. */
 function uniqueSortedPagesKeepOrder(pages: number[]) {
   return [...new Set(pages.map((page) => Math.floor(Number(page))).filter((page) => page > 0))];
 }

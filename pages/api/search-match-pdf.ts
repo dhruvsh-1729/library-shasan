@@ -194,13 +194,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         }
 
         const expandedPages = expandPagesWithContext(selectedPages, contextPages);
-        const orderedPages = [1, ...expandedPages.filter((page) => page !== 1)];
+        const orderedPages = expandedPages;
         totalPages += orderedPages.length;
 
         if (totalPages > MAX_MATCH_PAGE_DOWNLOAD) {
           throw new SearchMatchError(
             413,
-            `This selection needs more than ${MAX_MATCH_PAGE_DOWNLOAD} PDF pages once nearby pages and covers are added. Deselect some granths or reduce the nearby-page count.`
+            `This selection needs more than ${MAX_MATCH_PAGE_DOWNLOAD} PDF pages once nearby pages are added. Deselect some granths or reduce the nearby-page count.`
           );
         }
 
@@ -236,7 +236,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       }
 
       const expandedPages = expandPagesWithContext(selectedPages, contextPages);
-      const orderedPages = [1, ...expandedPages.filter((page) => page !== 1)];
+      const orderedPages = expandedPages;
 
       if (orderedPages.length > MAX_MATCH_PAGE_DOWNLOAD) {
         throw new SearchMatchError(

@@ -24,7 +24,7 @@ import { headwordKeys, vyutpattiKosh } from "@/lib/kosh-headwords.mjs";
 import { SOURCE, aksharaCount, compoundParts, createLexicon, searchableParts, splitCompound } from "@/lib/sanskrit-compound.mjs";
 import { foldSanskrit } from "@/lib/sanskrit-fold.mjs";
 import { type EntryReading, cacheKey, loadReadings, saveReadings } from "@/lib/vyutpatti/entry-cache";
-import { type Engine, LlmError, type LlmFile, type Usage, askJson, newUsage } from "@/lib/vyutpatti/llm";
+import { AI_ENABLED, type Engine, LlmError, type LlmFile, type Usage, askJson, newUsage } from "@/lib/vyutpatti/llm";
 import { type Candidate, findApteSubentry, findCandidates, headwordTiers } from "@/lib/vyutpatti/lookup";
 import {
   type AiDerivation,
@@ -207,7 +207,47 @@ export async function joinKoshWords(parts: PlanPart[], main: string): Promise<Pl
   return out;
 }
 
+/** The split from the kosh word list alone, with no AI: no vigraha. */
+export async function koshPlan(vishay: string): Promise<Plan> {
+  const { main } = splitContext(vishay);
+  const parts: PlanPart[] = [];
+  for (const w of main.split(/[\s,।॥-]+/u).filter(Boolean)) {
+    if (!/^[\u0900-\u097f]+$/u.test(w) || /^[०-९]+$/u.test(w)) continue;
+    const split = compoundParts(w, getLexicon());
+    if (!split) {
+      parts.push({ word: w, text: w, prefix: false });
+      continue;
+    }
+    for (const p of split.parts) {
+      if (p.kind === "prefix") parts.push({ word: p.label, text: p.text, prefix: true });
+      else if (p.kind === "word") parts.push({ word: ("term" in p && p.term) || p.text, text: p.text, prefix: false });
+      else if (p.kind === "unknown") parts.push({ word: p.text, text: p.text, prefix: false });
+      else parts.push({ word: p.text, text: p.text, prefix: false, skip: true });
+    }
+  }
+  const cleaned = parts.filter((p) => p.word && /^[\u0900-\u097f]+$/u.test(p.word));
+  const merged = await joinKoshWords(cleaned, main).catch(() => cleaned);
+  let looked = 0;
+  for (const p of merged) {
+    if (p.prefix || p.skip) continue;
+    looked += 1;
+    if (looked > MAX_LOOKED_UP) p.skip = true;
+  }
+  const single = main.replace(/[\s\d,।॥.()-]+/gu, "");
+  return { parts: merged.length ? merged : [{ word: single, prefix: false }], vigraha: "", samasa: "" };
+}
+
 export async function planVishay(engine: Engine, vishay: string, usage: Usage): Promise<Plan> {
+  if (!AI_ENABLED) return koshPlan(vishay);
+  try {
+    return await planWithAi(engine, vishay, usage);
+  } catch (error) {
+    console.error("vyutpatti plan: AI failed, using the kosh split:", error instanceof Error ? error.message : error);
+    return koshPlan(vishay);
+  }
+}
+
+async function planWithAi(engine: Engine, vishay: string, usage: Usage): Promise<Plan> {
   const { main, context } = splitContext(vishay);
   const prompt = `Vishay: ${main}${context ? `\nContext (the topic it belongs to; not part of the vishay): ${context}` : ""}
 Split suggested by our kosh word list (it may be wrong): ${suggestedSplitOf(main)}
@@ -255,6 +295,8 @@ JSON: {"parts":[{"word":"","text":"","prefix":false,"skip":false}],"vigraha":"",
 // ------------------------------------------------------------------ reading entries
 
 type Reading = EntryReading & {
+  /** Made from the OCR text, with no AI. */
+  fromOcr?: boolean;
   id: string;
   fits_vishay?: boolean;
   derivation_fits?: boolean;
@@ -287,6 +329,43 @@ const MAX_SENSES_PER_CALL = 16;
 const PENDING = new Map<string, Promise<EntryReading | undefined>>();
 
 /**
+ * An entry read from its OCR text alone, with no AI: the headword must be the
+ * word; the derivation is AVPK's * line or the first bracket after the label.
+ */
+function ocrReading(word: string, c: Candidate): EntryReading & { fromOcr: true } {
+  const want = new Set(headwordKeys(word));
+  const matches = [c.head, c.sanskrit ?? ""].some((h) => h && headwordKeys(h).some((k) => want.has(k)));
+  const text = String(c.text ?? "").normalize("NFC");
+  if (!matches) return { is_entry: false, why: "headword differs", fromOcr: true };
+  let derivation = "";
+  let rest = text;
+  if (c.kosh.family === "avpk") {
+    const lines = text.split(/\r?\n/);
+    const at = lines.findIndex((l) => l.trim().startsWith("*"));
+    if (at >= 0) {
+      const taken = [lines[at].trim().replace(/^\*+\s*/, "")];
+      let i = at;
+      while (taken[taken.length - 1].endsWith("-") && i + 1 < lines.length) {
+        i += 1;
+        taken[taken.length - 1] = taken[taken.length - 1].slice(0, -1);
+        taken.push(lines[i].trim());
+      }
+      derivation = taken.join("");
+      rest = [...lines.slice(0, at), ...lines.slice(i + 1)].join(" ");
+    }
+  } else {
+    const m = text.slice(0, 240).match(/[([]([^()[\]]{2,160})[)\]]/u);
+    if (m) {
+      derivation = m[1].trim();
+      rest = text.replace(m[0], " ");
+    }
+  }
+  const gender = (rest.match(/(पुं\.|स्त्री\.|न\.|त्रि\.|वि\.|अव्य\.|पुंन\.)/u) ?? [])[1] ?? "";
+  const meaning = rest.replace(/\s+/g, " ").trim().slice(0, 700);
+  return { is_entry: true, why: "", head: c.head, gender, derivation, meaning, meaning_gu: meaning, base: null, fromOcr: true };
+}
+
+/**
  * What each candidate entry prints, read once and kept (lib/vyutpatti/entry-cache):
  * the same entry reads the same in every vishay. Nothing here depends on the vishay.
  */
@@ -300,7 +379,13 @@ async function readEntries(
   const all = asks.flatMap((a) => a.candidates.map((c) => ({ word: a.word, c, key: cacheKey(c.id, foldSanskrit(a.word)) })));
   const out = new Map<string, EntryReading>();
   // readAgain: every entry is read again and the kept reading replaced (an entry found misread).
-  const kept = readAgain ? new Map<string, EntryReading>() : await loadReadings(all.map((x) => ({ entryId: x.c.id, wordKey: foldSanskrit(x.word) })), engine);
+  const keys = all.map((x) => ({ entryId: x.c.id, wordKey: foldSanskrit(x.word) }));
+  const kept = readAgain && AI_ENABLED ? new Map<string, EntryReading>() : await loadReadings(keys, engine);
+  if (!AI_ENABLED) {
+    // No AI: any reading kept by either engine is used; Claude's (from the scan) first.
+    const other = await loadReadings(keys, engine === "claude" ? "sarvam" : "claude");
+    for (const [k, v] of other) if (!kept.has(k)) kept.set(k, v);
+  }
   const toRead: typeof all = [];
   const waits: Array<Promise<void>> = [];
   for (const x of all) {
@@ -317,6 +402,11 @@ async function readEntries(
     }
     if (toRead.some((y) => y.key === x.key)) continue;
     toRead.push(x);
+  }
+  if (!AI_ENABLED) {
+    for (const x of toRead) out.set(x.key, ocrReading(x.word, x.c));
+    await Promise.all(waits);
+    return out;
   }
   const resolvers = new Map<string, (r: EntryReading | undefined) => void>();
   for (const x of toRead) PENDING.set(x.key, new Promise((resolve) => resolvers.set(x.key, resolve)));
@@ -375,7 +465,12 @@ JSON: [{"id":"","is_entry":true,"why":"","head":"","gender":"","derivation":"","
     try {
       reply = await askJson(engine, { system: SYSTEM, prompt, files, maxTokens: 1500 + 1200 * batch.length }, usage);
     } catch (error) {
-      if (!(error instanceof LlmError) || error.status === 503 || batch.length < 2) throw error;
+      if (!(error instanceof LlmError) || error.status === 503 || batch.length < 2) {
+        // The AI failed: these entries come from the OCR text (not kept).
+        console.error("vyutpatti read: AI failed, using OCR text:", error instanceof Error ? error.message : error);
+        for (const x of batch) out.set(x.key, ocrReading(x.word, x.c));
+        return;
+      }
       const half = Math.ceil(batch.length / 2);
       await Promise.all([readOne(batch.slice(0, half)), readOne(batch.slice(half))]);
       return;
@@ -421,6 +516,7 @@ async function judgeSenses(
   usage: Usage
 ): Promise<Map<string, Reading>> {
   const out = new Map<string, Reading>();
+  if (!AI_ENABLED) return out;
   const batches: Array<typeof items> = [];
   for (let i = 0; i < items.length; i += MAX_SENSES_PER_CALL) batches.push(items.slice(i, i + MAX_SENSES_PER_CALL));
   await Promise.all(
@@ -443,7 +539,7 @@ For each id return:
 - relevant_gu: only the sense(s) that fit the vishay, in Gujarati, complete in itself (never "see above" or a reference to another entry).
 
 JSON: [{"id":"","fits_vishay":true,"derivation_fits":true,"relevant_gender":"","relevant_gu":""}]`;
-      const reply = await askJson(engine, { system: SYSTEM, prompt, maxTokens: 400 + 250 * batch.length }, usage);
+      const reply = await askJson(engine, { system: SYSTEM, prompt, maxTokens: 400 + 250 * batch.length }, usage).catch(() => []);
       for (const r of Array.isArray(reply) ? (reply as Reading[]) : []) if (r?.id) out.set(String(r.id), r);
     })
   );
@@ -488,7 +584,7 @@ function toEntry(word: string, c: Candidate, r: Reading, engine: Engine): Vyutpa
   let derivation = normalizeDerivation(String(r.derivation ?? ""));
   // "अधिक (अधिक)", or a Prakrit kosh's Sanskrit form: not a derivation.
   if ([word, c.head, c.sanskrit ?? "", String(r.head ?? "")].some((w) => w && foldSanskrit(w) === foldSanskrit(derivation))) derivation = "";
-  const readFrom = engine === "claude" && c.kosh.readFromScan && c.pdfUrl ? "scan" : "ocr";
+  const readFrom = !r.fromOcr && engine === "claude" && c.kosh.readFromScan && c.pdfUrl ? "scan" : "ocr";
   return {
     id: c.id,
     word,
@@ -520,7 +616,7 @@ function toEntry(word: string, c: Candidate, r: Reading, engine: Engine): Vyutpa
 
 async function deriveMissing(engine: Engine, vishay: string, words: string[], usage: Usage): Promise<Map<string, AiDerivation>> {
   const out = new Map<string, AiDerivation>();
-  if (!words.length) return out;
+  if (!words.length || !AI_ENABLED) return out;
   const prompt = `Vishay: ${vishay}
 None of our koshes (Abhidhan Vyutpatti Prakriya Kosh, Shabda Ratna Mahodadhi, Apte, Agamic Vyutpatti Kosh, Abhidhan Rajendra Kosh, Paia Sadda Mahannavo, Alpaparichit Saiddhantik Shabdakosh) has these words: ${words.join(", ")}.
 For each, give its vyutpatti as Shabda Ratna Mahodadhi would print it:
@@ -530,7 +626,7 @@ For each, give its vyutpatti as Shabda Ratna Mahodadhi would print it:
 - source: the granth the derivation rests on, with the sūtra where you are sure of it (e.g. "सिद्धहेमशब्दानुशासन ६।४।१", "पाणिनीय अष्टाध्यायी ३।१।१३४", "उणादिसूत्र"); "" when you are not sure. Never invent a sūtra number.
 
 JSON: [{"word":"","gender":"","derivation":"","meaning_gu":"","source":""}]`;
-  const reply = await askJson(engine, { system: SYSTEM, prompt, maxTokens: 400 + 300 * words.length }, usage);
+  const reply = await askJson(engine, { system: SYSTEM, prompt, maxTokens: 400 + 300 * words.length }, usage).catch(() => []);
   for (const r of Array.isArray(reply) ? (reply as Array<Record<string, unknown>>) : []) {
     const word = String(r?.word ?? "").normalize("NFC").trim();
     if (!word) continue;
@@ -637,7 +733,8 @@ export async function buildVyutpatti(
   const vishay = cleanVishay(input.vishay);
   const usage = newUsage();
   const notes: string[] = [];
-  if (engine === "sarvam") notes.push("Read with Sarvam: Shabda Ratna Mahodadhi's Gujarati meanings come from OCR text, not the scan. Check them against the page.");
+  if (!AI_ENABLED) notes.push("AI is switched off: entries come from the kept readings or the OCR text, with no samāsa vigraha. Check them against the page.");
+  else if (engine === "sarvam") notes.push("Read with Sarvam: Shabda Ratna Mahodadhi's Gujarati meanings come from OCR text, not the scan. Check them against the page.");
 
   progress("Splitting");
   const plan = await planVishay(engine, vishay, usage);
@@ -734,7 +831,7 @@ export async function buildVyutpatti(
   const missing = words.filter(
     (w) => !w.entries.length && !w.brokenInto && (w.role === "part" || (w.role === "whole" && !plan.vigraha && looked.length <= 1))
   );
-  if (missing.length) {
+  if (missing.length && AI_ENABLED) {
     progress(`${missing.length} word${missing.length === 1 ? "" : "s"} in no kosh: writing with AI`);
     // A derived word whose base a kosh has is derived from that base (शिथिलता from शिथिल).
     const withBase = missing.map((w) => {
