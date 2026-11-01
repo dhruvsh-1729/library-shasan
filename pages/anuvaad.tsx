@@ -212,7 +212,10 @@ export default function AnuvaadPage() {
       key: nextRow.current++,
       vishay: parsed.vishay,
       files: [...new Set(r.pages.map((p) => fileOf.get(p) ?? ""))].filter(Boolean),
-      where: r.pages.map((p) => `${fileOf.get(p) ?? ""} p. ${ownOf.get(p) ?? p}`),
+      // "box1.pdf p. 1, 2 · box2.pdf p. 1"
+      where: [...new Set(r.pages.map((p) => fileOf.get(p) ?? ""))].map(
+        (file) => `${file} p. ${r.pages.filter((p) => fileOf.get(p) === file).map((p) => ownOf.get(p) ?? p).join(", ")}`
+      ),
       include: r.shastraPath.length > 0,
       status: "idle",
     }));
@@ -511,7 +514,7 @@ export default function AnuvaadPage() {
                   <div className="anRowFoot">
                     <span className="vyHint">
                       {row.inRem ? <>In.Rem {row.inRem} · </> : null}
-                      {row.where.join(", ")}
+                      {row.where.join(" · ")}
                     </span>
                     {row.files[0] ? (
                       <button type="button" className="vyLink" onClick={() => viewFile(row.files[0], row.pages[0])} title="Opens the scan in a new tab">
