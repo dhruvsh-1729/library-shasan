@@ -32,6 +32,8 @@ type Row = BoxRow & {
   key: number;
   vishay: string;
   files: string[];
+  /** "box1.pdf p. 2" for each page, counted within its own file. */
+  where: string[];
   include: boolean;
   status: "idle" | "waiting" | "running" | "done" | "error";
   error?: string;
@@ -121,7 +123,9 @@ export default function AnuvaadPage() {
   const [withPages, setWithPages] = useState(true);
   const [dragging, setDragging] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
-  const [loose, setLoose] = useState<number[]>([]);
+  // Pages with no box table (a cover, an anuvaad page already in the scan), by file.
+  const [loose, setLoose] = useState<Array<{ file: string; page: number }>>([]);
+  const [saved, setSaved] = useState("");
   const nextId = useRef(1);
   const nextBatch = useRef(1);
   const nextRow = useRef(1);
@@ -182,24 +186,26 @@ export default function AnuvaadPage() {
     setReading(true);
     const batch = [...waiting];
     nextBatch.current += 1;
-    const pages: Array<{ page: number; markdown: string; file: string }> = [];
+    const pages: Array<{ page: number; markdown: string; file: string; own: number }> = [];
     let pageNo = uploads.filter((u) => u.status === "done").reduce((n, u) => n + u.pages.length, 0);
     for (const upload of batch) {
       const read = await readOne(upload);
-      for (const markdown of read ?? []) pages.push({ page: ++pageNo, markdown, file: upload.name });
+      (read ?? []).forEach((markdown, i) => pages.push({ page: ++pageNo, markdown, file: upload.name, own: i + 1 }));
     }
     const parsed = parseBoxPages(pages);
     const fileOf = new Map(pages.map((p) => [p.page, p.file]));
+    const ownOf = new Map(pages.map((p) => [p.page, p.own]));
     const fresh: Row[] = parsed.rows.map((r) => ({
       ...r,
       key: nextRow.current++,
       vishay: parsed.vishay,
       files: [...new Set(r.pages.map((p) => fileOf.get(p) ?? ""))].filter(Boolean),
+      where: r.pages.map((p) => `${fileOf.get(p) ?? ""} p. ${ownOf.get(p) ?? p}`),
       include: r.shastraPath.length > 0,
       status: "idle",
     }));
     setRows((list) => [...list, ...fresh]);
-    setLoose((list) => [...list, ...parsed.loose.map((l) => l.page)]);
+    setLoose((list) => [...list, ...parsed.loose.map((l) => ({ file: fileOf.get(l.page) ?? "", page: ownOf.get(l.page) ?? l.page }))]);
     setReading(false);
     if (fresh.length) setView("rows");
   }
@@ -239,6 +245,7 @@ export default function AnuvaadPage() {
     if (!done.length || exporting) return;
     setExporting(mode);
     setExportError("");
+    setSaved("");
     // a print tab is opened now, while the click still counts, and filled when the PDF is ready
     const tab = mode === "print" ? window.open("", "_blank") : null;
     try {
@@ -258,8 +265,12 @@ export default function AnuvaadPage() {
       const bytes = used.length ? await mergePdf(used, anuvaad) : new Uint8Array(anuvaad);
       const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
       const vishay = done[0].vishay;
+      const name = `${vishay ? `${vishay} ` : ""}anuvaad.pdf`;
       if (tab) tab.location.href = URL.createObjectURL(blob);
-      else saveBlob(blob, `${vishay ? `${vishay} ` : ""}anuvaad.pdf`);
+      else saveBlob(blob, name);
+      const { PDFDocument } = await import("pdf-lib");
+      const count = (await PDFDocument.load(bytes)).getPageCount();
+      setSaved(tab ? `Opened in a new tab (${count} pages) — print it from there.` : `Saved “${name}” to your downloads (${count} pages${used.length ? ", box scans first" : ""}).`);
     } catch (error) {
       tab?.close();
       setExportError(error instanceof Error ? error.message : "The PDF could not be made.");
@@ -318,7 +329,7 @@ export default function AnuvaadPage() {
               </li>
               <li>
                 <button type="button" onClick={() => setView("results")} aria-current={view === "results" ? "step" : undefined} disabled={!translated.length && !working}>
-                  ગુજરાતી અનુવાદ ({translated.length}){working ? ` · ${working} working` : ""}
+                  Anuvaad ({translated.length}){working ? ` · ${working} working` : ""}
                 </button>
               </li>
               <li className="exTrailEnd">
@@ -444,12 +455,19 @@ export default function AnuvaadPage() {
                   {translating ? "Translating…" : `Make the Gujarati anuvaad (${chosen.filter((r) => r.status !== "done").length})`}
                 </button>
               </div>
-              <p className="vyHint">
-                Check each passage against its page before translating: a line the reading missed is missing from the anuvaad too. Untick what should not be translated.
+              <p className="anNote">
+                Check each passage against its page (<strong>View page</strong>) and correct the text if a line was missed or misread — the anuvaad is made from the text in these boxes. Untick a passage to leave it out.
               </p>
               {loose.length ? (
-                <p className="vyHint">
-                  {loose.length === 1 ? "Page" : "Pages"} {loose.join(", ")} had no box table and {loose.length === 1 ? "is" : "are"} left out of the passages (still in the PDF).
+                <p className="anNote">
+                  Not translated (no box table on the page):{" "}
+                  {[...new Set(loose.map((l) => l.file))]
+                    .map((file) => {
+                      const pages = loose.filter((l) => l.file === file).map((l) => l.page);
+                      return `${file} p. ${pages.join(", ")}`;
+                    })
+                    .join(" · ")}
+                  . These pages still go into the exported PDF with the rest of the scan.
                 </p>
               ) : null}
               {rows.map((row) => (
@@ -481,10 +499,10 @@ export default function AnuvaadPage() {
                   <div className="anRowFoot">
                     <span className="vyHint">
                       {row.inRem ? <>In.Rem {row.inRem} · </> : null}
-                      {row.files.join(", ")} · page{row.pages.length > 1 ? "s" : ""} {row.pages.join(", ")}
+                      {row.where.join(", ")}
                     </span>
                     {row.files[0] ? (
-                      <button type="button" className="vyLink" onClick={() => viewFile(row.files[0], row.pages[0])}>
+                      <button type="button" className="vyLink" onClick={() => viewFile(row.files[0], row.pages[0])} title="Opens the scan in a new tab">
                         View page
                       </button>
                     ) : null}
@@ -500,29 +518,29 @@ export default function AnuvaadPage() {
                 <span className="vyBarCount">
                   {translated.length} ready{working ? ` · ${working} working` : ""}
                 </span>
-                <label className="anCheck">
+                <label className="anCheck" title="Untick for the Gujarati pages alone">
                   <input type="checkbox" checked={withPages} onChange={(e) => setWithPages(e.target.checked)} />
-                  Box pages first
+                  Include the box scans
                 </label>
-                <button type="button" className="exGhost" onClick={() => makePdf("print")} disabled={Boolean(exporting) || !translated.some((r) => r.include)}>
-                  {exporting === "print" ? "Making…" : "Open to print"}
+                <button type="button" className="exSecondary" onClick={() => makePdf("print")} disabled={Boolean(exporting) || !translated.some((r) => r.include)}>
+                  {exporting === "print" ? "Making…" : "Print"}
                 </button>
                 <button type="button" className="vyGo" onClick={() => makePdf("download")} disabled={Boolean(exporting) || !translated.some((r) => r.include)}>
                   {exporting === "download" ? "Making the PDF…" : "Export PDF"}
                 </button>
               </div>
               {exportError ? <p className="exError" role="alert">{exportError}</p> : null}
+              {saved && !exportError ? <p className="anSaved" role="status">{saved}</p> : null}
 
               {rows
                 .filter((r) => r.include && r.status !== "idle")
                 .map((row) => (
                   <article key={row.key} className={`vyCard anResult is-${row.status}`}>
-                    <header className="vyCardHead">
-                      <h2>
-                        {row.sr ? <span className="vyNumber">{row.sr}</span> : null}
-                        <span className="indic anGranth">{row.granth || "—"}</span>
-                      </h2>
-                    </header>
+                    <p className="anCardTag">
+                      {row.sr ? `Sr. ${row.sr}` : "Sr. —"}
+                      {row.vt ? <span className="indic"> · {row.vt}</span> : null}
+                      {row.status !== "done" ? <span className="indic"> · {row.granth}</span> : null}
+                    </p>
                     {row.status === "waiting" || row.status === "running" ? (
                       <p className="vyStatus">
                         <span className="chTyping" aria-hidden="true">

@@ -11,6 +11,7 @@ import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
 import { needsDevanagari, toDevanagari } from "@/lib/to-devanagari";
 import { AppNav } from "@/components/AppNav";
 import { AnuvaadView } from "@/components/AnuvaadView";
+import { AI_ENABLED } from "@/lib/vyutpatti/llm";
 
 // Vyutpatti: the reader types each vishay (in Devanagari) and gets its
 // derivation from the koshes in Maharaj Saheb's order, as a reader page and an
@@ -161,7 +162,7 @@ function AutoGrow({ value, onChange, className, label }: { value: string; onChan
   );
 }
 
-export default function VyutpattiPage() {
+export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
   const [input, setInput] = useState("");
   // The sheet no longer prints a box number (Sahebji, 9 Oct 2026); "1" is still sent with each run.
   const box = "1";
@@ -451,7 +452,8 @@ export default function VyutpattiPage() {
                 </button>
               </div>
             ) : null}
-            {settingsOpen ? (
+            {/* The reading engine only matters while the AI reading is on (VYUTPATTI_AI). */}
+            {!aiOn ? null : settingsOpen ? (
               <div className="vyControls">
                 <div className="vyEngine" role="radiogroup" aria-label="Read with">
                   {(["claude", "sarvam"] as Engine[]).map((e) => (
@@ -472,11 +474,11 @@ export default function VyutpattiPage() {
                 </button>
               </p>
             )}
-            {engine === "sarvam" ? <p className="vyHint">Text reading cannot see the page scans: check the Gujarati meanings.</p> : null}
+            {aiOn && engine === "sarvam" ? <p className="vyHint">Text reading cannot see the page scans: check the Gujarati meanings.</p> : null}
             <label className="anCheck vyAnuvaadSwitch">
               <input type="checkbox" checked={withAnuvaad} onChange={(e) => setWithAnuvaad(e.target.checked)} />
               <span>
-                With <span className="indic">ગુજરાતી અનુવાદ</span> (shown under each vyutpatti and printed at the end of the PDF)
+                Add the <span className="indic anGu">ગુજરાતી અનુવાદ</span> — shown under each vyutpatti and printed at the end of the PDF
               </span>
             </label>
             <button type="submit" className="vyGo exWide" disabled={running || !input.trim() || Boolean(problem)}>
@@ -586,7 +588,7 @@ export default function VyutpattiPage() {
                     {withAnuvaad || item.anuvaad ? (
                       <section className="vyAnuvaad" aria-label="Gujarati anuvaad">
                         <div className="vyKoshHead">
-                          <h3 className="vySection indic">ગુજરાતી અનુવાદ</h3>
+                          <h3 className="vySection indic anGu">ગુજરાતી અનુવાદ</h3>
                           {item.lines.length && item.anuvaad?.status !== "running" ? (
                             <button
                               type="button"
@@ -610,6 +612,7 @@ export default function VyutpattiPage() {
                         {item.anuvaad?.status === "error" ? <p className="vyProblem">{item.anuvaad.error}</p> : null}
                         {item.anuvaad?.status === "done" ? (
                           <AnuvaadView
+                            hideTitle
                             markup={item.anuvaad.markup}
                             onChange={(markup) => update(item.key, (it) => ({ anuvaad: { ...(it.anuvaad ?? { status: "done" }), status: "done", markup } }))}
                           />
@@ -619,7 +622,7 @@ export default function VyutpattiPage() {
 
                     <div className="vyCardFoot">
                       <button type="button" className="vyLink" onClick={() => download(item)} disabled={downloading}>
-                        PDF
+                        {downloading ? "Making the PDF…" : "PDF of this vishay"}
                       </button>
                     </div>
 
@@ -737,7 +740,7 @@ export default function VyutpattiPage() {
               <h3>Vyutpatti</h3>
               <p className="vyHint">
                 Every vishay in the order typed, with your edits, as the internal table
-                {withAnuvaad ? <>, then the <span className="indic">ગુજરાતી અનુવાદ</span> of each</> : null}.
+                {withAnuvaad ? <>, then the <span className="indic anGu">ગુજરાતી અનુવાદ</span> of each</> : null}.
               </p>
               <button type="button" className="vyGo exWide" onClick={() => download()} disabled={downloading || !done.length}>
                 {downloading ? "Making the PDF…" : done.length === 1 ? "Download PDF" : `Download PDF (${done.length})`}
@@ -775,5 +778,5 @@ export const getServerSideProps: GetServerSideProps = async (ctx) => {
   if (!session?.user || session.user.status !== "approved") {
     return { redirect: { destination: `/auth/signin?callbackUrl=${encodeURIComponent("/vyutpatti")}`, permanent: false } };
   }
-  return { props: {} };
+  return { props: { aiOn: AI_ENABLED } };
 };

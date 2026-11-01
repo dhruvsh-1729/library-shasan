@@ -249,3 +249,60 @@
   padding-top: 10px;
   border-top: 1px solid var(--lt-rule);
 }
+
+/* ------------------------------------------------------------ checked in the browser, 1 Nov 2026 */
+
+/* the action bar stays in reach while long anuvaads are read */
+.anBar {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  box-shadow: var(--lt-shadow);
+}
+
+.anNote {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--lt-amber-wash);
+  color: var(--lt-ink);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.anSaved {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--lt-green-wash);
+  color: var(--lt-green);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.anCardTag {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--lt-ink-3);
+}
+
+.anCardTag .indic {
+  font-weight: 500;
+}
+
+/* Gujarati set inside English UI text: Noto Serif Gujarati draws small at the same size */
+.anGu {
+  font-size: 1.15em;
+}
+
+.vyAnuvaad .vySection {
+  font-size: 17px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--lt-ink);
+}
+
+.vyCardFoot .vyLink {
+  margin-top: 4px;
+}

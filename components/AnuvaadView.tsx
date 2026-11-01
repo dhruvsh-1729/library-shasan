@@ -9,11 +9,14 @@ export function AnuvaadView({
   markup,
   onChange,
   literal,
+  hideTitle = false,
 }: {
   markup: string;
   onChange?: (markup: string) => void;
   /** The sentence-by-sentence translation it was written from, shown for checking. */
   literal?: string;
+  /** The heading is already shown around it (the vyutpatti card). */
+  hideTitle?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const blocks = useMemo(() => parseAnuvaad(markup), [markup]);
@@ -43,6 +46,7 @@ export function AnuvaadView({
           {blocks.map((b, i) => {
             switch (b.kind) {
               case "title":
+                if (hideTitle) return null;
                 return <h3 key={i} className="anTitle">{b.text}</h3>;
               case "vishay":
                 return (
@@ -68,7 +72,7 @@ export function AnuvaadView({
       <div className="anViewFoot">
         {onChange ? (
           <button type="button" className="vyLink" onClick={() => setEditing((e) => !e)}>
-            {editing ? "Done editing" : "Edit"}
+            {editing ? "Done editing" : "Edit the Gujarati"}
           </button>
         ) : null}
         {editing ? <span className="vyHint"># heading · વિષય: … · ## part · - **label:** text · two spaces before “-” for a sub-point</span> : null}
