@@ -135,6 +135,18 @@ export default function AnuvaadPage() {
   const translated = rows.filter((r) => r.status === "done" && r.markup);
   const chosen = rows.filter((r) => r.include);
 
+  // The action bar pins just under the page header, whose height changes with
+  // the width (two rows of menu on a phone).
+  useEffect(() => {
+    const header = document.querySelector<HTMLElement>(".anShell > .chTop");
+    if (!header) return;
+    const set = () => document.documentElement.style.setProperty("--an-top", `${header.getBoundingClientRect().height}px`);
+    set();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(set);
+    observer?.observe(header);
+    return () => observer?.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!uploads.length && !rows.length) return;
     const warn = (e: BeforeUnloadEvent) => {

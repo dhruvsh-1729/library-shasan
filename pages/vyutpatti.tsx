@@ -418,7 +418,7 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
               <label htmlFor="vy-input">Which vishay?</label>
             </h1>
             <p className="vyLabel">
-              <span>One per line · Hindi, ગુજરાતી or English · a number first if it has one</span>
+              <span>One per line · Hindi, <span className="indic anGu">ગુજરાતી</span> or English · a number first if it has one</span>
             </p>
             <textarea
               id="vy-input"

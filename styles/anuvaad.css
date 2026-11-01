@@ -255,7 +255,7 @@
 /* the action bar stays in reach while long anuvaads are read */
 .anBar {
   position: sticky;
-  top: 8px;
+  top: calc(var(--an-top, 0px) + 8px);
   z-index: 5;
   box-shadow: var(--lt-shadow);
 }
