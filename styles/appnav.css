@@ -57,8 +57,8 @@
   font-size: 14px;
 }
 
-/* Phones: the header's title on one line, the five places in one even row
-   under it, a page's own links below them. Nothing is hidden or cut off. */
+/* Phones: the header's title on one line, the six places in two even rows
+   of three under it, a page's own links below them. Nothing is hidden or cut off. */
 @media (max-width: 720px) {
   header:has(> .appNav),
   header:has(> * > .appNav) {
@@ -74,7 +74,7 @@
 
   .appNavMain {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px;
     width: 100%;
   }

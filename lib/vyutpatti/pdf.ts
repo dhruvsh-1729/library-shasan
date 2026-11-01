@@ -33,6 +33,8 @@ import {
   wrapPieces,
 } from "@/lib/word-list-pdf";
 import type { ReaderLine, TableRow } from "@/lib/vyutpatti/format";
+import { drawAnuvaadPages } from "@/lib/anuvaad/pdf";
+import type { AnuvaadBlock } from "@/lib/anuvaad/markup";
 
 export type VyutpattiPdfSection = {
   number: string;
@@ -40,6 +42,8 @@ export type VyutpattiPdfSection = {
   box: string;
   rows: TableRow[];
   lines: ReaderLine[];
+  /** The Gujarati anuvaad, printed after all the tables (and reader pages). */
+  anuvaad?: AnuvaadBlock[];
 };
 
 const BLACK = rgb(0, 0, 0);
@@ -226,6 +230,19 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
       drawWrapped(text, page, wrapped, lineX, y, LINE_SIZE, LINE_LEADING);
       y -= height + LINE_SIZE * 0.45;
     }
+  }
+
+  // ------------------------------------------------------------ anuvaad
+  // The Gujarati anuvaad of each vishay at the end, one vishay to a page run.
+  const withAnuvaad = sections.filter((s) => s.anuvaad?.length);
+  if (withAnuvaad.length) {
+    const guj = faces.gujarati.regular;
+    drawAnuvaadPages(
+      doc,
+      text,
+      (size) => (guj.ascender / guj.upem) * size,
+      withAnuvaad.map((s) => ({ caption: [s.number, s.vishay].filter(Boolean).join(" "), blocks: s.anuvaad! }))
+    );
   }
 
   embedder.finish();

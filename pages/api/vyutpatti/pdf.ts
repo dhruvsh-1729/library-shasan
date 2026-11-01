@@ -4,9 +4,10 @@ import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import type { EntrySource, ReaderLine, TableRow } from "@/lib/vyutpatti/format";
 import { type VyutpattiPdfSection, buildVyutpattiPdf } from "@/lib/vyutpatti/pdf";
+import { parseAnuvaad } from "@/lib/anuvaad/markup";
 
 // The vyutpatti PDF from what the page shows (after the reader's edits): the
-// internal tables, then the reader pages. Built from the request alone;
+// internal tables, then the reader pages, then the Gujarati anuvaad when asked. Built from the request alone;
 // nothing is stored.
 
 export const config = { api: { bodyParser: { sizeLimit: "2mb" }, responseLimit: false } };
@@ -32,7 +33,8 @@ function readSections(raw: unknown): VyutpattiPdfSection[] | null {
       const line = (l ?? {}) as Record<string, unknown>;
       return { head: text(line.head, 200), body: text(line.body), source: source(line.source) };
     });
-    return { number: text(section.number, 24), vishay: text(section.vishay, 200), box: text(section.box, 12), rows, lines };
+    const anuvaad = typeof section.anuvaad === "string" ? parseAnuvaad(text(section.anuvaad, 40_000)) : [];
+    return { number: text(section.number, 24), vishay: text(section.vishay, 200), box: text(section.box, 12), rows, lines, anuvaad };
   });
 }
 

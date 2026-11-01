@@ -1,0 +1,251 @@
+/* Anuvaad (pages/anuvaad.tsx) and the Gujarati anuvaad on the vyutpatti page
+   (components/AnuvaadView). Built on the vyutpatti page's cards and buttons;
+   the reading view follows Maharaj Saheb's printed anuvaad pages: a bold
+   heading, the વિષય line, numbered parts, bullets with bold labels. */
+
+.anDrop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 22px 16px;
+  border: 2px dashed var(--lt-glass-edge);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.anDrop.isOver {
+  border-color: var(--lt-cobalt);
+  background: var(--lt-cobalt-wash);
+}
+
+.anFiles {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.anFiles li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.anFileName {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.anFileState {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lt-ink-2);
+  font-size: 14px;
+}
+
+.anFiles li.is-done .anFileState {
+  color: var(--lt-green);
+}
+
+.anBar {
+  position: static;
+  flex-wrap: wrap;
+}
+
+.anRows,
+.anResults {
+  display: grid;
+  gap: 12px;
+}
+
+.anRow.isOff {
+  opacity: 0.55;
+}
+
+.anPick {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.anPick input,
+.anCheck input {
+  width: 20px;
+  height: 20px;
+}
+
+.anCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.vyTag.isDone {
+  background: var(--lt-green-wash);
+  color: var(--lt-green);
+}
+
+.anField {
+  display: grid;
+  gap: 4px;
+}
+
+.anField > span {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--lt-ink-3);
+}
+
+.anField input,
+.anField textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.anField textarea {
+  resize: vertical;
+}
+
+.anRowFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.anGranth {
+  font-size: 18px;
+  font-weight: 650;
+}
+
+/* ------------------------------------------------------------ reading view */
+
+.anView {
+  display: grid;
+  gap: 10px;
+}
+
+.anDoc {
+  font-size: 19px;
+  line-height: 1.8;
+  color: var(--lt-ink);
+  overflow-wrap: anywhere;
+}
+
+.anDoc p,
+.anDoc h3,
+.anDoc h4 {
+  margin: 0 0 0.45em;
+}
+
+.anTitle {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.anVishay {
+  font-weight: 650;
+  margin-bottom: 0.8em !important;
+}
+
+.anSection {
+  margin-top: 0.8em !important;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.anPoint {
+  position: relative;
+  padding-left: 1.4em;
+}
+
+.anPoint::before {
+  content: "";
+  position: absolute;
+  left: 0.35em;
+  top: 0.78em;
+  width: 0.36em;
+  height: 0.36em;
+  border-radius: 50%;
+  background: var(--lt-ink);
+}
+
+.anPoint.is-2 {
+  margin-left: 1.6em;
+}
+
+.anPoint.is-2::before {
+  background: none;
+  border: 1.5px solid var(--lt-ink);
+}
+
+.anEdit {
+  width: 100%;
+  min-height: 240px;
+  padding: 10px 12px;
+  border: 1px solid var(--lt-cobalt);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-size: 17px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.anViewFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.anLiteral p {
+  margin: 8px 0 0;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--lt-ink-2);
+  white-space: pre-wrap;
+}
+
+@media (min-width: 721px) {
+  .anDoc {
+    font-size: 20px;
+  }
+}
+
+/* ------------------------------------------------------------ vyutpatti page */
+
+.vyAnuvaadSwitch {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.vyAnuvaad {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--lt-rule);
+}

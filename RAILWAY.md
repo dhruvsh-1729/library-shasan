@@ -45,7 +45,12 @@ Optional — Google sign-in. When unset the portal offers email/password only:
 
 Used only by `scripts/` (the offline indexing pipeline), not by the served app:
 
-- `UPLOADTHING_TOKEN`, `UPLOADTHING_APP_ID`, `SARVAM_API_KEY`
+- `UPLOADTHING_TOKEN`, `UPLOADTHING_APP_ID`
+
+Runtime, for the Anuvaad page and the vyutpatti page's Gujarati anuvaad (reading
+uploaded box pages and writing the Gujarati), and for Ask:
+
+- `SARVAM_API_KEY`
 - `OCR_LANGS`, `OCR_DPI`, `USE_OCR_FALLBACK`
 
 `PORT` is injected by Railway — do not set it manually.

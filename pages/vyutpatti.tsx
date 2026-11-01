@@ -10,10 +10,14 @@ import type { ReaderLine, TableRow } from "@/lib/vyutpatti/format";
 import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
 import { needsDevanagari, toDevanagari } from "@/lib/to-devanagari";
 import { AppNav } from "@/components/AppNav";
+import { AnuvaadView } from "@/components/AnuvaadView";
 
 // Vyutpatti: the reader types each vishay (in Devanagari) and gets its
 // derivation from the koshes in Maharaj Saheb's order, as a reader page and an
 // internal table, editable here and downloaded as one PDF.
+//
+// With "ગુજરાતી અનુવાદ" on, each vyutpatti also gets its Gujarati anuvaad,
+// shown under it to read and correct and printed at the end of the PDF.
 //
 // Nothing is kept: no vishay is saved on the server or in the browser
 // (Sahebji's instruction), so the page warns before it is left with results.
@@ -30,6 +34,7 @@ type Item = {
   result?: VyutpattiResult;
   lines: ReaderLine[];
   rows: TableRow[];
+  anuvaad?: { status: "running" | "done" | "error"; markup: string; error?: string };
 };
 
 // Letters may be typed in Devanagari, Gujarati or Roman; the last two are
@@ -161,6 +166,8 @@ export default function VyutpattiPage() {
   // The sheet no longer prints a box number (Sahebji, 9 Oct 2026); "1" is still sent with each run.
   const box = "1";
   const [engine, setEngine] = useState<Engine>("claude");
+  // The Gujarati anuvaad is made with each vyutpatti unless switched off.
+  const [withAnuvaad, setWithAnuvaad] = useState(true);
   const [items, setItems] = useState<Item[]>([]);
   const [running, setRunning] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -209,6 +216,23 @@ export default function VyutpattiPage() {
   const update = (key: number, change: Partial<Item> | ((item: Item) => Partial<Item>)) =>
     setItems((list) => list.map((item) => (item.key === key ? { ...item, ...(typeof change === "function" ? change(item) : change) } : item)));
 
+  async function translateItem(key: number, vishay: string, lines: ReaderLine[]) {
+    if (!lines.length) return;
+    update(key, { anuvaad: { status: "running", markup: "" } });
+    try {
+      const res = await fetch("/api/anuvaad/vyutpatti", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vishay, lines: lines.map((l) => ({ head: l.head, body: l.body })) }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "The Gujarati anuvaad could not be prepared.");
+      update(key, { anuvaad: { status: "done", markup: String(json.markup ?? "") } });
+    } catch (error) {
+      update(key, { anuvaad: { status: "error", markup: "", error: error instanceof Error ? error.message : "The Gujarati anuvaad could not be prepared." } });
+    }
+  }
+
   async function runOne(item: Item) {
     update(item.key, { status: "running", progress: "Starting", error: undefined });
     try {
@@ -224,6 +248,8 @@ export default function VyutpattiPage() {
           finished = true;
           const result = event.result as VyutpattiResult;
           update(item.key, { status: "done", result, lines: result.lines, rows: result.rows, progress: "" });
+          // not awaited: the next vishay starts while this one is translated
+          if (withAnuvaad) void translateItem(item.key, result.vishay, result.lines);
         } else if (event.type === "error") {
           finished = true;
           update(item.key, { status: "error", error: String(event.error ?? "Something went wrong."), progress: "" });
@@ -269,7 +295,14 @@ export default function VyutpattiPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sections: chosen.map((i) => ({ number: i.number, vishay: i.result?.vishay ?? i.vishay, box: i.result?.box ?? box, rows: i.rows, lines: i.lines })),
+          sections: chosen.map((i) => ({
+            number: i.number,
+            vishay: i.result?.vishay ?? i.vishay,
+            box: i.result?.box ?? box,
+            rows: i.rows,
+            lines: i.lines,
+            anuvaad: withAnuvaad && i.anuvaad?.status === "done" ? i.anuvaad.markup : undefined,
+          })),
         }),
       });
       if (!res.ok) {
@@ -423,7 +456,7 @@ export default function VyutpattiPage() {
                 <div className="vyEngine" role="radiogroup" aria-label="Read with">
                   {(["claude", "sarvam"] as Engine[]).map((e) => (
                     <button key={e} type="button" role="radio" aria-checked={engine === e} className={engine === e ? "isOn" : ""} onClick={() => setEngine(e)}>
-                      {e === "claude" ? "Claude" : "Sarvam"}
+                      {e === "claude" ? "Scan reading" : "Text reading"}
                     </button>
                   ))}
                 </div>
@@ -433,13 +466,19 @@ export default function VyutpattiPage() {
               </div>
             ) : (
               <p className="vySettingsLine">
-                Read with {engine === "claude" ? "Claude" : "Sarvam"}{" "}
+                Read with {engine === "claude" ? "scan reading" : "text reading"}{" "}
                 <button type="button" className="vyLink" onClick={() => setSettingsOpen(true)}>
                   Change
                 </button>
               </p>
             )}
-            {engine === "sarvam" ? <p className="vyHint">Sarvam cannot read the page scans: check the Gujarati meanings.</p> : null}
+            {engine === "sarvam" ? <p className="vyHint">Text reading cannot see the page scans: check the Gujarati meanings.</p> : null}
+            <label className="anCheck vyAnuvaadSwitch">
+              <input type="checkbox" checked={withAnuvaad} onChange={(e) => setWithAnuvaad(e.target.checked)} />
+              <span>
+                With <span className="indic">ગુજરાતી અનુવાદ</span> (shown under each vyutpatti and printed at the end of the PDF)
+              </span>
+            </label>
             <button type="submit" className="vyGo exWide" disabled={running || !input.trim() || Boolean(problem)}>
               {running ? "Working…" : items.length ? "Find these too" : "Find vyutpatti"}
             </button>
@@ -543,6 +582,40 @@ export default function VyutpattiPage() {
                     ) : (
                       <p className="vyEmpty">None of the koshes has these words.</p>
                     )}
+
+                    {withAnuvaad || item.anuvaad ? (
+                      <section className="vyAnuvaad" aria-label="Gujarati anuvaad">
+                        <div className="vyKoshHead">
+                          <h3 className="vySection indic">ગુજરાતી અનુવાદ</h3>
+                          {item.lines.length && item.anuvaad?.status !== "running" ? (
+                            <button
+                              type="button"
+                              className="vyLink"
+                              onClick={() => translateItem(item.key, item.result?.vishay ?? item.vishay, item.lines)}
+                            >
+                              {item.anuvaad ? "Translate again" : "Make it"}
+                            </button>
+                          ) : null}
+                        </div>
+                        {item.anuvaad?.status === "running" ? (
+                          <p className="vyStatus">
+                            <span className="chTyping" aria-hidden="true">
+                              <span />
+                              <span />
+                              <span />
+                            </span>
+                            Translating
+                          </p>
+                        ) : null}
+                        {item.anuvaad?.status === "error" ? <p className="vyProblem">{item.anuvaad.error}</p> : null}
+                        {item.anuvaad?.status === "done" ? (
+                          <AnuvaadView
+                            markup={item.anuvaad.markup}
+                            onChange={(markup) => update(item.key, (it) => ({ anuvaad: { ...(it.anuvaad ?? { status: "done" }), status: "done", markup } }))}
+                          />
+                        ) : null}
+                      </section>
+                    ) : null}
 
                     <div className="vyCardFoot">
                       <button type="button" className="vyLink" onClick={() => download(item)} disabled={downloading}>
@@ -662,7 +735,10 @@ export default function VyutpattiPage() {
           <div className="exExport">
             <section className="exExportBlock">
               <h3>Vyutpatti</h3>
-              <p className="vyHint">Every vishay in the order typed, with your edits, as the internal table.</p>
+              <p className="vyHint">
+                Every vishay in the order typed, with your edits, as the internal table
+                {withAnuvaad ? <>, then the <span className="indic">ગુજરાતી અનુવાદ</span> of each</> : null}.
+              </p>
               <button type="button" className="vyGo exWide" onClick={() => download()} disabled={downloading || !done.length}>
                 {downloading ? "Making the PDF…" : done.length === 1 ? "Download PDF" : `Download PDF (${done.length})`}
               </button>
