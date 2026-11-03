@@ -57,6 +57,11 @@
   font-size: 14px;
 }
 
+.appNav .appNavLogout {
+  border-color: var(--lt-glass-edge);
+  font-size: 14px;
+}
+
 /* Phones: the header's title on one line, the six places in two even rows
    of three under it, a page's own links below them. Nothing is hidden or cut off. */
 @media (max-width: 720px) {
@@ -64,6 +69,32 @@
   header:has(> * > .appNav) {
     flex-wrap: wrap;
     row-gap: 8px;
+  }
+
+  /* "Log out" sits in the header's top right corner, level with the title;
+     the title keeps clear of it. */
+  /* Zero specificity, so a header that is already sticky stays sticky. */
+  :where(header:has(> .appNav), header:has(> * > .appNav)) {
+    position: relative;
+  }
+
+  header:has(> .appNav) .appNavLogout,
+  header:has(> * > .appNav) .appNavLogout {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    min-height: 36px;
+    background: var(--lt-glass-lit);
+    z-index: 2;
+  }
+
+  header:has(> .appNav) > :first-child:not(.appNav),
+  header:has(> * > .appNav) > :first-child:not(:has(.appNav)) {
+    padding-right: 96px;
+  }
+
+  header:has(> .appNav) > .appNav:first-child {
+    padding-top: 44px;
   }
 
   .appNav {

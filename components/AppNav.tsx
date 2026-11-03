@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 import type { ReactNode } from "react";
 
 export type AppPage = "search" | "ask" | "extract" | "vyutpatti" | "anuvaad" | "library";
@@ -16,6 +17,8 @@ const PAGES: Array<{ key: AppPage; href: string; label: string }> = [
  * The same six places on every page, the current one marked, big enough to
  * tap; on a phone they make one even row that is never cut off. `extra` holds
  * a page's own links (the original PDF, a download…), shown after them.
+ * "Log out" is always last: the far right on a desktop, the header's top
+ * right corner on a phone.
  */
 export function AppNav({ current, extra }: { current?: AppPage; extra?: ReactNode }) {
   return (
@@ -28,6 +31,15 @@ export function AppNav({ current, extra }: { current?: AppPage; extra?: ReactNod
         ))}
       </div>
       {extra ? <div className="appNavExtra">{extra}</div> : null}
+      <button
+        type="button"
+        className="appNavLogout"
+        onClick={() => {
+          void signOut({ callbackUrl: "/auth/signin" });
+        }}
+      >
+        Log out
+      </button>
     </nav>
   );
 }
