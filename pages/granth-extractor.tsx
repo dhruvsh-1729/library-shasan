@@ -229,6 +229,9 @@ export default function GranthExtractor() {
       active = false;
     };
   }, [volumePdf, printedMap?.url]);
+  // The book's own number for a thumbnail, when the pages were asked by book page.
+  const printedByPdf = useMemo(() => new Map(printedMap?.pages ?? []), [printedMap]);
+  const bookPageLabel = (pdfUrl: string, page: number) => (pageKind === "book" && printedMap?.url === pdfUrl ? (printedByPdf.get(page) ?? null) : null);
   const bookNumbering = Boolean(volumePdf && printedMap?.url === volumePdf && printedMap.pages.length);
   const byBookPage = pageKind === "book" && bookNumbering;
 
@@ -661,7 +664,7 @@ export default function GranthExtractor() {
                           <button type="button" onClick={() => setViewer({ pdfUrl: p.pdfUrl, page: n, title: `${work.title} · ${p.label}`, pageCount: p.pageCount })}>
                             <PageThumb pdfUrl={p.pdfUrl} page={n} eager={pages.indexOf(n) < 8} />
                             <span>
-                              {n}
+                              {bookPageLabel(p.pdfUrl, n) ? `p. ${bookPageLabel(p.pdfUrl, n)}` : n}
                               {n < p.first || n > p.last ? " · added" : ""}
                             </span>
                           </button>
