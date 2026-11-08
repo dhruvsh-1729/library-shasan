@@ -364,7 +364,9 @@ export function findMatchPassagesInPageContent(
   queries: string[],
   matchMode: OCRSearchMode,
   scripts: OCRSearchScripts = null,
-  context = PASSAGE_CONTEXT_LINES
+  context = PASSAGE_CONTEXT_LINES,
+  /** 0-based lines of the page's header (lib/page-lines): never quoted as context. */
+  header: Set<number> = new Set()
 ): Array<Pick<SearchMatchPassage, "hit_lines" | "pieces">> {
   const normalized = normalizeLineBreaks(content);
   const matches = findOCRSearchMatchesForQueries(normalized, queries, matchMode, scripts);
@@ -396,7 +398,7 @@ export function findMatchPassagesInPageContent(
   }
 
   // positions among the page's non-blank lines, so context counts lines of text
-  const textLines = lines.map((line, i) => (line.trim() ? i : -1)).filter((i) => i >= 0);
+  const textLines = lines.map((line, i) => (line.trim() && (!header.has(i) || hitLines.has(i)) ? i : -1)).filter((i) => i >= 0);
   const rank = new Map(textLines.map((line, r) => [line, r]));
   const windows: Array<{ from: number; to: number; hits: number[] }> = [];
   for (const line of [...hitLines].sort((a, b) => a - b)) {
@@ -643,9 +645,9 @@ export async function loadSearchMatchPassages(
     if (pageNumber <= 0) continue;
     if (pageFilter && !pageFilter.has(pageNumber)) continue;
 
-    const found = findMatchPassagesInPageContent(String(row.content ?? ""), queries, matchMode, options.scripts ?? null);
     const printedPage = String(row.printed_page ?? "").trim() || null;
     const bookLine = bookLineNumbers(String(row.content ?? ""), heads, printedPage);
+    const found = findMatchPassagesInPageContent(String(row.content ?? ""), queries, matchMode, options.scripts ?? null, undefined, bookLine.header);
     for (const passage of found) {
       if (passages.length >= maxRows) {
         truncated = true;

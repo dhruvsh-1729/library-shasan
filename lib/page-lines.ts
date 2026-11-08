@@ -106,11 +106,14 @@ export function bookLineNumbers(content: string, heads: Set<string>, printedPage
   const counted = textIndexes.filter((index, k) => k >= headerEnd && isText(lines[index]));
   textIndexes.slice(0, headerEnd).forEach((index) => numberOf.set(index, 1));
   counted.forEach((index, k) => numberOf.set(index, k + 1));
-  return (rawLine: number) => {
+  const lineOf = (rawLine: number) => {
     for (let i = rawLine - 1; i < lines.length; i += 1) {
       const n = numberOf.get(i);
       if (n != null) return n;
     }
     return Math.max(1, counted.length);
   };
+  /** 0-based indexes of the header's lines, for leaving them out of quoted context. */
+  lineOf.header = new Set(textIndexes.slice(0, headerEnd));
+  return lineOf;
 }
