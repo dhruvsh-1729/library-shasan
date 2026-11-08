@@ -509,7 +509,7 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
                     </div>
                   </div>
                 ))}
-                <p className="vyHint">Tap the word you mean. The number is how many granth pages use it.</p>
+                <p className="vyHint vyHintPlain">Tap the word you mean. The number is how many granth pages use it.</p>
               </div>
             ) : null}
             {/* The reading engine only matters while the AI reading is on (VYUTPATTI_AI). */}

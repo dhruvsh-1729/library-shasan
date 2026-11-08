@@ -114,6 +114,22 @@ export function cutEntry(format: string, page: PageText, line: number) {
   return { lines: out, continues: i >= page.order.length && out.length < MAX_ENTRY_LINES };
 }
 
+// The scanned koshes carry the scanner's footer on every page ("Jain Education
+// International", "For Private & Personal Use Only", "www.jainelibrary.org")
+// and a running head in brackets ("[आकाश-आकाशदीप शब्दरत्नमहोदधिः]"); OCR
+// runs them into the text when an entry crosses a page.
+const SCAN_FOOTER = /\s*(?:Jain\s+Education\s+International|For\s+Private\s*(?:&|and)\s*Personal\s+Use\s+Only|www\.jainelibrary\.org)\s*/giu;
+const RUNNING_HEAD = /\s*\[[^\]\n]{0,60}(?:शब्दरत्नमहोदधि|महोदधि|कोशः?|कोषः?|प्रक्रियाकोश)[^\]\n]{0,20}\]?\s*/gu;
+
+/** Entry text without the scanner's footer or a page's running head. */
+export function cleanKoshText(text: string) {
+  return text
+    .split("\n")
+    .map((line) => line.replace(SCAN_FOOTER, " ").replace(RUNNING_HEAD, " ").replace(/[ \t]{2,}/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 /** The first lines of a page, up to its first entry: the end of an entry from the page before. */
 function pageOpening(format: string, page: PageText) {
   const starts = new Set(headwordLines(format, page.lines.join("\n")).map((h) => h.line));
@@ -219,7 +235,7 @@ async function buildCandidates(picked: Picked[]): Promise<Candidate[]> {
           printedPage: printed.get(row.page) ?? null,
           head: row.head,
           sanskrit: row.sanskrit,
-          text: lines.join("\n").trim(),
+          text: cleanKoshText(lines.join("\n")),
           pageText: [page, next].filter(Boolean).map((p) => p!.lines.join("\n")).join("\n"),
           continues: entry.continues,
           pdfUrl,

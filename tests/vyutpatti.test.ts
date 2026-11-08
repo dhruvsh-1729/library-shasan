@@ -192,3 +192,9 @@ test("every kosh entry goes for its own Gujarati anuvaad, the kosh reference and
   assert.deepEqual(entries[0], { head: "देव", body: "पुं. (दीव्यतीति देवः) - દેવતા અર્થમાં." });
   assert.equal(entries[1].body, "पुं. (दीव्यन्ति क्रीडन्तीति वा देवाः । लिहादिभ्यः’ इत्यच्) - દેવતા અર્થમાં.");
 });
+
+test("kosh entry text loses the scanner's footer and the page's running head", async () => {
+  const { cleanKoshText } = await import("@/lib/vyutpatti/lookup");
+  const text = cleanKoshText("सिद्धि Jain Education International [आकाश-आकाशदीप शब्दरत्नमहोदधिः] अनुभवथी\nFor Private & Personal Use Only\nआकाश [अर्थात्] सूर्य");
+  assert.equal(text, "सिद्धि अनुभवथी\nआकाश [अर्थात्] सूर्य");
+});
