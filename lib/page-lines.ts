@@ -55,9 +55,11 @@ export function runningHeads(sourceRelPath: string): Promise<Set<string>> {
   if (hit && Date.now() - hit.at < HEAD_TTL_MS) return hit.value;
   const value = (async () => {
     const result = await getTursoClient().execute({
+      // every third page is plenty to see what repeats, and keeps a many-book export quick
       sql: `SELECT substr(p.content, 1, 400) AS top
             FROM ocr_pages p JOIN ocr_granths g ON g.granth_key = p.granth_key
-            WHERE g.source_rel_path = ?`,
+            WHERE g.source_rel_path = ? AND p.page_number % 3 = 0
+            LIMIT 400`,
       args: [sourceRelPath],
     });
     const counts = new Map<string, number>();
