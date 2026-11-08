@@ -68,6 +68,8 @@ type SearchResult = {
   csv_url?: string | null;
   source_rel_path?: string;
   source_page_number?: number;
+  /** The number printed on the page in the book, when known. */
+  printed_page?: string | null;
   matched_queries?: string[];
 };
 
@@ -998,9 +1000,10 @@ export default function SearchPage() {
               <p className="ltCardMeta">{bookNo(option?.key) ? `No. ${bookNo(option?.key)}` : option?.series}</p>
             ) : null}
           </div>
-          <div className="ltFolio">
+          <div className="ltFolio" title={result.printed_page ? `PDF page ${result.page_number}` : "PDF page"}>
             <span>page</span>
-            <strong>{result.page_number}</strong>
+            <strong>{result.printed_page ?? result.page_number}</strong>
+            {result.printed_page ? <small>PDF {result.page_number}</small> : null}
           </div>
         </header>
         {!verified ? <p className="ltCardNote">Not confirmed on this page</p> : null}

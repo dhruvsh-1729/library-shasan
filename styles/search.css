@@ -845,6 +845,13 @@
   letter-spacing: -0.02em;
 }
 
+.ltFolio small {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--lt-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .ltCardNote {
   grid-area: note;
   margin: 0;

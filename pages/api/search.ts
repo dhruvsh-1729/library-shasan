@@ -281,6 +281,23 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       );
 
       lap("pdfs");
+      // The number printed on each listed page, so a card says "page 350"
+      // as the book does, not the PDF's 409 (the download sheet already did).
+      const printed = new Map<string, string>();
+      if (rows.length) {
+        const pp = await client
+          .execute({
+            sql: `SELECT granth_key, page_number, printed_page FROM ocr_printed_pages
+                  WHERE (verified IS NULL OR verified <> 'conflict')
+                    AND (granth_key, page_number) IN (${rows.map(() => "(?, ?)").join(",")})`,
+            args: rows.flatMap((row) => [row.granth_key, row.page_number]),
+          })
+          .catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+        for (const r of pp.rows) {
+          const label = String(r.printed_page ?? "").trim();
+          if (label) printed.set(`${r.granth_key}:${r.page_number}`, label);
+        }
+      }
       const results = rows.map((row, index) => {
         const target = targets[index];
         const viewerUrl = target.pdf_url
@@ -293,6 +310,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           pdf_url: target.pdf_url,
           page_number: target.page_number,
           source_page_number: row.page_number,
+          printed_page: printed.get(`${row.granth_key}:${row.page_number}`) ?? null,
           source_rel_path: row.source_rel_path,
           snippet: buildOCRSearchExcerptForQueries(row.content, queries, matchMode, 520, scripts),
           occurrences: buildOCRSearchOccurrences(row.content, queries, matchMode, 320, scripts),
