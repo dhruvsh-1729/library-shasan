@@ -850,3 +850,54 @@
     padding-top: 2px;
   }
 }
+
+/* Roman words that could be more than one kosh word: tap the one meant. */
+.vyChoices {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.vyChoiceRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.vyChoiceWord {
+  min-width: 5em;
+  color: var(--lt-ink-3);
+  font-size: 14px;
+}
+
+.vyChoiceChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vyChoice {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 999px;
+  background: var(--lt-glass-lit);
+  color: var(--lt-ink);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.vyChoice small {
+  color: var(--lt-ink-3);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.vyChoice:hover,
+.vyChoice:focus-visible {
+  border-color: var(--lt-cobalt);
+}

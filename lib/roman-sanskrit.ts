@@ -41,6 +41,8 @@ const CONSONANTS: Array<[string, Alt[]]> = [
   ["dh", [{ text: "ध", cost: 0 }, { text: "ढ", cost: 1.2 }]],
   ["ph", [{ text: "फ", cost: 0 }]],
   ["bh", [{ text: "भ", cost: 0 }]],
+  ["shth", [{ text: "ष्ठ", cost: 0 }]],
+  ["sht", [{ text: "ष्ट", cost: 0 }, { text: "श्त", cost: 0.8 }]],
   ["sh", [{ text: "श", cost: 0 }, { text: "ष", cost: 0.5 }]],
   ["ṣ", [{ text: "ष", cost: 0 }]],
   ["ś", [{ text: "श", cost: 0 }]],
@@ -68,7 +70,7 @@ const CONSONANTS: Array<[string, Alt[]]> = [
   ["l", [{ text: "ल", cost: 0 }]],
   ["v", [{ text: "व", cost: 0 }]],
   ["w", [{ text: "व", cost: 0 }]],
-  ["s", [{ text: "स", cost: 0 }, { text: "ष", cost: 1.4 }]],
+  ["s", [{ text: "स", cost: 0 }, { text: "श", cost: 1.0 }, { text: "ष", cost: 1.4 }]],
   ["h", [{ text: "ह", cost: 0 }]],
 ];
 
@@ -143,34 +145,72 @@ function unitsOf(word: string): Unit[] {
       const after = i + consonant.spelling.length;
       const isNasal = consonant.spelling === "n" || consonant.spelling === "m";
       const nextVowel = vowelAt(word, after);
-      // n/m before another consonant is the anusvara (the fold treats ं and a
-      // class nasal alike, so ं covers both ways of writing it).
-      if (isNasal && !nextVowel && after < word.length && consonantAt(word, after)) {
-        units.push({ kind: "mark", alts: [{ text: "ं", cost: 0 }, { text: `${consonant.alts[0].text}${VIRAMA}`, cost: 0.6 }], raw: consonant.spelling });
-        i = after;
-        continue;
-      }
-      // "ri"/"ru" after a consonant: vocalic ऋ (कृष्ण, दृष्टि) or र + vowel.
+      // "ri"/"ru" after a consonant: vocalic ऋ (कृष्ण, दृष्टि; Gujarati
+      // speakers write कृपा as "krupa") or र + vowel, short or long.
       if (!nextVowel && (word.startsWith("ri", after) || word.startsWith("ru", after))) {
         const base = consonant.alts;
-        const tail = word[after + 1] === "i" ? "ि" : "ु";
+        const short = word[after + 1] === "i" ? "ि" : "ु";
+        const long = word[after + 1] === "i" ? "ी" : "ू";
+        const final = after + 2 >= word.length;
         units.push({
           kind: "consonant",
           alts: base.flatMap((alt) => [
             { text: `${alt.text}ृ`, cost: alt.cost + 0.2 },
-            { text: `${alt.text}${VIRAMA}र${tail}`, cost: alt.cost + 0.4 },
+            { text: `${alt.text}${VIRAMA}र${short}`, cost: alt.cost + 0.4 },
+            { text: `${alt.text}${VIRAMA}र${long}`, cost: alt.cost + (final ? 0.5 : 1.2) },
           ]),
           raw: word.slice(i, after + 2),
         });
         i = after + 2;
         continue;
       }
-      if (nextVowel) {
+      // "vrtya", "mrshavad": a consonant, r, then another consonant is ऋ (वृत्त्य).
+      if (!nextVowel && word[after] === "r" && after + 1 < word.length && !vowelAt(word, after + 1) && consonantAt(word, after + 1)) {
         units.push({
           kind: "consonant",
-          alts: consonant.alts.flatMap((alt) =>
-            nextVowel.meanings.map(([v, cost]) => ({ text: `${alt.text}${V[v][1]}`, cost: alt.cost + cost }))
-          ),
+          alts: consonant.alts.flatMap((alt) => [
+            { text: `${alt.text}ृ`, cost: alt.cost + 0.3 },
+            { text: `${alt.text}${VIRAMA}र${VIRAMA}`, cost: alt.cost + 0.6 },
+          ]),
+          raw: word.slice(i, after + 1),
+        });
+        i = after + 1;
+        continue;
+      }
+      // n/m before another consonant is the anusvara (the fold treats ं and a
+      // class nasal alike, so ं covers both ways of writing it); n before y
+      // can be ण (पुण्य, कारुण्य); and the nasal can keep its अ, dropped in
+      // typing (dharmdhyan for धर्मध्यान). Not at the start of a word.
+      if (isNasal && !nextVowel && units.length > 0 && after < word.length && consonantAt(word, after)) {
+        const nasal = consonant.alts[0].text;
+        units.push({
+          kind: "mark",
+          alts: [
+            { text: "ं", cost: 0 },
+            { text: `${nasal}${VIRAMA}`, cost: 0.6 },
+            ...(nasal === "न" && word[after] === "y" ? [{ text: `ण${VIRAMA}`, cost: 0.5 }] : []),
+            { text: nasal, cost: 1.1 },
+            ...(nasal === "न" ? [{ text: "ण", cost: 1.5 }] : []),
+          ],
+          raw: consonant.spelling,
+        });
+        i = after;
+        continue;
+      }
+      if (nextVowel) {
+        // "rishi", "rushabh", "riddhi" at the start of a word: ऋ.
+        const vocalic =
+          units.length === 0 && consonant.spelling === "r" && (nextVowel.spelling === "i" || nextVowel.spelling === "u")
+            ? [{ text: "ऋ", cost: 0.3 }]
+            : [];
+        units.push({
+          kind: "consonant",
+          alts: [
+            ...consonant.alts.flatMap((alt) =>
+              nextVowel.meanings.map(([v, cost]) => ({ text: `${alt.text}${V[v][1]}`, cost: alt.cost + cost }))
+            ),
+            ...vocalic,
+          ],
           raw: word.slice(i, after + nextVowel.spelling.length),
         });
         i = after + nextVowel.spelling.length;
@@ -179,14 +219,25 @@ function unitsOf(word: string): Unit[] {
       const atEnd = after >= word.length;
       // A bare consonant joins the next one (virama). At the end of a word it
       // is either a virama stem (पर्षद्) or, typed casually, an a-stem (धर्म).
+      // Inside a word the अ may have been dropped in typing, as Gujarati and
+      // Hindi speakers do ("upvas" for उपवास).
       const endings: Alt[] = atEnd
         ? [{ text: "", cost: 0.3 }, { text: VIRAMA, cost: 0.5 }, { text: "ा", cost: 1.2 }]
-        : [{ text: VIRAMA, cost: 0 }];
-      units.push({
-        kind: "consonant",
-        alts: consonant.alts.flatMap((alt) => endings.map((end) => ({ text: `${alt.text}${end.text}`, cost: alt.cost + end.cost }))),
-        raw: word.slice(i, after),
-      });
+        : [{ text: VIRAMA, cost: 0 }, ...(/^[ryl]/.test(word.slice(after)) ? [] : [{ text: "", cost: 1.2 }])];
+      const alts = consonant.alts.flatMap((alt) => endings.map((end) => ({ text: `${alt.text}${end.text}`, cost: alt.cost + end.cost })));
+      const prevIsVowel = units.length > 0 && (units[units.length - 1].kind === "vowel" || /[aeiouāīū]$/.test(units[units.length - 1].raw));
+      // "dukh" for दुःख: a visarga before kh, dropped in typing.
+      if (consonant.spelling === "kh" && prevIsVowel) alts.push(...alts.map((alt) => ({ text: `ः${alt.text}`, cost: alt.cost + 1.2 })));
+      // "avarniy" for आवरणीय: र keeps its अ before ण more often than elsewhere.
+      if (consonant.spelling === "r" && word[after] === "n") alts.push({ text: "र", cost: 0.5 });
+      // "tatva": त्त्व, as तत्त्व is always written.
+      if (consonant.spelling === "t" && word[after] === "v") alts.push({ text: `त्त${VIRAMA}`, cost: 0.5 });
+      // "prayaschitt": श्च.
+      if (consonant.spelling === "s" && word[after] === "c") alts.push({ text: `श${VIRAMA}`, cost: 0.3 });
+      // "duhkha", "antahkaran", "manahparyav": the visarga.
+      if (consonant.spelling === "h" && prevIsVowel && !atEnd) alts.push({ text: "ः", cost: 0.3 });
+      if (consonant.spelling === "h" && prevIsVowel && atEnd) alts.push({ text: "ः", cost: 0.4 });
+      units.push({ kind: "consonant", alts, raw: word.slice(i, after) });
       i = after;
       continue;
     }
@@ -210,6 +261,10 @@ function unitsOf(word: string): Unit[] {
   const last = units[units.length - 1];
   if (last?.kind === "consonant" && /a$/.test(last.raw) && !/aa$|ā$/.test(last.raw)) {
     last.alts = last.alts.map((alt) => (alt.text.endsWith("ा") ? { ...alt, cost: Math.max(0, alt.cost - 0.6) } : alt));
+  }
+  // So is a final "i" a long ī (maitri for मैत्री, sadhvi for साध्वी).
+  if (last?.kind === "consonant" && /[^i]i$/.test(last.raw)) {
+    last.alts = last.alts.map((alt) => (alt.text.endsWith("ी") ? { ...alt, cost: Math.max(0, alt.cost - 0.4) } : alt));
   }
   return units;
 }

@@ -17,6 +17,11 @@
     "155": {
       "title_display": "જૈન લક્ષણાવલી",
       "_why": "title_display read લક્ષવાળી (Jain Lakshanavali) and listed every part"
+    },
+    "127": {
+      "_why": "title_display, author_text (and the library cover image) were copied from book 129 Shodashak Prakaran Shabdasha Vivechan (303-304); checked against the title pages of 300 and 301 on 2026-11-08: ષડ્દર્શન સમુચ્ચય (ભાવાનુવાદ) ભાગ-૧ / ભાગ-૨, both with the same credits",
+      "title_display": "ષડ્દર્શન સમુચ્ચય (ભાવાનુવાદ)",
+      "author_text": "પૂ. આ. ભ. શ્રી હરિભદ્રસૂરીશ્વરજી મહારાજા વિરચિત, પૂ. આ. ભ. શ્રી ગુણરત્નસૂરીશ્વરજી કૃત ટીકા સહિત; ભાવાનુવાદ: મુ. સંયમકીર્તિવિજય મ. સા."
     }
   },
   "granths": {
@@ -442,6 +447,12 @@
     "382": {
       "author": "पंन्यास श्री मुक्तिविजयजी गणिवर",
       "_why": "checked against the cover/title page 2026-10-01: संकलनकर्ता पंन्यासप्रवर श्री मुक्तिविजयजी गणिवर; Vaman Shivram Apte (another dictionary) was copied in"
+    },
+    "xee0399ffef": {
+      "_why": "checked against the title page 2026-11-08 (OCR pages 1, 2, 10: हिंसाष्टकम्, याकिनीमहत्तरासूनु … श्रीहरिभद्रसूरि … स्वोपज्ञ अवचूरि); the library lists it as book 163 Hinsashtakam but links no file, so the file slug was shown. Bound in one volume with 338 Nana Chitta Prakarana (B035621)",
+      "title": "Hinsashtakam",
+      "native_title": "हिंसाष्टकम्",
+      "author": "યાકિનીમહત્તરાસૂનુ શ્રીહરિભદ્રસૂરિ મહારાજા (સ્વોપજ્ઞ અવચૂરિ સહિત)"
     }
   }
 }

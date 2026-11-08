@@ -62,20 +62,36 @@ function problemWith(text: string) {
   return "";
 }
 
-/** The input written in Devanagari by the server (kosh spellings for Roman words); the local reading if it cannot be reached. */
-async function spellInDevanagari(text: string) {
+type SpellChoice = { form: string; pages: number; kosh: boolean };
+type Spelled = { text: string; options: Record<string, SpellChoice[]> };
+
+/**
+ * The input written in Devanagari by the server (kosh spellings for Roman
+ * words), with the other spellings each Roman word could be; the local
+ * reading if the server cannot be reached.
+ */
+async function spellWithChoices(text: string): Promise<Spelled> {
   try {
     const res = await fetch("/api/vyutpatti/spell", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
-    const json = (await res.json()) as { text?: string };
-    if (res.ok && typeof json.text === "string") return json.text;
+    const json = (await res.json()) as { text?: string; options?: Record<string, SpellChoice[]> };
+    if (res.ok && typeof json.text === "string") return { text: json.text, options: json.options ?? {} };
   } catch {
     // offline or slow: the reading made here
   }
-  return toDevanagari(text);
+  return { text: toDevanagari(text), options: {} };
+}
+
+async function spellInDevanagari(text: string) {
+  return (await spellWithChoices(text)).text;
+}
+
+/** Puts `form` in place of the Roman word `word` wherever it stands alone in `text`. */
+function replaceRomanWord(text: string, word: string, form: string) {
+  return text.replace(new RegExp(`(^|[^a-zāīūṛṝḷṭḍṇśṣṃṁḥñṅ'’])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-zāīūṛṝḷṭḍṇśṣṃṁḥñṅ'’])`, "giu"), (_, before: string) => `${before}${form}`);
 }
 
 type KoshPage = { id: string; granthKey: string; page: number; citation: string; printedPage: string | null; pdfUrl: string | null; head: string; words: string[] };
@@ -187,14 +203,14 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
 
   const problem = useMemo(() => problemWith(input), [input]);
   // Gujarati or English typed: the Devanagari it will be looked up as.
-  const [spelled, setSpelled] = useState<{ from: string; text: string } | null>(null);
+  const [spelled, setSpelled] = useState<{ from: string; text: string; options: Record<string, SpellChoice[]> } | null>(null);
   const needsSpelling = needsDevanagari(input) && !problem;
   useEffect(() => {
     if (!needsSpelling) return;
     let active = true;
     const timer = window.setTimeout(async () => {
-      const text = await spellInDevanagari(input);
-      if (active) setSpelled({ from: input, text });
+      const result = await spellWithChoices(input);
+      if (active) setSpelled({ from: input, ...result });
     }, 350);
     return () => {
       active = false;
@@ -202,6 +218,9 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
     };
   }, [input, needsSpelling]);
   const preview = needsSpelling ? (spelled?.from === input ? spelled.text : toDevanagari(input)) : "";
+  // Roman words that could be more than one kosh word: the reader picks (Sahebji, 3 Nov: the
+  // spellings search offers for "aatma" should be offered here too).
+  const choices = needsSpelling && spelled?.from === input ? Object.entries(spelled.options).filter(([, list]) => list.length > 1) : [];
   const done = items.filter((i) => i.status === "done");
 
   // Nothing is saved anywhere: leaving the page loses the results.
@@ -467,6 +486,30 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
                 <button type="button" className="vyLink" onClick={() => setInput(preview)}>
                   Use this
                 </button>
+              </div>
+            ) : null}
+            {choices.length ? (
+              <div className="vyChoices" aria-label="Other spellings">
+                {choices.slice(0, 6).map(([word, list]) => (
+                  <div key={word} className="vyChoiceRow">
+                    <span className="vyChoiceWord">{word}</span>
+                    <div className="vyChoiceChips">
+                      {list.map((choice) => (
+                        <button
+                          key={choice.form}
+                          type="button"
+                          className="vyChoice indic"
+                          onClick={() => setInput((value) => replaceRomanWord(value, word, choice.form))}
+                          title={choice.kosh ? "A kosh headword" : "Not a kosh headword"}
+                        >
+                          {choice.form}
+                          {choice.pages ? <small>{choice.pages.toLocaleString("en-IN")}</small> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <p className="vyHint">Tap the word you mean. The number is how many granth pages use it.</p>
               </div>
             ) : null}
             {/* The reading engine only matters while the AI reading is on (VYUTPATTI_AI). */}
