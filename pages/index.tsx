@@ -804,13 +804,22 @@ export default function SearchPage() {
   // A changed option (find mode, script, books, a spelling chip) searches again
   // by itself; only a changed word waits for the reader to press Search
   // (Sahebji's screen showed "Settings changed. Search again" to be tapped).
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  });
   const optionsKey = JSON.stringify([searchMode, scripts, scope, selectedIds, chosenForms]);
   const lastOptionsKey = useRef(optionsKey);
   useEffect(() => {
     if (lastOptionsKey.current === optionsKey) return;
     lastOptionsKey.current = optionsKey;
     if (!resultsStale || !lastRequest || lastRequest.q !== q.trim()) return;
-    const timer = window.setTimeout(() => void run(1), 450);
+    // A search started meanwhile (the kosh button, Back to another search)
+    // already answers the new options: then nothing more is sent.
+    const seq = searchSeqRef.current;
+    const timer = window.setTimeout(() => {
+      if (searchSeqRef.current === seq && phaseRef.current === "done") void run(1);
+    }, 450);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optionsKey]);

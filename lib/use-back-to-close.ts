@@ -15,6 +15,7 @@ type Entry = { close: () => void; canClose: () => boolean; closedByBack: boolean
 const MARK = "__libOverlay";
 const stack: Entry[] = [];
 let ignorePops = 0;
+let pendingBacks = 0;
 let installed = false;
 
 /** Closes the overlay on top for a back press; true lets Next.js go back as usual. */
@@ -72,9 +73,19 @@ export function useBackToClose(open: boolean, onClose: () => void, busy = false)
       if (at >= 0) stack.splice(at, 1);
       // Closed by ×, Escape or a button: take our entry off, unless the page
       // has already moved on (a link was followed), when it is not on top.
+      // Two sheets closing together (a download done) are taken off in one
+      // step, as one history.go(-2) gives one popstate where two back() calls
+      // may give one or two.
       if (!entry.closedByBack && window.history.state?.[MARK]) {
-        ignorePops += 1;
-        window.history.back();
+        pendingBacks += 1;
+        if (pendingBacks === 1) {
+          queueMicrotask(() => {
+            const steps = pendingBacks;
+            pendingBacks = 0;
+            ignorePops += 1;
+            window.history.go(-steps);
+          });
+        }
       }
     };
   }, [open]);
