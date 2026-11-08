@@ -21,9 +21,9 @@ const VIRAMA = "्";
 // reading; the others cost more.
 const CONSONANTS: Array<[string, Alt[]]> = [
   ["ksh", [{ text: "क्ष", cost: 0 }]],
-  ["chh", [{ text: "छ", cost: 0 }]],
-  ["tth", [{ text: "त्थ", cost: 0 }, { text: "ठ", cost: 1.5 }]],
-  ["ddh", [{ text: "द्ध", cost: 0 }, { text: "ढ", cost: 1.5 }]],
+  ["chh", [{ text: "छ", cost: 0 }, { text: "च्छ", cost: 0.5 }]],
+  ["tth", [{ text: "त्थ", cost: 0 }, { text: "ट्ठ", cost: 0.8 }, { text: "ठ", cost: 1.5 }]],
+  ["ddh", [{ text: "द्ध", cost: 0 }, { text: "ड्ढ", cost: 1.0 }, { text: "ढ", cost: 1.5 }]],
   ["shr", [{ text: "श्र", cost: 0 }]],
   ["jñ", [{ text: "ज्ञ", cost: 0 }]],
   ["jn", [{ text: "ज्ञ", cost: 0 }, { text: "ज्न", cost: 2 }]],
@@ -87,13 +87,16 @@ const V: Record<string, [string, string]> = {
   ai: ["ऐ", "ै"],
   o: ["ओ", "ो"],
   au: ["औ", "ौ"],
+  // "ai" in Gujarati and Prakrit words: आई (अट्ठाई "atthai") or अइ
+  aai: ["आई", "ाई"],
+  aI: ["अइ", "इ"],
 };
 
 // Vowel spellings, longest first, with the vowels each can mean.
 const VOWELS: Array<[string, Array<[keyof typeof V, number]>]> = [
   ["aa", [["aa", 0]]],
   ["ā", [["aa", 0]]],
-  ["ai", [["ai", 0]]],
+  ["ai", [["ai", 0], ["aai", 1.0], ["aI", 1.2]]],
   ["au", [["au", 0]]],
   ["ee", [["ii", 0]]],
   ["ii", [["ii", 0]]],

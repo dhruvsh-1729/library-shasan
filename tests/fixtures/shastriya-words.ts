@@ -200,6 +200,11 @@ export const SHASTRIYA_WORDS: ShastriyaWord[] = [
   { word: "कल्पसूत्र", roman: ["kalpasutra", "kalpsutra"] },
   { word: "षड्दर्शन", roman: ["shaddarshana", "shaddarshan"] },
   { word: "अष्टक", roman: ["ashtaka", "ashtak"] },
+  { word: "अट्ठाई", roman: ["atthai"] },
+  { word: "आयंबिल", roman: ["ayambil", "aayambil"] },
+  { word: "पच्चक्खाण", roman: ["pachchakkhan"] },
+  { word: "मिच्छामि", roman: ["micchami", "michhami", "michchami"] },
+  { word: "चातुर्मास", roman: ["chaturmas", "chaturmaas"] },
 ];
 
 /** The Gujarati spelling of a Devanagari word, letter for letter. */
