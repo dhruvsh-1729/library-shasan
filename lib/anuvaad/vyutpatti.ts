@@ -109,7 +109,7 @@ export function entryForTranslation(entry: VyutpattiEntryInput): VyutpattiEntryI
     .replace(/\s*\(\s*उणा[^()]*\)/g, "")
     .replace(/\s*[०-९0-9]+(?:\s*।\s*[०-९0-9]+)+\s*॥?/g, "")
     // a sūtra quoted after the derivation (“षितोऽङ्” ॥५।३।१०७), whose number went above
-    .replace(/,?\s*[“"][^”"]{1,80}[”"]\s*॥/g, "")
+    .replace(/,?\s*[“"‘][^”"’]{1,80}[”"’]\s*[॥।]/g, "")
     // AVPK's cross-references and list marks: "[क्षान्ति शि. २७]", "द्र० अचलाशब्दः", "☐", "-૩૯૧-"
     .replace(/\s*\[[^\]]{1,60}\]/g, "")
     .replace(/\s*द्र[०.]\s*\S+/g, "")
