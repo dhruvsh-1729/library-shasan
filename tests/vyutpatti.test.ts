@@ -223,3 +223,9 @@ test("the gender printed after a headword is read in every kosh's style", async 
   ];
   for (const [text, gender] of cases) assert.equal(readGender(text), gender, text);
 });
+
+test("an OCR meaning loses AVPK's entry head and cross-references", async () => {
+  const { cleanOcrMeaning } = await import("@/lib/vyutpatti/pipeline");
+  assert.equal(cleanOcrMeaning("संवर-पुं-९६५-सेतु, पूल, बंध, पाळ. द्र० आलिशब्दः ।"), "सेतु, पूल, बंध, पाळ.");
+  assert.equal(cleanOcrMeaning("આસ્રવ-પું-૩૧૬(શે ૯૬) ઉકાળેલા અનાજનું ઘોવણ. દ્ર૦ આચામશબ્દઃ ।"), "ઉકાળેલા અનાજનું ઘોવણ.");
+});

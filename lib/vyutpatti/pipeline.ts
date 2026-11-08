@@ -334,6 +334,20 @@ const PENDING = new Map<string, Promise<EntryReading | undefined>>();
  * word; the derivation is AVPK's * line or the first bracket after the label.
  */
 /**
+ * An OCR meaning without what is not meaning: AVPK's entry head
+ * ("संवर-पुं-३६-", "આસ્રવ-પું-૩૧૬(શે ૯૬)"), its cross-references ("द्र०
+ * आलिशब्दः ।"), and spare dashes and spaces.
+ */
+export function cleanOcrMeaning(text: string) {
+  return String(text ?? "")
+    .replace(/\s+/g, " ")
+    .replace(/^\s*[^\s\-–]+\s*[-–]\s*(?:पुं|पु|स्त्री|न|त्रि|वि|अव्य|પું|પુ|સ્ત્રી|ન|ત્રિ|વિ|અવ્ય)[.०]?(?:\s*(?:न|ન)[.०]?)?\s*[-–]\s*[०-९0-9૦-૯]+\s*(?:\([^)]{0,30}\))?\s*[-–]?\s*/u, "")
+    .replace(/\s*(?:द्र|દ્ર)[०૦.]\s*\S+(?:शब्दः|શબ્દઃ)\s*[।.]?/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/**
  * The grammar label printed right after a kosh headword, in any kosh's style:
  * AVPK "अहिंसा–સ્ત્રી-૮૨", "उपवास-पुं न०-८४२"; ARK "अचोरिय-न० (अचौर्य)";
  * SRM "आस्रव पु. (…)"; Apte "चौर्यम् (नपुं.)". Returned as पुं. स्त्री. न.
@@ -391,7 +405,7 @@ export function ocrReading(word: string, c: Candidate): EntryReading & { fromOcr
   // the label printed right after the headword; else one printed near it (not a later "(स्त्री.)" of a compound)
   const near = rest.slice(0, 120).replace(/नपुं\./u, "न.");
   const gender = readGender(text) || ((near.match(/(पुं\.|स्त्री\.|न\.|त्रि\.|वि\.|अव्य\.|पुंन\.)/u) ?? [])[1] ?? "");
-  const meaning = rest.replace(/\s+/g, " ").trim().slice(0, 700);
+  const meaning = cleanOcrMeaning(rest).slice(0, 700);
   return { is_entry: true, why: "", head: c.head, gender, derivation, meaning, meaning_gu: meaning, base: null, fromOcr: true };
 }
 
