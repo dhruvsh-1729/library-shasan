@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 import { useBackToClose } from "@/lib/use-back-to-close";
-import { printedPageNumbers } from "@/lib/granth-pages";
+import { granthPageLocator, printedPageNumbers } from "@/lib/granth-pages";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   findOCRSearchMatchesForQueries,
@@ -526,6 +526,9 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   /** The PDF page holding a book page; estimated from the nearest known page when it has no number. */
   function pdfPageForBookPage(wanted: number) {
     if (!bookPages) return wanted;
+    // exact, or between two numbered pages that agree on the offset (as Gatha → Pages places them)
+    const placed = granthPageLocator([...bookPages].map(([page_number, printed_page]) => ({ page_number, printed_page })), pageCount)(wanted);
+    if (placed) return placed;
     let nearest: { pdf: number; printed: number } | null = null;
     for (const [pdf, label] of bookPages) {
       for (const printed of printedPageNumbers(label)) {
