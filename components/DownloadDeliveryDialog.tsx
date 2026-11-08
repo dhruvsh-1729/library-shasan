@@ -156,6 +156,9 @@ export function DownloadDeliveryDialog({
         </button>
       </form>
 
+      <p className="sheetSmall">
+        To print: open the downloaded file, then on a phone tap Share (or ⋮) and Print; on a computer press Ctrl+P.
+      </p>
       <p className="sheetSmall">Files over 15 MB are too big to email; download those instead.</p>
     </Sheet>
   );
