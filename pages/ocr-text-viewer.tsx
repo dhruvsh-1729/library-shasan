@@ -314,7 +314,7 @@ export default function OCRTextViewerPage() {
           ) : null}
 
           {!loading && !error && rows.length > 0 ? (
-            <div className="tvLayout">
+            <div className={`tvLayout${q.trim() ? "" : " isSolo"}`}>
               {q.trim() ? (
                 <aside className="tvHits" aria-label="Pages with the word">
                   {occurrenceItems.length === 0 ? (

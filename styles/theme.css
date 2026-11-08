@@ -583,6 +583,11 @@ body {
   align-items: start;
 }
 
+/* Opened to read, with no word searched: the pages take the whole width. */
+.tvLayout.isSolo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .tvHits {
   position: sticky;
   top: 16px;
