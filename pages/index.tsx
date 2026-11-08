@@ -801,6 +801,20 @@ export default function SearchPage() {
         (scope === "selected" && !sameIds(lastRequest.granthIds, selectedIds)))
   );
 
+  // A changed option (find mode, script, books, a spelling chip) searches again
+  // by itself; only a changed word waits for the reader to press Search
+  // (Sahebji's screen showed "Settings changed. Search again" to be tapped).
+  const optionsKey = JSON.stringify([searchMode, scripts, scope, selectedIds, chosenForms]);
+  const lastOptionsKey = useRef(optionsKey);
+  useEffect(() => {
+    if (lastOptionsKey.current === optionsKey) return;
+    lastOptionsKey.current = optionsKey;
+    if (!resultsStale || !lastRequest || lastRequest.q !== q.trim()) return;
+    const timer = window.setTimeout(() => void run(1), 450);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionsKey]);
+
   function onSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     // Not while a Hindi/Gujarati keyboard is still composing a letter (Enter picks the letter there).
     if (event.key === "Enter" && !loading && !event.nativeEvent.isComposing) run(1);
