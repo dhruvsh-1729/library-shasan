@@ -653,7 +653,7 @@ export async function loadSearchMatchPassages(
         truncated = true;
         break;
       }
-      passages.push({ page_number: pageNumber, printed_page: printedPage, ...passage, hit_lines: passage.hit_lines.map(bookLine) });
+      passages.push({ page_number: pageNumber, printed_page: printedPage, ...passage, hit_lines: [...new Set(passage.hit_lines.map(bookLine))] });
     }
     if (truncated) break;
   }

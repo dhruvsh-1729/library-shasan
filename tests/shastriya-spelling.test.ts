@@ -42,3 +42,10 @@ test("s-, vat- and ū-stems are declined as Sanskrit declines them", () => {
   has("कर्म", "कर्मणा", "कर्माणि");
   assert.ok(!sanskritQueryForms("तपस्").includes(foldSanskrit("तपस्भिः")));
 });
+
+test("only -as, -is and -us stems take the s-stem paradigm", () => {
+  assert.ok(!sanskritQueryForms("भास्").includes(foldSanskrit("भाषा")));
+  assert.ok(!sanskritQueryForms("मास्").includes(foldSanskrit("माषः")));
+  assert.ok(sanskritQueryForms("तपस्").includes(foldSanskrit("तपः")));
+  assert.deepEqual(sanskritQueryForms("भू"), [foldSanskrit("भू")]);
+});

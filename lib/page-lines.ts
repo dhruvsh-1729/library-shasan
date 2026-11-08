@@ -76,7 +76,11 @@ export function runningHeads(sourceRelPath: string): Promise<Set<string>> {
     const pages = result.rows.length;
     const need = Math.max(3, Math.ceil(pages * 0.04));
     return new Set([...counts].filter(([, n]) => n >= need).map(([sig]) => sig));
-  })().catch(() => new Set<string>());
+  })().catch(() => {
+    // a failed read is not remembered: the next export tries again
+    headCache.delete(sourceRelPath);
+    return new Set<string>();
+  });
   headCache.set(sourceRelPath, { at: Date.now(), value });
   if (headCache.size > 200) headCache.delete(headCache.keys().next().value!);
   return value;
@@ -94,19 +98,32 @@ export function bookLineNumbers(content: string, heads: Set<string>, printedPage
   const isText = (line: string) => /\p{L}/u.test(line) && !SCAN_FOOTER.test(line.trim());
   const textIndexes = lines.map((line, i) => (isText(line) || isPageNumberLine(line.trim()) ? i : -1)).filter((i) => i >= 0);
   const top = textIndexes.slice(0, HEADER_LINES).map((i) => lines[i].trim());
-  // The page number (or this page's printed number on a short line) marks the
-  // header: everything above it is header too ("स्वोपज्ञवृत्तिविभूषितं
-  // योगशास्त्रम्" / "॥ १०१० ॥").
-  let headerEnd = 0;
-  top.forEach((line, k) => {
-    if (isPageNumberLine(line) || (holdsPrintedNumber(line, printedPage) && line.length <= 90)) headerEnd = k + 1;
-  });
-  // Running heads directly above or under it.
-  while (headerEnd < top.length && heads.has(headSignature(top[headerEnd]))) headerEnd += 1;
+  const header = new Set<number>(); // positions in textIndexes
+  // The page number: a number-only line that is this page's printed number
+  // (or, when that is unknown, the very first line), or a short line holding
+  // the printed number. A gāthā or sūtra number further down ("॥८२॥") is not.
+  const pageLine = top.findIndex((line, k) =>
+    printedPage
+      ? (isPageNumberLine(line) || line.length <= 90) && holdsPrintedNumber(line, printedPage)
+      : k === 0 && isPageNumberLine(line)
+  );
+  if (pageLine >= 0) {
+    header.add(pageLine);
+    // above it, only running heads and short title lines ("स्वोपज्ञवृत्तिविभूषितं योगशास्त्रम्")
+    for (let k = 0; k < pageLine; k += 1) if (heads.has(headSignature(top[k])) || top[k].length <= 40) header.add(k);
+  }
+  // running heads at the top, or directly under the page number
+  for (let k = 0; k < top.length; k += 1) {
+    if (header.has(k)) continue;
+    if (heads.has(headSignature(top[k])) && (k === 0 || header.has(k - 1))) header.add(k);
+    else if (k > pageLine) break;
+  }
   const numberOf = new Map<number, number>();
   // page-number lines below the header (a verse number on its own line) are not text lines either
-  const counted = textIndexes.filter((index, k) => k >= headerEnd && isText(lines[index]));
-  textIndexes.slice(0, headerEnd).forEach((index) => numberOf.set(index, 1));
+  const counted = textIndexes.filter((index, k) => !header.has(k) && isText(lines[index]));
+  textIndexes.forEach((index, k) => {
+    if (header.has(k)) numberOf.set(index, 1);
+  });
   counted.forEach((index, k) => numberOf.set(index, k + 1));
   const lineOf = (rawLine: number) => {
     for (let i = rawLine - 1; i < lines.length; i += 1) {
@@ -116,6 +133,6 @@ export function bookLineNumbers(content: string, heads: Set<string>, printedPage
     return Math.max(1, counted.length);
   };
   /** 0-based indexes of the header's lines, for leaving them out of quoted context. */
-  lineOf.header = new Set(textIndexes.slice(0, headerEnd));
+  lineOf.header = new Set([...header].map((k) => textIndexes[k]));
   return lineOf;
 }

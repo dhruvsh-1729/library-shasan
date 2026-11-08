@@ -25,3 +25,12 @@ test("lines without letters are not lines of text", () => {
   assert.equal(line(3), 1);
   assert.equal(line(5), 2);
 });
+
+test("a gatha number near the top is not the page number, and text above it is not header", () => {
+  // book 230 p130 (printed 107): "॥८२॥" on the 4th line must not swallow the text above it
+  const page = ["तुर्विशेषणे किं विशिनष्टि ? बहुश्रुतत्वादिगुणं", "दूसरी पंक्ति पाठ की", "तीसरी पंक्ति", "।।८२।।", "आगे"].join("\n");
+  const line = bookLineNumbers(page, new Set(), "107");
+  assert.equal(line(1), 1);
+  assert.equal(line(2), 2);
+  assert.equal(line(5), 4); // the number-only line is not a line of text
+});

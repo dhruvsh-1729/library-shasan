@@ -40,8 +40,13 @@ export async function foldedTermPages(keys: string[]) {
 
 export type RankedReading = { form: string; folded: string; cost: number; pages: number; score: number };
 
-/** How much one extra guess weighs against ten times as many pages. */
-const COST_WEIGHT = 1.0;
+/**
+ * How much one extra guess weighs against ten times as many pages. Tuned on
+ * the 448 shastriya typings of tests/fixtures/shastriya-words.ts against the
+ * live library (8 Nov 2026): 0.4 puts the meant word first for 436, against
+ * 432 by pages alone and 429 at 1.0.
+ */
+const COST_WEIGHT = 0.4;
 
 export function readingScore(cost: number, pages: number) {
   return Math.log10(pages + 1) - COST_WEIGHT * cost;
