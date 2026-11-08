@@ -12,6 +12,8 @@ import { headwordTiers } from "@/lib/vyutpatti/lookup";
 const OPTIONS = 5;
 /** A headword of the three koshes counts as this many extra guesses' worth over one of the other four. */
 const TIER_ONE_BONUS = 1.5;
+/** A reading spelled exactly as the kosh prints the headword, over one the index only matches loosely. */
+const EXACT_HEAD_BONUS = 1.0;
 
 export type SpellOption = { form: string; pages: number; kosh: boolean };
 
@@ -34,7 +36,12 @@ export async function spellRomanWords(words: string[]) {
   const best = new Map<string, string>();
   words.forEach((word, index) => {
     const list = ranked[index].slice(0, 200);
-    const score = (r: (typeof list)[number]) => r.score + (known.get(r.form)?.tier === 1 ? TIER_ONE_BONUS : 0);
+    // the kosh index matches loosely (vowel length, stem forms); a reading that IS the printed headword counts more
+    const exact = (r: (typeof list)[number]) => {
+      const head = known.get(r.form)?.head;
+      return head && foldSanskrit(head).replace(/[ःं]$/u, "") === r.folded.replace(/[ःं]$/u, "") ? EXACT_HEAD_BONUS : 0;
+    };
+    const score = (r: (typeof list)[number]) => r.score + (known.get(r.form)?.tier === 1 ? TIER_ONE_BONUS : 0) + exact(r);
     const inKosh = list.filter((r) => known.has(r.form)).sort((a, b) => score(b) - score(a));
     const fallback = [...list].sort((a, b) => b.score - a.score);
     const chosen = (inKosh.length ? inKosh : fallback).slice(0, OPTIONS);
