@@ -14,6 +14,7 @@
 // The reader never sees which service writes it.
 
 import { CHAT_MODELS, SarvamChatError, chat } from "@/lib/sarvam-chat";
+import { gujaratiToDevanagari } from "@/lib/to-devanagari";
 import { AnuvaadError, parseAnuvaad } from "@/lib/anuvaad/translate";
 
 /** One entry of the vyutpatti: its word and the rest of what the sheet prints for it. */
@@ -138,7 +139,15 @@ function tidyPoint(content: string, entry: VyutpattiEntryInput) {
     text = text.replace(/;?\s*[^;.।]*ધાતુ(?:ઓ)?(?:ને|માંથી)[^;.।]*(?:પ્રત્યય[^;.।]*)?(?=[;.।]|$)/g, "").replace(/\s+\./g, ".");
   }
   if (/^<.*>$/.test(text)) return "";
+  // The derivation is quoted in Devanagari: Gujarati letters slipped into a quote
+  // ('મિત્રો દેવતાઽસ્યા मैत्री', 'उप+अधि+इड्+ ઘઃ') are written back in Devanagari.
+  text = devanagariQuotes(text);
   return keepPrintedDerivation(text, entry).trim();
+}
+
+/** Quoted text written back in Devanagari where Gujarati letters slipped in. */
+export function devanagariQuotes(text: string) {
+  return text.replace(/'([^']*[\u0a80-\u0aff][^']*)'/gu, (_, quoted: string) => `'${gujaratiToDevanagari(quoted)}'`);
 }
 
 /**

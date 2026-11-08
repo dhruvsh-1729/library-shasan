@@ -110,3 +110,9 @@ test("the Prakrit koshes' citations are not sent for translation", async () => {
   const { entryForTranslation } = await import("@/lib/anuvaad/vyutpatti");
   assert.equal(entryForTranslation({ head: "काउस्सग्ग", body: "पुं. (कायोत्सर्ग) (उत्त. २९) (आचा; औप; उव.) - શરીરનો ત્યાગ" }).body, "पुं. (कायोत्सर्ग) - શરીરનો ત્યાગ");
 });
+
+test("Gujarati letters inside the quoted derivation are written back in Devanagari", async () => {
+  const { devanagariQuotes } = await import("@/lib/anuvaad/vyutpatti");
+  assert.equal(devanagariQuotes("સ્ત્રીલિંગ. 'મિત્રો દેવતાઽસ્યા मैत्री' — અર્થ"), "સ્ત્રીલિંગ. 'मित्रो देवताऽस्या मैत्री' — અર્થ");
+  assert.equal(devanagariQuotes("'उप+अधि+इड्+ ઘઃ'"), "'उप+अधि+इड्+ घः'");
+});
