@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DEFAULT_SEARCH_CSV_COLUMNS, SEARCH_CSV_COLUMNS, type SearchCsvColumn } from "@/lib/search-csv-columns";
 
 const STORAGE_KEY = "library.csvColumns";
+/** Tells every open download screen that the columns changed. */
+const CHANGED = "library:csv-columns";
 
 function readSaved(): SearchCsvColumn[] {
   try {
@@ -17,13 +19,18 @@ function readSaved(): SearchCsvColumn[] {
 /** The spreadsheet columns the reader last chose, remembered on this device. */
 export function useCsvColumns() {
   const [columns, setColumns] = useState<SearchCsvColumn[]>(() => (typeof window === "undefined" ? DEFAULT_SEARCH_CSV_COLUMNS : readSaved()));
+  useEffect(() => {
+    const onChange = (event: Event) => setColumns((event as CustomEvent<SearchCsvColumn[]>).detail);
+    window.addEventListener(CHANGED, onChange);
+    return () => window.removeEventListener(CHANGED, onChange);
+  }, []);
   const update = (next: SearchCsvColumn[]) => {
-    setColumns(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       // private mode: the choice lasts until the page closes
     }
+    window.dispatchEvent(new CustomEvent(CHANGED, { detail: next }));
   };
   return [columns, update] as const;
 }
