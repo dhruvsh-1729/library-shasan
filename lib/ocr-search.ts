@@ -1,4 +1,5 @@
 import {
+  LINE_BREAK_HYPHEN,
   foldSanskrit,
   foldSanskritText,
   gujaratiCaseForms,
@@ -277,8 +278,54 @@ export function findOCRSearchMatchesForQueries(
 
   const folded = foldForMatching(content);
   const matches = normalizedQueries.flatMap((query) => findInFolded(folded, query, mode));
+  matches.push(...matchesAcrossLineBreaks(content, normalizedQueries, mode));
   return mergeSearchMatches(scripts ? matches.filter((match) => inScripts(match.text, scripts)) : matches);
 }
+
+/**
+ * Matches of a word the page broke at a line end with a hyphen ("वशी-⏎करण"
+ * for वशीकरण): found in the text with each such break joined, and given back
+ * with offsets in the page as printed (the match then spans the break).
+ */
+function matchesAcrossLineBreaks(content: string, queries: string[], mode: OCRSearchMode): SearchMatch[] {
+  const source = String(content ?? "").normalize("NFC");
+  if (!/[-–‐]\s*\n/.test(source)) return [];
+  // quick test first: does any word joined across a break hold one of the searched forms?
+  const joinedWords = [...source.matchAll(LINE_BREAK_HYPHEN)].map((m) => foldSanskrit(m[1] + m[2]));
+  const needles = queries.flatMap((query) => foldedNeedlesForQuery(query, mode));
+  if (!joinedWords.some((word) => needles.some((needle) => word.includes(needle)))) return [];
+  // the page with the breaks taken out, and where each kept character was
+  let joined = "";
+  const at: number[] = [];
+  let last = 0;
+  const breaks: Array<[number, number]> = [];
+  for (const m of source.matchAll(BREAK_IN_WORD)) {
+    const cut = m.index! + m[1].length; // the hyphen and the line end after the word's first half
+    for (let i = last; i < cut; i += 1) at.push(i);
+    joined += source.slice(last, cut);
+    last = cut + m[2].length;
+    breaks.push([cut, last]);
+  }
+  if (!breaks.length) return [];
+  for (let i = last; i < source.length; i += 1) at.push(i);
+  joined += source.slice(last);
+  at.push(source.length);
+  const folded = foldForMatching(joined);
+  const out: SearchMatch[] = [];
+  for (const query of queries) {
+    for (const match of findInFolded(folded, query, mode)) {
+      const start = at[match.start];
+      const end = at[match.end - 1] + 1;
+      // only the matches a break runs through; the others are found in the page itself
+      if (!breaks.some(([a, b]) => a >= start && b <= end)) continue;
+      out.push({ start, end, text: source.slice(start, end), query: match.query });
+    }
+  }
+  return out;
+}
+
+/** A letter, then a hyphen with the line end after it, then a letter: group 1 is the letter, group 2 the break. */
+const BREAK_IN_WORD = /([\p{L}\p{M}])([-–‐]\s*\n\s*)(?=[\p{L}\p{M}])/gu;
 
 export function hasOCRSearchMatch(content: string, query: string, mode: OCRSearchMode) {
   return findOCRSearchMatches(content, query, mode).length > 0;

@@ -13,3 +13,4 @@ export function sanskritWordForms(word: string): string[];
 export function sanskritQueryForms(query: string): string[];
 export function isGrammarLabelAt(text: string, start: number, end: number, foldedWord: string): boolean;
 export function gujaratiCaseForms(word: string): string[];
+export const LINE_BREAK_HYPHEN: RegExp;

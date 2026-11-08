@@ -158,3 +158,13 @@ test("spreadsheet columns: the asked ones in the sheet's order, the usual ones b
   assert.deepEqual(parseSearchCsvColumns([]), DEFAULT_SEARCH_CSV_COLUMNS);
   assert.deepEqual(searchCsvHeaders(["book", "page", "line"]), ["Book number", "Granth page number", "Line number on page"]);
 });
+
+test("a word the page broke at a line end with a hyphen is found whole", async () => {
+  const { buildFoldedIndexRow } = await import("@/lib/sanskrit-fold.mjs");
+  const page = "परमो धर्मः अहिं-\nसा इति। वशी-\nकरणकर्म";
+  assert.deepEqual(texts(findOCRSearchMatchesForQueries(page, ["अहिंसा"], "sanskrit_forms")), ["अहिं-\nसा"]);
+  assert.equal(findOCRSearchMatchesForQueries(page, ["वशीकरण"], "contains").length, 1);
+  // the halves are still words of their own
+  assert.equal(findOCRSearchMatchesForQueries(page, ["वशी"], "exact_word").length, 1);
+  assert.ok(buildFoldedIndexRow(page).folded.includes(foldSanskrit("अहिंसा")));
+});
