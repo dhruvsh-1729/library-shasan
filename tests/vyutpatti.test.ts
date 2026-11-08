@@ -240,3 +240,8 @@ test("a derivation bracket naming a kosh is not taken for a running head", async
   const { cleanKoshText } = await import("@/lib/vyutpatti/lookup");
   assert.equal(cleanKoshText("कोशकारः [कोश+कृ+अण्] रेशम का कीड़ा"), "कोशकारः [कोश+कृ+अण्] रेशम का कीड़ा");
 });
+
+test("Agama citations are cut from an OCR meaning", async () => {
+  const { cleanOcrMeaning } = await import("@/lib/vyutpatti/pipeline");
+  assert.equal(cleanOcrMeaning("चोरताभावे । प्रश्न०२ आश्र०द्वा० । पूज्ये, स्था०३ ठा०१ उ० अर्थमां."), "चोरताभावे। पूज्ये, अर्थमां.");
+});

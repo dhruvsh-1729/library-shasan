@@ -345,7 +345,10 @@ export function cleanOcrMeaning(text: string) {
     // Abhidhāna Rājendra's head, with its label and no number: "अचोरिय-न० …", "सियवाय-पुं० …"
     .replace(/^\s*[^\s\-–]+\s*[-–]\s*(?:पुं|पु|स्त्री|न|त्रि|वि|अव्य)[.०](?:\s*(?:न|पुं)[.०])?\s+/u, "")
     .replace(/\s*(?:द्र|દ્ર)[०૦.]\s*\S+(?:शब्दः|શબ્દઃ)\s*[।.]?/gu, "")
+    // Āgama citations: an abbreviation with ० and a number ("उत्त०१२ अ०", "स्था०३ ठा०१ उ०", "शि०७३")
+    .replace(/(?:\s*[\u0900-\u097f]{1,6}०\s?[०-९0-9]+(?:\s*[\u0900-\u097f]{1,4}०\s?[०-९0-9]*)*\s*[।,]?)+/gu, " ")
     .replace(/\s{2,}/g, " ")
+    .replace(/\s+([।.,])/g, "$1")
     .trim();
 }
 
