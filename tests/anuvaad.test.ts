@@ -83,3 +83,18 @@ test("a passage is cut at sentence ends and at the मू० / टी० marks",
   assert.ok(pieces.some((p) => p.startsWith("टी०")));
   assert.equal(pieces.join(" ").replace(/\s+/g, " "), "अ०- पुनरपि मार्गाभिष्टवं कुर्वन्नाह— मू०- अणुपुव्वेण महाघोरं।।५।। टी०- अणुपुव्वेण इत्यादि।");
 });
+
+test("a sūtra quoted after the derivation and AVPK's cross-references are not translated", async () => {
+  const { entryForTranslation } = await import("@/lib/anuvaad/vyutpatti");
+  const { body } = entryForTranslation({ head: "क्षमा", body: "(क्षमणं क्षमा, “षितोऽङ्” ॥५।३।१०७) (अभिधानव्युत्पत्तिप्रक्रियाकोश भाग-1, पृ. 220) - ક્ષમા-સ્ત્રી-૩૯૧-ક્ષમા, સહન કરવું. ☐ तितिक्षा,[क्षान्ति शि. २७] અર્થમાં" });
+  assert.ok(!/षितो|॥|☐|शि\.|૩૯૧/.test(body), body);
+  assert.ok(body.startsWith("(क्षमणं क्षमा)"), body);
+});
+
+test("the derivation stays quoted exactly as printed", async () => {
+  const { keepPrintedDerivation } = await import("@/lib/anuvaad/vyutpatti");
+  assert.equal(
+    keepPrintedDerivation("સ્ત્રીલિંગ. 'क्षमते इति ક્ષમા' — અર્થ: ક્ષમા.", { head: "क्षमा", body: "(क्षमणं क्षमा) - ક્ષમા" }),
+    "સ્ત્રીલિંગ. 'क्षमणं क्षमा' — અર્થ: ક્ષમા."
+  );
+});

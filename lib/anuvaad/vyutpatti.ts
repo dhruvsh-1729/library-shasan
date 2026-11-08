@@ -108,6 +108,13 @@ export function entryForTranslation(entry: VyutpattiEntryInput): VyutpattiEntryI
     // sūtra numbers are not explained (Maharaj Saheb's marks): "(उणा-८९७)", "५।१।५०॥"
     .replace(/\s*\(\s*उणा[^()]*\)/g, "")
     .replace(/\s*[०-९0-9]+(?:\s*।\s*[०-९0-9]+)+\s*॥?/g, "")
+    // a sūtra quoted after the derivation (“षितोऽङ्” ॥५।३।१०७), whose number went above
+    .replace(/,?\s*[“"][^”"]{1,80}[”"]\s*॥/g, "")
+    // AVPK's cross-references and list marks: "[क्षान्ति शि. २७]", "द्र० अचलाशब्दः", "☐", "-૩૯૧-"
+    .replace(/\s*\[[^\]]{1,60}\]/g, "")
+    .replace(/\s*द्र[०.]\s*\S+/g, "")
+    .replace(/[☐□■●]/g, "")
+    .replace(/-[૦-૯०-९0-9]{1,4}-/g, "-")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 1200);
@@ -129,7 +136,22 @@ function tidyPoint(content: string, entry: VyutpattiEntryInput) {
     text = text.replace(/;?\s*[^;.।]*ધાતુ(?:ઓ)?(?:ને|માંથી)[^;.।]*(?:પ્રત્યય[^;.।]*)?(?=[;.।]|$)/g, "").replace(/\s+\./g, ".");
   }
   if (/^<.*>$/.test(text)) return "";
-  return text.trim();
+  return keepPrintedDerivation(text, entry).trim();
+}
+
+/**
+ * The derivation is quoted exactly as the kosh prints it. When the model's
+ * quote differs ('क्षमते इति ક્ષમા' for the printed "क्षमणं क्षमा"), the
+ * printed one is put back.
+ */
+export function keepPrintedDerivation(text: string, entry: VyutpattiEntryInput) {
+  const printed = entry.body.match(/\(([^()]{2,200})\)/)?.[1]?.trim();
+  if (!printed || !/[\u0900-\u097f]/.test(printed)) return text;
+  const quote = text.match(/'([^']{1,240})'/);
+  if (!quote) return text;
+  const squash = (value: string) => value.replace(/[\s+,;:।॥“”"'-]/g, "");
+  if (squash(quote[1]) === squash(printed)) return text;
+  return text.replace(quote[0], `'${printed}'`);
 }
 
 async function translateEntry(vishay: string, entry: VyutpattiEntryInput, fresh: boolean): Promise<string> {
