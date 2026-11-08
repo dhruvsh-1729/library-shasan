@@ -245,6 +245,8 @@ function unitsOf(word: string): Unit[] {
         : [{ text: VIRAMA, cost: 0 }, ...(/^[ry]/.test(word.slice(after)) ? [] : [{ text: "", cost: 1.2 }])];
       const alts = consonant.alts.flatMap((alt) => endings.map((end) => ({ text: `${alt.text}${end.text}`, cost: alt.cost + end.cost })));
       const prevIsVowel = units.length > 0 && (units[units.length - 1].kind === "vowel" || /[aeiouāīū]$/.test(units[units.length - 1].raw));
+      // "tapas", "manas": a final s is often the visarga of the printed form (तपः, मनः).
+      if (consonant.spelling === "s" && atEnd && prevIsVowel) alts.push({ text: "ः", cost: 0.6 });
       // "dukh" for दुःख: a visarga before kh, dropped in typing.
       if (consonant.spelling === "kh" && prevIsVowel) alts.push(...alts.map((alt) => ({ text: `ः${alt.text}`, cost: alt.cost + 1.2 })));
       // "samyakdarshan": क् before a voiced letter is ग् (सम्यग्दर्शन, वाग्देवी).
