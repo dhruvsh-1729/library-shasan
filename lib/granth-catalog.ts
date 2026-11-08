@@ -180,7 +180,7 @@ export function describeGranth(catalog: GranthCatalog, granthKey: string) {
   return {
     entry,
     displayName: granthDisplayName(entry),
-    pdfUrl: normalizePdfUrl(doc?.pdf_url),
+    pdfUrl: entry.pdf_blank ? "" : normalizePdfUrl(doc?.pdf_url),
     csvUrl: doc?.csv_url ?? null,
   };
 }

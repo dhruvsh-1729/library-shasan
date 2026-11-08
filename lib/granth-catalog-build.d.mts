@@ -23,6 +23,8 @@ export type GranthCatalogEntry = {
   tags: string[];
   /** Kept out of search (a duplicate or an unusable scan), from the overrides. */
   hidden: boolean;
+  /** The PDF shows blank pages; the OCR text is opened instead. */
+  pdf_blank: boolean;
   text_only: boolean;
 };
 
