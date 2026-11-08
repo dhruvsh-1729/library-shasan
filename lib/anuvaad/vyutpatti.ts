@@ -115,6 +115,8 @@ export function entryForTranslation(entry: VyutpattiEntryInput): VyutpattiEntryI
     .replace(/\s*द्र[०.]\s*\S+/g, "")
     .replace(/[☐□■●]/g, "")
     .replace(/-[૦-૯०-९0-9]{1,4}-/g, "-")
+    // the Prakrit koshes' citations in brackets, once sūtra numbers are gone: "(उत्त. २९)", "(आचा; औप; उव.)"
+    .replace(/\s*\((?=[^()]*(?:[०-९0-9]|;))[^()]{1,160}\)/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 1200);
@@ -147,6 +149,12 @@ function tidyPoint(content: string, entry: VyutpattiEntryInput) {
 export function keepPrintedDerivation(text: string, entry: VyutpattiEntryInput) {
   const printed = entry.body.match(/\(([^()]{2,200})\)/)?.[1]?.trim();
   if (!printed || !/[\u0900-\u097f]/.test(printed)) return text;
+  // Only a derivation is put back: never a citation ("उत्त. २९", "आचा; औप; उव.",
+  // "वि.भा. ३४७७"), which the Prakrit koshes print in the same brackets.
+  if (/[0-9०-९;]/.test(printed) || /^\S{1,6}\.(\s|$)/.test(printed)) return text;
+  const head = entry.head.replace(/[ःं]$/, "");
+  const looksDerived = /इति|\+/.test(printed) || (head.length > 1 && printed.replace(/[ःं।\s]+$/, "").endsWith(head));
+  if (!looksDerived) return text;
   const quote = text.match(/'([^']{1,240})'/);
   if (!quote) return text;
   const squash = (value: string) => value.replace(/[\s+,;:।॥“”"'-]/g, "");

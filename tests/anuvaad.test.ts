@@ -98,3 +98,15 @@ test("the derivation stays quoted exactly as printed", async () => {
     "સ્ત્રીલિંગ. 'क्षमणं क्षमा' — અર્થ: ક્ષમા."
   );
 });
+
+test("a citation in brackets is never put in place of the derivation", async () => {
+  const { keepPrintedDerivation } = await import("@/lib/anuvaad/vyutpatti");
+  const text = "પુંલિંગ. 'कायस्य उत्सर्गः' — અર્થ: શરીરનો ત્યાગ.";
+  assert.equal(keepPrintedDerivation(text, { head: "काउस्सग्ग", body: "(उत्त. २९) - કાઉસગ્ગ" }), text);
+  assert.equal(keepPrintedDerivation(text, { head: "परीसह", body: "(आचा; औप; उव.) - x" }), text);
+});
+
+test("the Prakrit koshes' citations are not sent for translation", async () => {
+  const { entryForTranslation } = await import("@/lib/anuvaad/vyutpatti");
+  assert.equal(entryForTranslation({ head: "काउस्सग्ग", body: "पुं. (कायोत्सर्ग) (उत्त. २९) (आचा; औप; उव.) - શરીરનો ત્યાગ" }).body, "पुं. (कायोत्सर्ग) - શરીરનો ત્યાગ");
+});
