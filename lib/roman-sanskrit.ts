@@ -36,7 +36,7 @@ const CONSONANTS: Array<[string, Alt[]]> = [
   ["ṭh", [{ text: "ठ", cost: 0 }]],
   ["ḍh", [{ text: "ढ", cost: 0 }]],
   ["tt", [{ text: "त्त", cost: 0 }, { text: "ट्ट", cost: 1.5 }, { text: "ट", cost: 1.8 }]],
-  ["dd", [{ text: "द्द", cost: 0 }, { text: "ड्ड", cost: 1.5 }]],
+  ["dd", [{ text: "द्द", cost: 0 }, { text: "ड्ड", cost: 1.5 }, { text: "ड्द", cost: 1.0 }]],
   ["th", [{ text: "थ", cost: 0 }, { text: "ठ", cost: 1.2 }]],
   ["dh", [{ text: "ध", cost: 0 }, { text: "ढ", cost: 1.2 }]],
   ["ph", [{ text: "फ", cost: 0 }]],
@@ -164,6 +164,22 @@ function unitsOf(word: string): Unit[] {
         i = after + 2;
         continue;
       }
+      // "drashti", "srashti": Gujarati speakers write ऋ as "ra" too (दृष्टि, सृष्टि).
+      if (!nextVowel && word.startsWith("ra", after) && !word.startsWith("raa", after) && !word.startsWith("rai", after) && !word.startsWith("rau", after)) {
+        units.push({
+          kind: "consonant",
+          alts: consonant.alts.flatMap((alt) => [
+            { text: `${alt.text}${VIRAMA}र`, cost: alt.cost },
+            { text: `${alt.text}${VIRAMA}रा`, cost: alt.cost + 0.9 },
+            { text: `${alt.text}ृ`, cost: alt.cost + 1.0 },
+            // "utradhyayan": त्त typed as one t (उत्तर)
+            ...(consonant.spelling === "t" ? [{ text: "त्तर", cost: 1.0 }, { text: "त्तरा", cost: 1.9 }] : []),
+          ]),
+          raw: word.slice(i, after + 2),
+        });
+        i = after + 2;
+        continue;
+      }
       // "vrtya", "mrshavad": a consonant, r, then another consonant is ऋ (वृत्त्य).
       if (!nextVowel && word[after] === "r" && after + 1 < word.length && !vowelAt(word, after + 1) && consonantAt(word, after + 1)) {
         units.push({
@@ -223,11 +239,15 @@ function unitsOf(word: string): Unit[] {
       // Hindi speakers do ("upvas" for उपवास).
       const endings: Alt[] = atEnd
         ? [{ text: "", cost: 0.3 }, { text: VIRAMA, cost: 0.5 }, { text: "ा", cost: 1.2 }]
-        : [{ text: VIRAMA, cost: 0 }, ...(/^[ryl]/.test(word.slice(after)) ? [] : [{ text: "", cost: 1.2 }])];
+        : [{ text: VIRAMA, cost: 0 }, ...(/^[ry]/.test(word.slice(after)) ? [] : [{ text: "", cost: 1.2 }])];
       const alts = consonant.alts.flatMap((alt) => endings.map((end) => ({ text: `${alt.text}${end.text}`, cost: alt.cost + end.cost })));
       const prevIsVowel = units.length > 0 && (units[units.length - 1].kind === "vowel" || /[aeiouāīū]$/.test(units[units.length - 1].raw));
       // "dukh" for दुःख: a visarga before kh, dropped in typing.
       if (consonant.spelling === "kh" && prevIsVowel) alts.push(...alts.map((alt) => ({ text: `ः${alt.text}`, cost: alt.cost + 1.2 })));
+      // "samyakdarshan": क् before a voiced letter is ग् (सम्यग्दर्शन, वाग्देवी).
+      if (consonant.spelling === "k" && /^(?:d|g|b|j|n|m|v|y|r)/.test(word.slice(after))) alts.push({ text: `ग${VIRAMA}`, cost: 0.4 });
+      // "utradhyayan" for उत्तराध्ययन: a single t typed for त्त before r.
+      if (consonant.spelling === "t" && word[after] === "r") alts.push({ text: `त्त`, cost: 1.0 });
       // "avarniy" for आवरणीय: र keeps its अ before ण more often than elsewhere.
       if (consonant.spelling === "r" && word[after] === "n") alts.push({ text: "र", cost: 0.5 });
       // "tatva": त्त्व, as तत्त्व is always written.
