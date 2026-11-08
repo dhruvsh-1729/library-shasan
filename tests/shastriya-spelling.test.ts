@@ -49,3 +49,9 @@ test("only -as, -is and -us stems take the s-stem paradigm", () => {
   assert.ok(sanskritQueryForms("तपस्").includes(foldSanskrit("तपः")));
   assert.deepEqual(sanskritQueryForms("भू"), [foldSanskrit("भू")]);
 });
+
+test("an ā-word is declined as a consonant stem only where one is likely", () => {
+  assert.ok(!sanskritQueryForms("क्षमा").includes(foldSanskrit("क्षमः")));
+  assert.ok(sanskritQueryForms("पर्षदा").includes(foldSanskrit("पर्षदि")));
+  assert.ok(!sanskritQueryForms("दृष्टि").includes(foldSanskrit("दृष्टे")));
+});
