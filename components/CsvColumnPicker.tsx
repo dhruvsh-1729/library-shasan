@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DEFAULT_SEARCH_CSV_COLUMNS, SEARCH_CSV_COLUMNS, type SearchCsvColumn } from "@/lib/search-csv";
+import { DEFAULT_SEARCH_CSV_COLUMNS, SEARCH_CSV_COLUMNS, type SearchCsvColumn } from "@/lib/search-csv-columns";
 
 const STORAGE_KEY = "library.csvColumns";
 
