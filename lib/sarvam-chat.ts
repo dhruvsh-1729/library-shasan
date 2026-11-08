@@ -64,7 +64,27 @@ export async function chat(opts: ChatOpts) {
   }
 }
 
+/**
+ * Sarvam answers 429 when too many requests arrive at once (a vishay with ten
+ * kosh entries sends ten). Instead of failing the entry, wait and ask again:
+ * 1.5 s, 3 s, 6 s, or as long as the reply's Retry-After says (up to 15 s).
+ */
+const RATE_LIMIT_WAITS_MS = [1500, 3000, 6000];
+
 async function chatOnce(opts: ChatOpts) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await chatRequest(opts);
+    } catch (e) {
+      if (!(e instanceof SarvamChatError) || e.status !== 429 || attempt >= RATE_LIMIT_WAITS_MS.length) throw e;
+      const asked = Number((e.body as { retryAfter?: number })?.retryAfter);
+      const wait = Number.isFinite(asked) && asked > 0 ? Math.min(15_000, asked * 1000) : RATE_LIMIT_WAITS_MS[attempt];
+      await new Promise((resolve) => setTimeout(resolve, wait + Math.random() * 400));
+    }
+  }
+}
+
+async function chatRequest(opts: ChatOpts) {
   const key = process.env.SARVAM_API_KEY;
   if (!key) throw new Error("Missing SARVAM_API_KEY");
 
@@ -87,7 +107,8 @@ async function chatOnce(opts: ChatOpts) {
   try { body = JSON.parse(text); } catch { body = text; }
   if (!res.ok) {
     const msg = (body as { error?: { message?: string } })?.error?.message ?? `Sarvam chat failed (${res.status})`;
-    throw new SarvamChatError(msg, res.status, body);
+    const retryAfter = Number(res.headers.get("retry-after"));
+    throw new SarvamChatError(msg, res.status, Number.isFinite(retryAfter) && retryAfter > 0 ? { retryAfter, body } : body);
   }
 
   const choice = (body as { choices?: Array<{ finish_reason?: string; message?: { content?: string | null } }> })?.choices?.[0];
