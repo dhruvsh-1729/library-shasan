@@ -678,7 +678,8 @@ const BREAK_BEFORE = /-[ \t]*\n[ \t]*$/;
 
 /** Widens a match to the whole word around it, joining a word hyphenated across lines. */
 function wholeWordAt(text: string, start: number, end: number) {
-  return wholeWordPieces(text, start, end).map(([a, b]) => text.slice(a, b)).join("");
+  // a match may itself span the break (lib/ocr-search joins broken words): the word is printed joined
+  return wholeWordPieces(text, start, end).map(([a, b]) => text.slice(a, b)).join("").replace(/[-–‐][ \t]*\n[ \t]*/g, "");
 }
 
 /** The [start, end) ranges of the whole word around a match: one, or more for a word hyphenated across lines. */
