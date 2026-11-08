@@ -468,6 +468,12 @@ export async function translatePage(input: PageInput): Promise<Anuvaad> {
       if (error instanceof SarvamChatError && error.status >= 400 && error.status < 500 && error.status !== 429) break;
     }
   }
+  // The structured pass failed but the literal translation was made: give that rather than nothing.
+  if (literals?.length && looksGujarati(literals.join("\n"))) {
+    const literalText = literals.join("\n");
+    const fallback = parseAnuvaad(literals.map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n"));
+    if (fallback.length) return { blocks: fallback, markup: toMarkup(fallback), literal: literalText };
+  }
   console.error("page anuvaad failed:", lastError instanceof Error ? lastError.message : lastError);
   throw new AnuvaadError("The anuvaad could not be prepared just now. Please try again.");
 }
