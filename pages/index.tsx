@@ -1567,7 +1567,7 @@ export default function SearchPage() {
                     <ExportActions
                       hint={blocked ?? (tooManyPages ? `Full PDF: choose ${maxPages} PDF pages or fewer.` : null)}
                       secondary={{ id: "linelist", label: "Line list", detail: "A PDF of every matching line with two lines above and below, and its line and page number", busyLabel: "Building", ...choice("linelist") }}
-                      primary={{ id: "pdf", label: "Full PDF", detail: "The chosen pages as one PDF, cover first", busyLabel: "Building", ...choice("pdf") }}
+                      primary={{ id: "pdf", label: "Full PDF", detail: "The chosen pages as one PDF, the word ringed", busyLabel: "Building", ...choice("pdf") }}
                       more={[
                         { id: "wordlist", label: "Word list (PDF)", detail: MORE_EXPORT_DETAILS.wordlist, busyLabel: "Building word list", ...choice("wordlist") },
                         { id: "numbers", label: "Page & line numbers (PDF)", detail: MORE_EXPORT_DETAILS.numbers, busyLabel: "Building list", ...choice("numbers") },
@@ -1616,7 +1616,6 @@ export default function SearchPage() {
                             setDownloadPreview((prev) => (prev ? { ...prev, contextPages: normalizeContextPageRadius(n) } : prev))
                           }
                         />
-                        <p className="sheetSmall">Page 1 always comes first, as the cover.</p>
                       </div>
                     </details>
 
@@ -1661,13 +1660,11 @@ export default function SearchPage() {
                       </div>
                       <div className="sheetList">
                         {pageRows.map((page) => {
-                          const isCover = page.page_number === 1;
                           return (
                             <label key={page.page_number} className="sheetRow">
                               <input
                                 type="checkbox"
-                                checked={isCover || selectedSet.has(page.page_number)}
-                                disabled={isCover}
+                                checked={selectedSet.has(page.page_number)}
                                 onChange={(event) =>
                                   setPreviewPages((pages) => (event.target.checked ? pages.add(page.page_number) : pages.delete(page.page_number)))
                                 }
@@ -1675,7 +1672,6 @@ export default function SearchPage() {
                               <span className="sheetRowMain">
                                 <strong>
                                   {page.printed_page ? `Page ${page.printed_page}` : `PDF page ${page.page_number}`}
-                                  {isCover ? " · cover" : ""}
                                 </strong>
                                 {page.printed_page ? <small>PDF page {page.page_number}</small> : null}
                                 {page.occurrence_count > 0 ? (
@@ -1702,7 +1698,7 @@ export default function SearchPage() {
                       suggestedName={suggestFileName(deliveryFormat ?? "pdf", downloadPreview.queries[0] ?? "", downloadPreview.bookNo || downloadPreview.title)}
                       fileLabel={
                         deliveryFormat === "pdf" || deliveryFormat === null
-                          ? `${plural(finalPageCount, "PDF page")}, cover first`
+                          ? `${plural(finalPageCount, "PDF page")}`
                           : `${plural(selectedCount, "chosen page")}, one row per matching ${deliveryFormat === "csv" || deliveryFormat === "linelist" ? "line" : "word"}`
                       }
                       busy={busy}
