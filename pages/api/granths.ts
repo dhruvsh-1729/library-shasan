@@ -12,6 +12,8 @@ type GranthItem = {
   id: number;
   file_name: string | null;
   ufs_url: string | null;
+  /** Set when the PDF shows blank pages: open this granth's OCR text instead. */
+  text_granth_key: string | null;
   file_size: number | null;
   custom_id: string | null;
   collection: string | null;
@@ -222,7 +224,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         return {
           id: Number(row.id ?? 0),
           file_name: (row.file_name as string | null) ?? null,
-          ufs_url: (row.ufs_url as string | null) ?? null,
+          // a PDF that shows blank pages (catalog pdf_blank) is not offered; its text is
+          ufs_url: catalogEntry(customId)?.pdf_blank ? null : ((row.ufs_url as string | null) ?? null),
+          text_granth_key: catalogEntry(customId)?.pdf_blank ? catalogEntry(customId)!.granth_key : null,
           file_size: row.file_size == null ? null : Number(row.file_size),
           custom_id: customId,
           collection: (row.collection as string | null) ?? null,
@@ -245,6 +249,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           id: -(textStart + index + 1),
           file_name: row.name,
           ufs_url: null,
+          text_granth_key: null,
           file_size: null,
           custom_id: row.customId,
           collection: TEXT_ONLY_COLLECTION,

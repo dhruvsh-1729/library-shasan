@@ -13,6 +13,7 @@ type GranthItem = {
   id: number;
   file_name: string | null;
   ufs_url: string | null;
+  text_granth_key?: string | null;
   file_size: number | null;
   custom_id: string | null;
   collection: string | null;
@@ -317,9 +318,10 @@ export default function HomePage() {
                       >
                         Open PDF
                       </button>
-                    ) : row.custom_id?.startsWith("text:") ? (
+                    ) : row.custom_id?.startsWith("text:") || row.text_granth_key ? (
                       <Link
-                        href={`/ocr-text-viewer?granthKey=${encodeURIComponent(row.custom_id.slice("text:".length))}`}
+                        href={`/ocr-text-viewer?granthKey=${encodeURIComponent(row.text_granth_key ?? row.custom_id!.slice("text:".length))}`}
+                        title={row.text_granth_key ? "The PDF of this book is being restored; its text can be read meanwhile." : undefined}
                       >
                         Open text
                       </Link>
