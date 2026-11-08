@@ -306,3 +306,128 @@
 .vyCardFoot .vyLink {
   margin-top: 4px;
 }
+
+/* ------------------------------------------------------------ "Pages of a PDF" (components/AnuvaadPages), 8 Nov 2026 */
+
+.anBack {
+  justify-self: start;
+  min-height: 40px;
+}
+
+.anChoices .exChoice {
+  min-height: 112px;
+  align-content: start;
+}
+
+.anStepNo {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lt-ink-3);
+}
+
+.anBig {
+  min-height: 56px;
+  font-size: 17px;
+}
+
+.anPagesStep.isOver {
+  outline: 2px dashed var(--lt-cobalt);
+  outline-offset: -6px;
+}
+
+.anFileTitle {
+  overflow-wrap: anywhere;
+  color: var(--lt-ink);
+}
+
+.anChip {
+  justify-self: start;
+  min-height: 44px;
+  padding: 8px 16px;
+  font-size: 15px;
+}
+
+.anChosen {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--lt-green);
+}
+
+.anThumbs .exThumb {
+  aspect-ratio: auto;
+  min-height: 120px;
+}
+
+.anPagesBar {
+  align-items: center;
+}
+
+.anPagesBar .anCheck {
+  min-height: 44px;
+}
+
+.anProgress {
+  flex-basis: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--lt-glass);
+  overflow: hidden;
+}
+
+.anProgress span {
+  display: block;
+  height: 100%;
+  background: var(--lt-green);
+  transition: width 0.4s ease;
+}
+
+.anPageHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.anPageLabel {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.anPageError {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.anPageError .exSecondary,
+.anOriginal .exSecondary {
+  min-height: 48px;
+}
+
+.anOriginal textarea {
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lt-ink);
+  font-size: 17px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.anOriginal .vyHint {
+  margin-top: 6px;
+}
+
+@media (max-width: 720px) {
+  .anPagesBar .vyGo {
+    flex-basis: 100%;
+  }
+}

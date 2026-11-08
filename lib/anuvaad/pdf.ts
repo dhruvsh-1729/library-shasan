@@ -47,7 +47,21 @@ function drawLines(ctx: Ctx, page: PDFPage, lines: ReturnType<typeof wrapPieces>
  * Adds the anuvaad pages to `doc`, one passage per page run. Shared by the
  * anuvaad export and the vyutpatti PDF (whose Gujarati anuvaad goes at the end).
  */
-export function drawAnuvaadPages(doc: PDFDocument, text: TextDrawer, ascentOf: (size: number) => number, sections: AnuvaadPdfSection[], firstNumber = 1) {
+export type AnuvaadPageOptions = {
+  /** false: no page numbers at the foot (the pages are put between other pages). */
+  numbers?: boolean;
+  /** Filled with the index, in `doc`, of the first page of each section. */
+  starts?: number[];
+};
+
+export function drawAnuvaadPages(
+  doc: PDFDocument,
+  text: TextDrawer,
+  ascentOf: (size: number) => number,
+  sections: AnuvaadPdfSection[],
+  firstNumber = 1,
+  options: AnuvaadPageOptions = {}
+) {
   const ctx: Ctx = { doc, text, ascent: ascentOf };
   const [pageWidth, pageHeight] = A4;
   const right = pageWidth - SIDE;
@@ -64,7 +78,7 @@ export function drawAnuvaadPages(doc: PDFDocument, text: TextDrawer, ascentOf: (
   };
   const newPage = () => {
     page = doc.addPage(A4);
-    footer(page);
+    if (options.numbers !== false) footer(page);
     y = top;
     return page;
   };
@@ -76,6 +90,7 @@ export function drawAnuvaadPages(doc: PDFDocument, text: TextDrawer, ascentOf: (
 
   for (const section of sections) {
     newPage();
+    options.starts?.push(doc.getPageCount() - 1);
     if (section.caption) {
       const runs = text.layout(section.caption, "regular");
       const p = room(CAPTION_SIZE * 2);
@@ -148,7 +163,7 @@ export function drawAnuvaadPages(doc: PDFDocument, text: TextDrawer, ascentOf: (
   return number;
 }
 
-export async function buildAnuvaadPdf(sections: AnuvaadPdfSection[]) {
+export async function buildAnuvaadPdf(sections: AnuvaadPdfSection[], options: AnuvaadPageOptions = {}) {
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
   doc.setTitle("ગુજરાતી અનુવાદ");
@@ -156,7 +171,7 @@ export async function buildAnuvaadPdf(sections: AnuvaadPdfSection[]) {
   const embedder = new FontEmbedder(doc);
   const text = new TextDrawer(faces, embedder);
   const reference = faces.gujarati.regular;
-  drawAnuvaadPages(doc, text, (size) => (reference.ascender / reference.upem) * size, sections);
+  drawAnuvaadPages(doc, text, (size) => (reference.ascender / reference.upem) * size, sections, 1, options);
   embedder.finish();
   return doc.save({ useObjectStreams: false });
 }

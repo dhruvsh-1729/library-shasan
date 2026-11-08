@@ -35,6 +35,14 @@ export class AnuvaadError extends Error {
   }
 }
 
+const LANGUAGE = `LANGUAGE
+- Pure, plain Gujarati as Jain sādhus write it, with the established Jain terms in their Gujarati forms: પ્રાણાતિપાત-વિરમણ, મહાવ્રત, પચ્ચક્ખાણ, ગુણસ્થાનક, કર્મબંધ, ત્રસ-સ્થાવર, સૂક્ષ્મ-બાદર, પર્યાપ્તા-અપર્યાપ્તા, એકેન્દ્રિય, જીવનિકાય, સમિતિ, ભાવના, આધાકર્મ, અનુમોદન, ત્રિવિધ-ત્રિવિધેન, યાવજ્જીવ, ઇત્યાદિ.
+- Respectful forms: ભગવંત, વીર પ્રભુ, ગૌતમ સ્વામી, સુધર્મસ્વામી, ઉપાધ્યાય શ્રી યશોવિજયજી.
+- Gujarati digits (૧, ૨, ૨૭) in the Gujarati text.
+- A short phrase of the original may be quoted in single quotes in Gujarati script ('મહાઘોર', 'એકાન્તબાળ') where the text dwells on that word.
+- Brackets only to give the technical term or one needed clarification — never two synonyms in a bracket, never a sūtra or gāthā number inside the text.
+- Prefer one clear, connected explanation with connectives (કારણ કે, તેથી, પરંતુ, અર્થાત્, જેમ … તેમ) over chopping it into labelled fragments.`;
+
 const RULES = `You write the Gujarati anuvaad (bhāvānuvād) of Jain śāstra passages for a Jain ācārya, who prints it and reads it next to the original. The passage is in Sanskrit or Prakrit (Ardhamāgadhī) — never read it as Hindi.
 
 ACCURACY COMES FIRST
@@ -44,13 +52,7 @@ ACCURACY COMES FIRST
 - "मू०" marks the mūla (sūtra or gāthā) and "टी०" the ṭīkā (commentary); "अ०" introduces the context. Translate the mūla and explain it through the ṭīkā, as one account.
 - The box is about one vishay (given below). Give full weight to what the passage says about it. A part that is not about the vishay (a list the passage passes through, the preamble of another topic) is left out or said in one short line.
 
-LANGUAGE
-- Pure, plain Gujarati as Jain sādhus write it, with the established Jain terms in their Gujarati forms: પ્રાણાતિપાત-વિરમણ, મહાવ્રત, પચ્ચક્ખાણ, ગુણસ્થાનક, કર્મબંધ, ત્રસ-સ્થાવર, સૂક્ષ્મ-બાદર, પર્યાપ્તા-અપર્યાપ્તા, એકેન્દ્રિય, જીવનિકાય, સમિતિ, ભાવના, આધાકર્મ, અનુમોદન, ત્રિવિધ-ત્રિવિધેન, યાવજ્જીવ, ઇત્યાદિ.
-- Respectful forms: ભગવંત, વીર પ્રભુ, ગૌતમ સ્વામી, સુધર્મસ્વામી, ઉપાધ્યાય શ્રી યશોવિજયજી.
-- Gujarati digits (૧, ૨, ૨૭) in the Gujarati text.
-- A short phrase of the original may be quoted in single quotes in Gujarati script ('મહાઘોર', 'એકાન્તબાળ') where the text dwells on that word.
-- Brackets only to give the technical term or one needed clarification — never two synonyms in a bracket, never a sūtra or gāthā number inside the text.
-- Prefer one clear, connected explanation with connectives (કારણ કે, તેથી, પરંતુ, અર્થાત્, જેમ … તેમ) over chopping it into labelled fragments.
+${LANGUAGE}
 
 FORM (exactly this markup, nothing before or after it)
 # <the granth, in Gujarati script, as a heading: name, then the place in brackets, e.g. પ્રજ્ઞાપનાસૂત્ર મલયગિરિસૂરિ ટીકા (પદ ૨૨ — ક્રિયાપદ, સૂત્ર ૧૬૩૭-૧૬૬૩)>
@@ -333,5 +335,139 @@ export async function translatePassage(input: PassageInput): Promise<Anuvaad> {
     }
   }
   console.error("anuvaad failed:", lastError instanceof Error ? lastError.message : lastError);
+  throw new AnuvaadError("The anuvaad could not be prepared just now. Please try again.");
+}
+
+// ------------------------------------------------------------ any PDF page
+//
+// "Any PDF pages" (2 Nov 2026, Maharaj Saheb: "we have a PDF directly; from
+// it we need some fixed pages"): a whole printed page, not a box passage. The
+// same two steps — literal pieces with the glossary, then the anuvaad written
+// from that Gujarati — but nothing is left out for a vishay, and the page is
+// given as connected prose rather than the box form with its heading and
+// વિષય line (the page label goes over it instead).
+
+// Four paragraphs, verbatim, from Maharaj Saheb's finished "parichay" master
+// (docs/reference/agnitattva-parichay-1-44-master-v4.docx, paragraphs 39, 41,
+// 49 and 8 counting non-empty ones from 1), forwarded 8 Nov 2026 as the house
+// style: connected prose with અર્થાત્ / પરંતુ, em-dashes for an aside or a
+// list, (૧) (૨) numbering inside the sentence, no stacked synonyms.
+const HOUSE_PROSE = [
+  "નિદ્રાવસ્થામાં થતા મન સંબંધી વિકારને 'સ્વપ્ન' કહેવામાં આવે છે. સ્વપ્ન ગાઢ નિદ્રામાં આવતા નથી, તેમજ સંપૂર્ણ જાગ્રત અવસ્થામાં પણ આવતા નથી; પરંતુ જ્યારે તંદ્રા અવસ્થા હોય અર્થાત્ અર્ધ-નિદ્રાની સ્થિતિ હોય, ત્યારે જ સ્વપ્ન આવવા સંભવ છે.",
+  "આ નવ પ્રકારનાં સ્વપ્નોમાં પ્રથમ છ પ્રકારે આવેલાં સ્વપ્નો — પછી તે શુભ હોય કે અશુભ — તે સર્વ નિષ્ફળ અને નિરર્થક સમજવાં. પરંતુ છેલ્લા ત્રણ પ્રકારે આવેલાં સ્વપ્નો સાચાં સમજવાં. દેવતાની પ્રેરણાથી, ધર્મના પ્રભાવથી અથવા વિશેષ પુણ્ય-પાપના ઉદયથી આવતાં સ્વપ્નો ભાવિ ફળનાં સૂચક હોય છે અને અવશ્ય ફળદાયી નીવડે છે. આવાં સર્વ પ્રકારનાં સ્વપ્નો અને તેનાં ફળોનું સ્વપ્નશાસ્ત્રમાં વિસ્તારપૂર્વક વર્ણન કરવામાં આવ્યું છે.",
+  "અષ્ટમંગલ અર્થાત્ સૌભાગ્યને સૂચવનાર એવા આઠ આકારો કે જે મંગલનું કારણ છે, અર્થાત્ વિઘ્નના નાશનું કારણ છે. તેના નામ આ પ્રમાણે છે — દર્પણ, ભદ્રાસન, વર્ધમાન, કળશ, નંદાવર્ત, શ્રીવત્સ, મત્સ્યયુગલ અને સ્વસ્તિક.",
+  "(૧) હાથી, (૨) વૃષભ, (૩) કેશરી સિંહ, (૪) લક્ષ્મીદેવી, (૫) ફૂલોની માળા, (૬) સૂર્ય, (૭) ચંદ્ર, (૮) ધજા-પતાકા, (૯) કળશ, (૧૦) પદ્મ સરોવર, (૧૧) સમુદ્ર, (૧૨) દેવ વિમાન, (૧૩) રત્નરાશિ, (૧૪) અગ્નિશિખા.",
+].join("\n\n");
+
+const PAGE_RULES = `You write the Gujarati anuvaad (bhāvānuvād) of one printed page of a Jain śāstra for a Jain ācārya, who prints it and reads it next to the original page. The page is in Sanskrit or Prakrit (Ardhamāgadhī) — never read it as Hindi. It may begin or end in the middle of a sentence; translate it as it stands.
+
+ACCURACY COMES FIRST
+- Say what the page says, all of it, in its order, and nothing it does not say. Never add facts, examples, numbers, names or conclusions of your own. If a word or line cannot be read with confidence, render it closely rather than guessing a meaning.
+- Keep every distinction the text draws (kinds, counts, conditions, exceptions, who asks and who answers). Numbers and counts must match the text exactly.
+- Leave out only the running head at the top of the page, the page number and printer's marks.
+- "मू०" or a verse with its number (॥ १ ॥) is the mūla; "टीका" / "टी०" the commentary on it. Give the mūla's meaning as the ṭīkā explains it, then what the ṭīkā says, in the page's order.
+
+${LANGUAGE}
+
+FORM (exactly this markup, nothing before or after it)
+- Connected paragraphs of plain text: a new paragraph (a new line) wherever the page starts a new verse, the ṭīkā on it, or a new topic. Never one block for the whole page.
+- "## <heading>" only where the page itself begins a new chapter or section with a heading (give that heading in Gujarati).
+- A short list the page gives (names, kinds) stays inside the sentence, numbered (૧), (૨) … or set after an em-dash (—), as in the model prose below.
+- "- **<label>:** <text>" only where the page itself sets out longer distinct items (શંકા / સમાધાન, examples explained one by one).
+- No title line, no "વિષય:" line, no numbering of your own.
+
+You are given a literal Gujarati translation of the page, made sentence by sentence; it is your only source for the meaning. Keep its sentences and their meaning in order: join and smooth the Gujarati into connected prose. Do not add any fact, example, reason or speaker that is not in it, and keep who asks and who answers exactly as it has them. Use the glossary for the Gujarati of Jain terms.
+
+${GLOSSARY}
+
+Maharaj Saheb's own Gujarati prose — the model for tone, connectives, dashes and how a list is numbered inside a paragraph (another subject; never copy its content):
+${HOUSE_PROSE}`;
+
+export type PageInput = {
+  /** The page's text as read (lib/anuvaad/pages pageText). */
+  text: string;
+  /** The granth or file name, if known: context only. */
+  source?: string;
+};
+
+const MAX_PAGE_TEXT = 9_000;
+
+/**
+ * The page in pieces for the literal pass, cut at the page's own paragraphs
+ * (the OCR's blocks, blank-line separated) and never across one when it can
+ * be helped, so the anuvaad keeps the page's paragraphs.
+ */
+function pagePieces(text: string, max = 550) {
+  const blocks = text
+    .split(/\n\s*\n/)
+    .map((b) => b.replace(/-\s*\n\s*/g, "-").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const pieces: string[] = [];
+  let current = "";
+  for (const block of blocks) {
+    if (block.length > max) {
+      if (current) pieces.push(current);
+      current = "";
+      pieces.push(...splitPassage(block, max));
+    } else if (current && current.length + block.length + 1 > max) {
+      pieces.push(current);
+      current = block;
+    } else current = current ? `${current}\n${block}` : block;
+  }
+  if (current) pieces.push(current);
+  return pieces;
+}
+
+const gujaratiLetters = (text: string) => text.match(GUJARATI)?.length ?? 0;
+
+export async function translatePage(input: PageInput): Promise<Anuvaad> {
+  const text = input.text.replace(/[ \t]+/g, " ").trim();
+  const devanagari = text.match(/[ऀ-ॿ]/g)?.length ?? 0;
+  if (devanagari < 20) throw new AnuvaadError("No Sanskrit or Prakrit text was found on this page.", 400);
+  if (text.length > MAX_PAGE_TEXT) throw new AnuvaadError("This page has too much text to translate at once.", 400);
+
+  let lastError: unknown = null;
+  let literals: string[] | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      literals ??= await mapLimit(pagePieces(text), 4, (piece) => literal(piece));
+      const literalText = literals.join("\n");
+      const user = [
+        input.source ? `Book: ${input.source}` : "",
+        "Literal Gujarati translation of the page:",
+        literalText,
+        "",
+        "Write the Gujarati anuvaad of the page in the form given.",
+      ]
+        .filter((line, i) => line || i > 0)
+        .join("\n");
+      const room = 31_000 - tokensFor(PAGE_RULES.length + user.length);
+      const { content } = await chat({
+        model: CHAT_MODELS.fast,
+        temperature: 0,
+        maxTokens: Math.max(1500, Math.min(8000, room)),
+        messages: [
+          { role: "system", content: PAGE_RULES },
+          { role: "user", content: user },
+        ],
+      });
+      const markup = stopRepeats(content.replace(/<think>[\s\S]*?<\/think>/g, "").trim(), true);
+      // a heading or વિષય line copied from the model page is not part of this form
+      const blocks = parseAnuvaad(markup).filter((b) => b.kind !== "title" && b.kind !== "vishay");
+      // A page is translated whole: an anuvaad far shorter than the literal has dropped part of it.
+      const whole = gujaratiLetters(markup) >= gujaratiLetters(literalText) * 0.5;
+      if (blocks.length && looksGujarati(markup) && whole) return { blocks, markup: toMarkup(blocks), literal: literalText };
+      lastError = new AnuvaadError("The anuvaad came back incomplete.");
+      // Second time short: the literal translation itself, a paragraph per piece, is better than half a page.
+      if (attempt === 1 && literals.length && looksGujarati(literalText)) {
+        const fallback = parseAnuvaad(literals.map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n"));
+        return { blocks: fallback, markup: toMarkup(fallback), literal: literalText };
+      }
+    } catch (error) {
+      lastError = error;
+      if (error instanceof SarvamChatError && error.status >= 400 && error.status < 500 && error.status !== 429) break;
+    }
+  }
+  console.error("page anuvaad failed:", lastError instanceof Error ? lastError.message : lastError);
   throw new AnuvaadError("The anuvaad could not be prepared just now. Please try again.");
 }

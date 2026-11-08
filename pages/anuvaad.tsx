@@ -1,13 +1,20 @@
 import Head from "next/head";
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { GetServerSideProps } from "next";
+import { useRouter } from "next/router";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import { AppNav } from "@/components/AppNav";
 import { AnuvaadView } from "@/components/AnuvaadView";
+import { AnuvaadPages } from "@/components/AnuvaadPages";
 import { type BoxRow, parseBoxPages } from "@/lib/anuvaad/box";
+import { addImagePage, fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
 
-// Anuvaad: box files (the printed Sr | V.T | Granth | ShastraPath | … tables,
+// Anuvaad, two ways, chosen first: "Pages of a PDF" (components/AnuvaadPages:
+// any PDF or page photos, pages picked by number, each page translated) and
+// box files, below.
+//
+// Box files (the printed Sr | V.T | Granth | ShastraPath | … tables,
 // scanned or photographed) go in; each page is read, each passage is given its
 // Gujarati anuvaad in the form of Maharaj Saheb's pages (29 Oct 2026), shown
 // here to read and correct, and exported as one PDF: the box pages as
@@ -44,50 +51,6 @@ type Row = BoxRow & {
 const ACCEPT = "application/pdf,image/jpeg,image/png";
 const PARALLEL_ROWS = 2;
 
-function saveBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
-async function readStream(res: Response, onEvent: (event: Record<string, unknown>) => void) {
-  if (!(res.headers.get("content-type") ?? "").includes("ndjson") || !res.body) {
-    const json = await res.json().catch(() => ({}));
-    onEvent({ type: "error", error: json.error || `Request failed (${res.status}).` });
-    return;
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let nl: number;
-    while ((nl = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, nl);
-      buffer = buffer.slice(nl + 1);
-      if (!line.trim()) continue;
-      try {
-        onEvent(JSON.parse(line));
-      } catch {
-        // a torn line; the next ones still count
-      }
-    }
-  }
-}
-
-function fileType(file: File) {
-  if (file.type) return file.type;
-  const ext = file.name.toLowerCase().split(".").pop();
-  return ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : "";
-}
-
 /** The uploaded files, then the anuvaad pages, as one PDF (made in the browser). */
 async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer) {
   const { PDFDocument } = await import("pdf-lib");
@@ -98,13 +61,7 @@ async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer) {
       const src = await PDFDocument.load(upload.bytes, { ignoreEncryption: true });
       for (const page of await out.copyPages(src, src.getPageIndices())) out.addPage(page);
     } else {
-      const image = upload.type === "image/png" ? await out.embedPng(upload.bytes) : await out.embedJpg(upload.bytes);
-      // a photo goes on an A4 page (turned if it is wider than tall), fitted with a small margin
-      const landscape = image.width > image.height;
-      const [w, h] = landscape ? [841.89, 595.28] : [595.28, 841.89];
-      const scale = Math.min((w - 24) / image.width, (h - 24) / image.height);
-      const page = out.addPage([w, h]);
-      page.drawImage(image, { x: (w - image.width * scale) / 2, y: (h - image.height * scale) / 2, width: image.width * scale, height: image.height * scale });
+      await addImagePage(out, upload.bytes, upload.type);
     }
   }
   const translated = await PDFDocument.load(anuvaad);
@@ -112,7 +69,7 @@ async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer) {
   return out.save();
 }
 
-export default function AnuvaadPage() {
+function BoxFlow({ onBack }: { onBack: () => void }) {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [view, setView] = useState<"upload" | "rows" | "results">("upload");
@@ -134,18 +91,6 @@ export default function AnuvaadPage() {
   const waiting = uploads.filter((u) => u.status === "waiting");
   const translated = rows.filter((r) => r.status === "done" && r.markup);
   const chosen = rows.filter((r) => r.include);
-
-  // The action bar pins just under the page header, whose height changes with
-  // the width (two rows of menu on a phone).
-  useEffect(() => {
-    const header = document.querySelector<HTMLElement>(".anShell > .chTop");
-    if (!header) return;
-    const set = () => document.documentElement.style.setProperty("--an-top", `${header.getBoundingClientRect().height}px`);
-    set();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(set);
-    observer?.observe(header);
-    return () => observer?.disconnect();
-  }, []);
 
   useEffect(() => {
     if (!uploads.length && !rows.length) return;
@@ -319,6 +264,300 @@ export default function AnuvaadPage() {
   };
 
   return (
+    <main className="vyMain">
+      {!uploads.length ? (
+        <button type="button" className="exGhost anBack" onClick={onBack}>
+          ‹ Back
+        </button>
+      ) : null}
+      {uploads.length ? (
+        <ol className="exTrail" aria-label="Where you are">
+          <li>
+            <button type="button" onClick={() => setView("upload")} aria-current={view === "upload" ? "step" : undefined}>
+              Files ({uploads.length})
+            </button>
+          </li>
+          <li>
+            <button type="button" onClick={() => setView("rows")} aria-current={view === "rows" ? "step" : undefined} disabled={!rows.length}>
+              Passages ({chosen.length})
+            </button>
+          </li>
+          <li>
+            <button type="button" onClick={() => setView("results")} aria-current={view === "results" ? "step" : undefined} disabled={!translated.length && !working}>
+              Anuvaad ({translated.length}){working ? ` · ${working} working` : ""}
+            </button>
+          </li>
+          <li className="exTrailEnd">
+            {confirmClear ? (
+              <span className="vyConfirm">
+                Nothing is saved. Clear all?
+                <button type="button" className="exGhost" onClick={startAgain} disabled={reading || translating}>
+                  Clear
+                </button>
+                <button type="button" className="exGhost" onClick={() => setConfirmClear(false)}>
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button type="button" className="exGhost" onClick={() => setConfirmClear(true)} disabled={reading || translating}>
+                Start again
+              </button>
+            )}
+          </li>
+        </ol>
+      ) : null}
+
+      {view === "upload" ? (
+        <section className="vyForm exStep">
+          <h1 className="exQuestion">Which box files?</h1>
+          <p className="vyLabel">
+            <span>The printed box tables (Sr · V.T · Granth · ShastraPath), as PDF scans or photos of the pages. Several files are read as one box, in the order added.</span>
+          </p>
+          <div
+            className={`anDrop${dragging ? " isOver" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+          >
+            <input
+              ref={picker}
+              type="file"
+              accept={ACCEPT}
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files?.length) void addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <button type="button" className="vyLink" onClick={() => picker.current?.click()} disabled={reading}>
+              Choose files
+            </button>
+            <span className="vyHint">or drop them here · PDF, JPG, PNG</span>
+          </div>
+
+          {uploads.length ? (
+            <ul className="anFiles">
+              {uploads.map((u) => (
+                <li key={u.id} className={`is-${u.status}`}>
+                  <span className="anFileName">{u.name}</span>
+                  <span className="anFileState">
+                    {u.status === "waiting" ? "Ready to read" : null}
+                    {u.status === "reading" ? (
+                      <>
+                        <span className="chTyping" aria-hidden="true">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                        {u.progress || "Reading"}
+                      </>
+                    ) : null}
+                    {u.status === "done" ? `${u.pages.length} page${u.pages.length === 1 ? "" : "s"} read` : null}
+                    {u.status === "error" ? <span className="vyProblem">{u.error}</span> : null}
+                  </span>
+                  {u.status === "waiting" || u.status === "error" ? (
+                    <button
+                      type="button"
+                      className="vyX"
+                      aria-label={`Remove ${u.name}`}
+                      onClick={() => setUploads((list) => list.filter((x) => x.id !== u.id))}
+                      disabled={reading}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {uploads.some((u) => u.status === "error") ? (
+            <button
+              type="button"
+              className="exGhost"
+              disabled={reading}
+              onClick={() => setUploads((list) => list.map((u) => (u.status === "error" ? { ...u, status: "waiting", error: undefined } : u)))}
+            >
+              Try the failed files again
+            </button>
+          ) : null}
+
+          <button type="button" className="vyGo exWide" onClick={readPages} disabled={reading || !waiting.length}>
+            {reading ? "Reading the pages…" : waiting.length ? `Read ${waiting.length} file${waiting.length === 1 ? "" : "s"}` : rows.length ? "All files read" : "Read the pages"}
+          </button>
+          {!reading && uploads.length && !waiting.length && rows.length ? (
+            <button type="button" className="exSecondary exWide" onClick={() => setView("rows")}>
+              See the passages
+            </button>
+          ) : null}
+          {!reading && uploads.some((u) => u.status === "done") && !rows.length ? (
+            <p className="vyProblem">No box table was found on these pages. Check that they are the printed box tables.</p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {view === "rows" ? (
+        <section className="exStep anRows">
+          <div className="vyBar anBar">
+            <span className="vyBarCount">
+              {chosen.length} of {rows.length} passages chosen · {pageCount} pages
+            </span>
+            <button type="button" className="vyGo" onClick={() => translate(chosen.filter((r) => r.status !== "done"))} disabled={translating || !chosen.some((r) => r.status !== "done")}>
+              {translating ? "Translating…" : `Make the Gujarati anuvaad (${chosen.filter((r) => r.status !== "done").length})`}
+            </button>
+          </div>
+          <p className="anNote">
+            Check each passage against its page (<strong>View page</strong>) and correct the text if a line was missed or misread — the anuvaad is made from the text in these boxes. Untick a passage to leave it out.
+          </p>
+          {loose.length ? (
+            <p className="anNote">
+              Not translated (no box table on the page):{" "}
+              {[...new Set(loose.map((l) => l.file))]
+                .map((file) => {
+                  const pages = loose.filter((l) => l.file === file).map((l) => l.page);
+                  return `${file} p. ${pages.join(", ")}`;
+                })
+                .join(" · ")}
+              . These pages still go into the exported PDF with the rest of the scan.
+            </p>
+          ) : null}
+          {rows.map((row) => (
+            <article key={row.key} className={`vyCard anRow${row.include ? "" : " isOff"}`}>
+              <header className="vyCardHead">
+                <label className="anPick">
+                  <input type="checkbox" checked={row.include} onChange={(e) => updateRow(row.key, { include: e.target.checked })} />
+                  <span>{row.sr ? `Sr. ${row.sr}` : "Sr. —"}</span>
+                  {row.vt ? <span className="vyTag indic">{row.vt}</span> : null}
+                  {row.status === "done" ? <span className="vyTag isDone">translated</span> : null}
+                </label>
+                <button type="button" className="vyClose" aria-label="Remove this passage" onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}>
+                  ×
+                </button>
+              </header>
+              <label className="anField">
+                <span>Granth</span>
+                <input className="indic" value={row.granth} onChange={(e) => updateRow(row.key, { granth: e.target.value })} />
+              </label>
+              <label className="anField">
+                <span>ShastraPath</span>
+                <textarea
+                  className="indic"
+                  value={row.shastraPath}
+                  rows={Math.min(14, Math.max(3, Math.ceil(row.shastraPath.length / 90)))}
+                  onChange={(e) => updateRow(row.key, { shastraPath: e.target.value })}
+                />
+              </label>
+              <div className="anRowFoot">
+                <span className="vyHint">
+                  {row.inRem ? <>In.Rem {row.inRem} · </> : null}
+                  {row.where.join(" · ")}
+                </span>
+                {row.files[0] ? (
+                  <button type="button" className="vyLink" onClick={() => viewFile(row.files[0], row.pages[0])} title="Opens the scan in a new tab">
+                    View page
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      {view === "results" ? (
+        <section className="exStep anResults">
+          <div className="vyBar anBar">
+            <span className="vyBarCount">
+              {translated.length} ready{working ? ` · ${working} working` : ""}
+            </span>
+            <label className="anCheck" title="Untick for the Gujarati pages alone">
+              <input type="checkbox" checked={withPages} onChange={(e) => setWithPages(e.target.checked)} />
+              Include the box scans
+            </label>
+            <button type="button" className="exSecondary" onClick={() => makePdf("print")} disabled={Boolean(exporting) || !translated.some((r) => r.include)}>
+              {exporting === "print" ? "Making…" : "Print"}
+            </button>
+            <button type="button" className="vyGo" onClick={() => makePdf("download")} disabled={Boolean(exporting) || !translated.some((r) => r.include)}>
+              {exporting === "download" ? "Making the PDF…" : "Export PDF"}
+            </button>
+          </div>
+          {exportError ? <p className="exError" role="alert">{exportError}</p> : null}
+          {saved && !exportError ? <p className="anSaved" role="status">{saved}</p> : null}
+
+          {rows
+            .filter((r) => r.include && r.status !== "idle")
+            .map((row) => (
+              <article key={row.key} className={`vyCard anResult is-${row.status}`}>
+                <p className="anCardTag">
+                  {row.sr ? `Sr. ${row.sr}` : "Sr. —"}
+                  {row.vt ? <span className="indic"> · {row.vt}</span> : null}
+                  {row.status !== "done" ? <span className="indic"> · {row.granth}</span> : null}
+                </p>
+                {row.status === "waiting" || row.status === "running" ? (
+                  <p className="vyStatus">
+                    <span className="chTyping" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    {row.status === "waiting" ? "Waiting" : "Translating"}
+                  </p>
+                ) : null}
+                {row.status === "error" ? (
+                  <div className="vyErrorRow">
+                    <p className="vyProblem">{row.error}</p>
+                    <button type="button" className="vyLink" onClick={() => translate([row])} disabled={translating}>
+                      Try again
+                    </button>
+                  </div>
+                ) : null}
+                {row.status === "done" && row.markup !== undefined ? (
+                  <>
+                    <AnuvaadView markup={row.markup} literal={row.literal} onChange={(markup) => updateRow(row.key, { markup })} />
+                    <div className="anRowFoot">
+                      <button type="button" className="exGhost" onClick={() => translate([row])} disabled={translating}>
+                        Translate again
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </article>
+            ))}
+        </section>
+      ) : null}
+    </main>
+  );
+}
+
+type Mode = "box" | "pages";
+
+export default function AnuvaadPage() {
+  const router = useRouter();
+  // The way chosen lives in the address (?mode=pages or ?mode=box), so a link
+  // can open it straight away. It replaces the address rather than adding to
+  // the history: the phone's back button must not drop work on the page.
+  const mode: Mode | null = router.query.mode === "box" || router.query.mode === "pages" ? router.query.mode : null;
+
+  // The action bar pins just under the page header, whose height changes with
+  // the width (two rows of menu on a phone).
+  useEffect(() => {
+    const header = document.querySelector<HTMLElement>(".anShell > .chTop");
+    if (!header) return;
+    const set = () => document.documentElement.style.setProperty("--an-top", `${header.getBoundingClientRect().height}px`);
+    set();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(set);
+    observer?.observe(header);
+    return () => observer?.disconnect();
+  }, []);
+
+  const choose = (next: Mode | null) => {
+    void router.replace({ pathname: "/anuvaad", query: next ? { mode: next } : {} }, undefined, { shallow: true });
+  };
+
+  return (
     <>
       <Head>
         <title>Anuvaad</title>
@@ -329,266 +568,25 @@ export default function AnuvaadPage() {
           <AppNav current="anuvaad" />
         </header>
 
-        <main className="vyMain">
-          {uploads.length ? (
-            <ol className="exTrail" aria-label="Where you are">
-              <li>
-                <button type="button" onClick={() => setView("upload")} aria-current={view === "upload" ? "step" : undefined}>
-                  Files ({uploads.length})
-                </button>
-              </li>
-              <li>
-                <button type="button" onClick={() => setView("rows")} aria-current={view === "rows" ? "step" : undefined} disabled={!rows.length}>
-                  Passages ({chosen.length})
-                </button>
-              </li>
-              <li>
-                <button type="button" onClick={() => setView("results")} aria-current={view === "results" ? "step" : undefined} disabled={!translated.length && !working}>
-                  Anuvaad ({translated.length}){working ? ` · ${working} working` : ""}
-                </button>
-              </li>
-              <li className="exTrailEnd">
-                {confirmClear ? (
-                  <span className="vyConfirm">
-                    Nothing is saved. Clear all?
-                    <button type="button" className="exGhost" onClick={startAgain} disabled={reading || translating}>
-                      Clear
-                    </button>
-                    <button type="button" className="exGhost" onClick={() => setConfirmClear(false)}>
-                      Keep
-                    </button>
-                  </span>
-                ) : (
-                  <button type="button" className="exGhost" onClick={() => setConfirmClear(true)} disabled={reading || translating}>
-                    Start again
-                  </button>
-                )}
-              </li>
-            </ol>
-          ) : null}
-
-          {view === "upload" ? (
+        {mode === "box" ? <BoxFlow onBack={() => choose(null)} /> : null}
+        {mode === "pages" ? <AnuvaadPages onBack={() => choose(null)} /> : null}
+        {mode === null ? (
+          <main className="vyMain">
             <section className="vyForm exStep">
-              <h1 className="exQuestion">Which box files?</h1>
-              <p className="vyLabel">
-                <span>The printed box tables (Sr · V.T · Granth · ShastraPath), as PDF scans or photos of the pages. Several files are read as one box, in the order added.</span>
-              </p>
-              <div
-                className={`anDrop${dragging ? " isOver" : ""}`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={onDrop}
-              >
-                <input
-                  ref={picker}
-                  type="file"
-                  accept={ACCEPT}
-                  multiple
-                  hidden
-                  onChange={(e) => {
-                    if (e.target.files?.length) void addFiles(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-                <button type="button" className="vyLink" onClick={() => picker.current?.click()} disabled={reading}>
-                  Choose files
+              <h1 className="exQuestion">What do you want to translate into Gujarati?</h1>
+              <div className="exChoices anChoices">
+                <button type="button" className="exChoice" onClick={() => choose("pages")}>
+                  <strong>Pages of a PDF</strong>
+                  <span>Any PDF (or photos of pages). You choose the page numbers; each page is translated.</span>
                 </button>
-                <span className="vyHint">or drop them here · PDF, JPG, PNG</span>
-              </div>
-
-              {uploads.length ? (
-                <ul className="anFiles">
-                  {uploads.map((u) => (
-                    <li key={u.id} className={`is-${u.status}`}>
-                      <span className="anFileName">{u.name}</span>
-                      <span className="anFileState">
-                        {u.status === "waiting" ? "Ready to read" : null}
-                        {u.status === "reading" ? (
-                          <>
-                            <span className="chTyping" aria-hidden="true">
-                              <span />
-                              <span />
-                              <span />
-                            </span>
-                            {u.progress || "Reading"}
-                          </>
-                        ) : null}
-                        {u.status === "done" ? `${u.pages.length} page${u.pages.length === 1 ? "" : "s"} read` : null}
-                        {u.status === "error" ? <span className="vyProblem">{u.error}</span> : null}
-                      </span>
-                      {u.status === "waiting" || u.status === "error" ? (
-                        <button
-                          type="button"
-                          className="vyX"
-                          aria-label={`Remove ${u.name}`}
-                          onClick={() => setUploads((list) => list.filter((x) => x.id !== u.id))}
-                          disabled={reading}
-                        >
-                          ×
-                        </button>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {uploads.some((u) => u.status === "error") ? (
-                <button
-                  type="button"
-                  className="exGhost"
-                  disabled={reading}
-                  onClick={() => setUploads((list) => list.map((u) => (u.status === "error" ? { ...u, status: "waiting", error: undefined } : u)))}
-                >
-                  Try the failed files again
-                </button>
-              ) : null}
-
-              <button type="button" className="vyGo exWide" onClick={readPages} disabled={reading || !waiting.length}>
-                {reading ? "Reading the pages…" : waiting.length ? `Read ${waiting.length} file${waiting.length === 1 ? "" : "s"}` : rows.length ? "All files read" : "Read the pages"}
-              </button>
-              {!reading && uploads.length && !waiting.length && rows.length ? (
-                <button type="button" className="exSecondary exWide" onClick={() => setView("rows")}>
-                  See the passages
-                </button>
-              ) : null}
-              {!reading && uploads.some((u) => u.status === "done") && !rows.length ? (
-                <p className="vyProblem">No box table was found on these pages. Check that they are the printed box tables.</p>
-              ) : null}
-            </section>
-          ) : null}
-
-          {view === "rows" ? (
-            <section className="exStep anRows">
-              <div className="vyBar anBar">
-                <span className="vyBarCount">
-                  {chosen.length} of {rows.length} passages chosen · {pageCount} pages
-                </span>
-                <button type="button" className="vyGo" onClick={() => translate(chosen.filter((r) => r.status !== "done"))} disabled={translating || !chosen.some((r) => r.status !== "done")}>
-                  {translating ? "Translating…" : `Make the Gujarati anuvaad (${chosen.filter((r) => r.status !== "done").length})`}
+                <button type="button" className="exChoice" onClick={() => choose("box")}>
+                  <strong>Box files</strong>
+                  <span>The printed box tables (Sr · V.T · Granth · ShastraPath). Each passage is translated.</span>
                 </button>
               </div>
-              <p className="anNote">
-                Check each passage against its page (<strong>View page</strong>) and correct the text if a line was missed or misread — the anuvaad is made from the text in these boxes. Untick a passage to leave it out.
-              </p>
-              {loose.length ? (
-                <p className="anNote">
-                  Not translated (no box table on the page):{" "}
-                  {[...new Set(loose.map((l) => l.file))]
-                    .map((file) => {
-                      const pages = loose.filter((l) => l.file === file).map((l) => l.page);
-                      return `${file} p. ${pages.join(", ")}`;
-                    })
-                    .join(" · ")}
-                  . These pages still go into the exported PDF with the rest of the scan.
-                </p>
-              ) : null}
-              {rows.map((row) => (
-                <article key={row.key} className={`vyCard anRow${row.include ? "" : " isOff"}`}>
-                  <header className="vyCardHead">
-                    <label className="anPick">
-                      <input type="checkbox" checked={row.include} onChange={(e) => updateRow(row.key, { include: e.target.checked })} />
-                      <span>{row.sr ? `Sr. ${row.sr}` : "Sr. —"}</span>
-                      {row.vt ? <span className="vyTag indic">{row.vt}</span> : null}
-                      {row.status === "done" ? <span className="vyTag isDone">translated</span> : null}
-                    </label>
-                    <button type="button" className="vyClose" aria-label="Remove this passage" onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}>
-                      ×
-                    </button>
-                  </header>
-                  <label className="anField">
-                    <span>Granth</span>
-                    <input className="indic" value={row.granth} onChange={(e) => updateRow(row.key, { granth: e.target.value })} />
-                  </label>
-                  <label className="anField">
-                    <span>ShastraPath</span>
-                    <textarea
-                      className="indic"
-                      value={row.shastraPath}
-                      rows={Math.min(14, Math.max(3, Math.ceil(row.shastraPath.length / 90)))}
-                      onChange={(e) => updateRow(row.key, { shastraPath: e.target.value })}
-                    />
-                  </label>
-                  <div className="anRowFoot">
-                    <span className="vyHint">
-                      {row.inRem ? <>In.Rem {row.inRem} · </> : null}
-                      {row.where.join(" · ")}
-                    </span>
-                    {row.files[0] ? (
-                      <button type="button" className="vyLink" onClick={() => viewFile(row.files[0], row.pages[0])} title="Opens the scan in a new tab">
-                        View page
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
             </section>
-          ) : null}
-
-          {view === "results" ? (
-            <section className="exStep anResults">
-              <div className="vyBar anBar">
-                <span className="vyBarCount">
-                  {translated.length} ready{working ? ` · ${working} working` : ""}
-                </span>
-                <label className="anCheck" title="Untick for the Gujarati pages alone">
-                  <input type="checkbox" checked={withPages} onChange={(e) => setWithPages(e.target.checked)} />
-                  Include the box scans
-                </label>
-                <button type="button" className="exSecondary" onClick={() => makePdf("print")} disabled={Boolean(exporting) || !translated.some((r) => r.include)}>
-                  {exporting === "print" ? "Making…" : "Print"}
-                </button>
-                <button type="button" className="vyGo" onClick={() => makePdf("download")} disabled={Boolean(exporting) || !translated.some((r) => r.include)}>
-                  {exporting === "download" ? "Making the PDF…" : "Export PDF"}
-                </button>
-              </div>
-              {exportError ? <p className="exError" role="alert">{exportError}</p> : null}
-              {saved && !exportError ? <p className="anSaved" role="status">{saved}</p> : null}
-
-              {rows
-                .filter((r) => r.include && r.status !== "idle")
-                .map((row) => (
-                  <article key={row.key} className={`vyCard anResult is-${row.status}`}>
-                    <p className="anCardTag">
-                      {row.sr ? `Sr. ${row.sr}` : "Sr. —"}
-                      {row.vt ? <span className="indic"> · {row.vt}</span> : null}
-                      {row.status !== "done" ? <span className="indic"> · {row.granth}</span> : null}
-                    </p>
-                    {row.status === "waiting" || row.status === "running" ? (
-                      <p className="vyStatus">
-                        <span className="chTyping" aria-hidden="true">
-                          <span />
-                          <span />
-                          <span />
-                        </span>
-                        {row.status === "waiting" ? "Waiting" : "Translating"}
-                      </p>
-                    ) : null}
-                    {row.status === "error" ? (
-                      <div className="vyErrorRow">
-                        <p className="vyProblem">{row.error}</p>
-                        <button type="button" className="vyLink" onClick={() => translate([row])} disabled={translating}>
-                          Try again
-                        </button>
-                      </div>
-                    ) : null}
-                    {row.status === "done" && row.markup !== undefined ? (
-                      <>
-                        <AnuvaadView markup={row.markup} literal={row.literal} onChange={(markup) => updateRow(row.key, { markup })} />
-                        <div className="anRowFoot">
-                          <button type="button" className="exGhost" onClick={() => translate([row])} disabled={translating}>
-                            Translate again
-                          </button>
-                        </div>
-                      </>
-                    ) : null}
-                  </article>
-                ))}
-            </section>
-          ) : null}
-        </main>
+          </main>
+        ) : null}
       </div>
     </>
   );
@@ -597,7 +595,7 @@ export default function AnuvaadPage() {
 export const getServerSideProps: GetServerSideProps = async (ctx) => {
   const session = await getServerSession(ctx.req, ctx.res, authOptions);
   if (!session?.user || session.user.status !== "approved") {
-    return { redirect: { destination: `/auth/signin?callbackUrl=${encodeURIComponent("/anuvaad")}`, permanent: false } };
+    return { redirect: { destination: `/auth/signin?callbackUrl=${encodeURIComponent(ctx.resolvedUrl || "/anuvaad")}`, permanent: false } };
   }
   return { props: {} };
 };

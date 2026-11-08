@@ -35,7 +35,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
   const sections = readSections((req.body ?? {}).sections);
   if (!sections) return res.status(400).json({ error: "There is no anuvaad to put in the PDF." });
-  const bytes = await buildAnuvaadPdf(sections);
+  // "Any PDF pages" puts each original page before its anuvaad: it asks for
+  // no page numbers and is told where each section starts.
+  const starts: number[] = [];
+  const bytes = await buildAnuvaadPdf(sections, { numbers: (req.body ?? {}).numbers !== false, starts });
+  res.setHeader("X-Section-Starts", starts.join(","));
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="anuvaad.pdf"`);
   res.setHeader("Content-Length", String(bytes.length));
