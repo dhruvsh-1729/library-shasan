@@ -10,7 +10,7 @@
 
 import { foldSanskrit } from "@/lib/sanskrit-fold.mjs";
 import { excludeDuplicatesSql, getGranthCatalog } from "@/lib/granth-catalog";
-import { type OCRSearchMode, type OCRSearchScripts, findOCRSearchMatchesForQueries } from "@/lib/ocr-search";
+import { type OCRSearchMode, type OCRSearchScripts, findOCRSearchMatchesForQueries, joinedMatchText } from "@/lib/ocr-search";
 import { buildOCRPrefilter } from "@/lib/ocr-search-index";
 import { getTursoClient } from "@/lib/turso";
 
@@ -97,10 +97,10 @@ async function runCount({ queries, matchMode, scripts, relPaths }: { queries: st
           pages += 1;
           occurrences += matches.length;
           for (const match of matches) {
-            const key = foldSanskrit(match.text);
+            const key = foldSanskrit(joinedMatchText(match.text));
             const entry = forms.get(key);
             if (entry) entry.count += 1;
-            else forms.set(key, { form: match.text.replace(/[​-‍﻿]/g, ""), count: 1 });
+            else forms.set(key, { form: joinedMatchText(match.text).replace(/[​-‍﻿]/g, ""), count: 1 });
           }
         }
       }

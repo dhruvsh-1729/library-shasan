@@ -110,7 +110,11 @@ export function bookLineNumbers(content: string, heads: Set<string>, printedPage
   if (pageLine >= 0) {
     header.add(pageLine);
     // above it, only running heads and short title lines ("स्वोपज्ञवृत्तिविभूषितं योगशास्त्रम्")
-    for (let k = 0; k < pageLine; k += 1) if (heads.has(headSignature(top[k])) || top[k].length <= 40) header.add(k);
+    // (a short line that ends a sentence, "…તેમનામાં નથી.", is text the OCR read first)
+    const titleLike = (line: string) => line.length <= 40 && !/[।॥.?!]\s*$|\([0-9०-९૦-૯]+\)\s*$/u.test(line);
+    for (let k = 0; k < pageLine; k += 1) if (heads.has(headSignature(top[k])) || titleLike(top[k])) header.add(k);
+    // the number printed again with the running head on the next line ("૯૮] સૂયગડાગ સૂત્ર ભાગ ૪ થા.")
+    for (let k = pageLine + 1; k < top.length && top[k].length <= 90 && holdsPrintedNumber(top[k], printedPage); k += 1) header.add(k);
   }
   // running heads at the top, or directly under the page number
   for (let k = 0; k < top.length; k += 1) {

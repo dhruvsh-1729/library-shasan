@@ -283,6 +283,23 @@ export function findOCRSearchMatchesForQueries(
 }
 
 /**
+ * Whitespace squashed to single spaces, except a word's line-end hyphen break
+ * ("अहिं-⏎सा"), kept so a match across it is still found in a snippet.
+ */
+function squashKeepingBreaks(content: string) {
+  return String(content ?? "")
+    .replace(/([-–‐])[ \t\r]*\n\s*/g, "$1\u0000")
+    .replace(/\s+/g, " ")
+    .replace(/\u0000/g, "\n")
+    .trim();
+}
+
+/** A match's text as the reader would write it: a line-end hyphen break taken out. */
+export function joinedMatchText(text: string) {
+  return text.replace(/[-–‐][ \t\r]*\n\s*/g, "");
+}
+
+/**
  * Matches of a word the page broke at a line end with a hyphen ("वशी-⏎करण"
  * for वशीकरण): found in the text with each such break joined, and given back
  * with offsets in the page as printed (the match then spans the break).
@@ -307,9 +324,11 @@ function matchesAcrossLineBreaks(content: string, queries: string[], mode: OCRSe
     breaks.push([cut, last]);
   }
   if (!breaks.length) return [];
+  // joining could compose two letters into one (न + ़ → ऩ) and shift every offset: rare, skipped
   for (let i = last; i < source.length; i += 1) at.push(i);
   joined += source.slice(last);
   at.push(source.length);
+  if (joined.normalize("NFC") !== joined) return [];
   const folded = foldForMatching(joined);
   const out: SearchMatch[] = [];
   for (const query of queries) {
@@ -364,7 +383,7 @@ export function buildOCRSearchOccurrences(
   maxChars = 240,
   scripts: OCRSearchScripts = null
 ): OCRSearchOccurrence[] {
-  const clean = String(content ?? "").replace(/\s+/g, " ").trim();
+  const clean = squashKeepingBreaks(content);
   if (!clean) return [];
 
   return findOCRSearchMatchesForQueries(clean, queries, mode, scripts).map((match) => {
@@ -405,7 +424,7 @@ export function buildOCRSearchExcerptForQueries(
   maxChars = 180,
   scripts: OCRSearchScripts = null
 ) {
-  const cleanContent = String(content ?? "").replace(/\s+/g, " ").trim();
+  const cleanContent = squashKeepingBreaks(content);
   if (!cleanContent) return "";
 
   const firstMatch = findOCRSearchMatchesForQueries(cleanContent, queries, mode, scripts)[0];

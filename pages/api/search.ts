@@ -5,6 +5,7 @@ import {
   buildOCRSearchExcerptForQueries,
   findOCRSearchMatchesForQueries,
   isTooShortForContains,
+  joinedMatchText,
   MAX_SEARCH_QUERIES,
   normalizeOCRSearchQueries,
   parseOCRSearchMode,
@@ -247,10 +248,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
             verifiedRows.push(row);
             totalOccurrences += matches.length;
             for (const match of matches) {
-              const key = foldSanskrit(match.text);
+              const key = foldSanskrit(joinedMatchText(match.text));
               const entry = formCounts.get(key);
               if (entry) entry.count += 1;
-              else formCounts.set(key, { form: match.text.replace(/[\u200b-\u200d\ufeff]/g, ""), count: 1 });
+              else formCounts.set(key, { form: joinedMatchText(match.text).replace(/[\u200b-\u200d\ufeff]/g, ""), count: 1 });
             }
           }
         }

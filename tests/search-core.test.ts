@@ -168,3 +168,16 @@ test("a word the page broke at a line end with a hyphen is found whole", async (
   assert.equal(findOCRSearchMatchesForQueries(page, ["वशी"], "exact_word").length, 1);
   assert.ok(buildFoldedIndexRow(page).folded.includes(foldSanskrit("अहिंसा")));
 });
+
+test("a snippet still rings a word broken across lines", async () => {
+  const { buildOCRSearchOccurrences, joinedMatchText } = await import("@/lib/ocr-search");
+  assert.equal(buildOCRSearchOccurrences("परमो धर्मः अहिं-\nसा इति।", "अहिंसा", "sanskrit_forms").length, 1);
+  assert.equal(joinedMatchText("अहिं-\nसा"), "अहिंसा");
+});
+
+test("ā-words of s- and n-stems keep their consonant-stem forms", () => {
+  const forms = (w: string) => sanskritWordForms(w);
+  assert.ok(forms("मनसा").includes(foldSanskrit("मनसि")));
+  assert.ok(forms("कर्मणा").includes(foldSanskrit("कर्मणि")));
+  assert.ok(forms("दिशा").includes(foldSanskrit("दिशि")));
+});

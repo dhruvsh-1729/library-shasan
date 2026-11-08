@@ -34,3 +34,10 @@ test("a gatha number near the top is not the page number, and text above it is n
   assert.equal(line(2), 2);
   assert.equal(line(5), 4); // the number-only line is not a line of text
 });
+
+test("a sentence the OCR read before the page number is text, not header", () => {
+  const page = ["યોગસાર પ્રકરણ", "વિહ્વળતારૂપ કોઈ વ્યાકુળતા તેમનામાં નથી.", "૨૨૩", "બીજી લીટી"].join("\n");
+  const line = bookLineNumbers(page, new Set(), "223");
+  assert.equal(line(2), 1);
+  assert.equal(line(4), 2);
+});
