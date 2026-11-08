@@ -214,16 +214,19 @@ export default function GranthExtractor() {
 
   // The volume's printed page numbers, for asking pages by the book's numbering.
   const volumePdf = mode === "pages" ? (work?.volumes.find((v) => v.key === volumeKey)?.pdfUrl ?? null) : null;
+  // gathas: the book's page numbers for the thumbnails of the (first) volume shown
+  const passagesPdf = mode === "gathas" ? (passages?.[0]?.pdfUrl ?? null) : null;
+  const printedPdf = volumePdf ?? passagesPdf;
   useEffect(() => {
-    if (!volumePdf || printedMap?.url === volumePdf) return;
+    if (!printedPdf || printedMap?.url === printedPdf) return;
     let active = true;
-    fetch(`/api/pdf-printed-pages?pdfUrl=${encodeURIComponent(volumePdf)}`)
+    fetch(`/api/pdf-printed-pages?pdfUrl=${encodeURIComponent(printedPdf)}`)
       .then((res) => {
         if (!res.ok) throw new Error(String(res.status));
         return res.json();
       })
       .then((json: { pages?: Array<[number, string]> }) => {
-        if (active) setPrintedMap({ url: volumePdf, pages: json.pages ?? [] });
+        if (active) setPrintedMap({ url: printedPdf, pages: json.pages ?? [] });
       })
       .catch(() => {
         // not remembered: choosing the volume again tries again
@@ -231,10 +234,11 @@ export default function GranthExtractor() {
     return () => {
       active = false;
     };
-  }, [volumePdf, printedMap?.url]);
+  }, [printedPdf, printedMap?.url]);
   // The book's own number for a thumbnail, when the pages were asked by book page.
   const printedByPdf = useMemo(() => new Map(printedMap?.pages ?? []), [printedMap]);
-  const bookPageLabel = (pdfUrl: string, page: number) => (pageKind === "book" && printedMap?.url === pdfUrl ? (printedByPdf.get(page) ?? null) : null);
+  const bookPageLabel = (pdfUrl: string, page: number) =>
+    (mode === "gathas" || pageKind === "book") && printedMap?.url === pdfUrl ? (printedByPdf.get(page) ?? null) : null;
   const bookNumbering = Boolean(volumePdf && printedMap?.url === volumePdf && printedMap.pages.length);
   const byBookPage = pageKind === "book" && bookNumbering;
 
@@ -642,7 +646,9 @@ export default function GranthExtractor() {
                         <h2>{p.label}</h2>
                         <p>
                           {work.volumes.length > 1 ? `${volumeName(work, p.volumeKey)} · ` : ""}
-                          PDF page{p.first === p.last ? ` ${p.first}` : `s ${p.first}–${p.last}`}
+                          {bookPageLabel(p.pdfUrl, p.first)
+                            ? `book page${p.first === p.last ? ` ${bookPageLabel(p.pdfUrl, p.first)}` : `s ${bookPageLabel(p.pdfUrl, p.first)}–${bookPageLabel(p.pdfUrl, p.last) ?? "?"}`} · PDF ${p.first === p.last ? p.first : `${p.first}–${p.last}`}`
+                            : `PDF page${p.first === p.last ? ` ${p.first}` : `s ${p.first}–${p.last}`}`}
                           {p.before || p.after ? ` · with ${p.before + p.after} added` : ""}
                         </p>
                       </div>
