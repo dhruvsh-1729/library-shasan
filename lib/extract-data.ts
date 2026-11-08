@@ -170,7 +170,8 @@ export async function listWorks(): Promise<ExtractWork[]> {
 
   // Originals first, so a duplicate joins its original's work as a copy.
   const entries = catalog.entries
-    .filter((entry) => !entry.hidden && entry.kind === "pdf" && entry.document_custom_id)
+    // a PDF that shows blank pages (pdf_blank) would print blank pages
+    .filter((entry) => !entry.hidden && !entry.pdf_blank && entry.kind === "pdf" && entry.document_custom_id)
     .sort((a, b) => Number(Boolean(a.duplicate_of)) - Number(Boolean(b.duplicate_of)));
   const workOfKey = new Map<string, string>();
   // The library's archive number in a file name ("…_034258_hr3.pdf") names the volume across uploads.

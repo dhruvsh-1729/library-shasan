@@ -218,12 +218,15 @@ export default function GranthExtractor() {
     if (!volumePdf || printedMap?.url === volumePdf) return;
     let active = true;
     fetch(`/api/pdf-printed-pages?pdfUrl=${encodeURIComponent(volumePdf)}`)
-      .then((res) => (res.ok ? res.json() : { pages: [] }))
+      .then((res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        return res.json();
+      })
       .then((json: { pages?: Array<[number, string]> }) => {
         if (active) setPrintedMap({ url: volumePdf, pages: json.pages ?? [] });
       })
       .catch(() => {
-        if (active) setPrintedMap({ url: volumePdf, pages: [] });
+        // not remembered: choosing the volume again tries again
       });
     return () => {
       active = false;

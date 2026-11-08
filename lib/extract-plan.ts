@@ -3,7 +3,7 @@
 // and after. The preview, the page count, the size estimate and the built file
 // all read these, so they can never disagree. No network, no database.
 
-import { pdfPagesForGranthPages } from "@/lib/granth-pages";
+import { granthPageLocator } from "@/lib/granth-pages";
 
 export type GathaRow = {
   gatha: number;
@@ -161,12 +161,12 @@ export function planBookPages(
   printed: Array<[number, string]>
 ): Plan {
   const asked = askedNumbers(spec);
-  const rows = printed.map(([page_number, printed_page]) => ({ page_number, printed_page }));
+  const locate = granthPageLocator(printed.map(([page_number, printed_page]) => ({ page_number, printed_page })), pageCount ?? 0);
   const placed = new Map<number, number>();
   const missing: number[] = [];
   for (const bookPage of asked) {
-    const { pdfPages } = pdfPagesForGranthPages(rows, [bookPage], pageCount ?? 0);
-    if (pdfPages.length) placed.set(bookPage, pdfPages[0]);
+    const pdfPage = locate(bookPage);
+    if (pdfPage) placed.set(bookPage, pdfPage);
     else missing.push(bookPage);
   }
   const bookOf = new Map<number, number[]>();

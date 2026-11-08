@@ -42,6 +42,38 @@ export function printedPageNumbers(label: string | null | undefined): number[] {
  * nearest numbered neighbours on both sides agree on, as front matter and
  * covers shift the whole book by the same count.
  */
+/**
+ * The same placement as pdfPagesForGranthPages, built once for a book: a
+ * function from one granth page to its PDF page (null when it cannot be
+ * placed), cheap to call for every page a reader types.
+ */
+export function granthPageLocator(pages: Array<{ page_number: number; printed_page: string | null }>, pageCount = 0) {
+  const byGranthPage = new Map<number, number>();
+  for (const page of pages) {
+    for (const printed of printedPageNumbers(page.printed_page)) {
+      if (!byGranthPage.has(printed)) byGranthPage.set(printed, page.page_number);
+    }
+  }
+  const known = [...byGranthPage.entries()].sort((a, b) => a[0] - b[0]);
+  return (granthPage: number): number | null => {
+    let pdfPage = byGranthPage.get(granthPage);
+    if (!pdfPage) {
+      // the nearest numbered pages on both sides, found by binary search
+      let lo = 0;
+      let hi = known.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (known[mid][0] < granthPage) lo = mid + 1;
+        else hi = mid - 1;
+      }
+      const below = known[lo - 1];
+      const above = known[lo];
+      if (below && above && above[1] - above[0] === below[1] - below[0]) pdfPage = granthPage + (below[1] - below[0]);
+    }
+    return pdfPage && pdfPage > 0 && (!pageCount || pdfPage <= pageCount) ? pdfPage : null;
+  };
+}
+
 export function pdfPagesForGranthPages(
   pages: Array<{ page_number: number; printed_page: string | null }>,
   granthPages: number[],
