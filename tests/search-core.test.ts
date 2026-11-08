@@ -151,3 +151,10 @@ test("a Sanskrit form that is an everyday Gujarati word is not counted in Gujara
   assert.deepEqual(texts(findOCRSearchMatchesForQueries(page, ["प्रमाण"], "sanskrit_forms")), ["प्रमाणे"]);
   assert.equal(findOCRSearchMatchesForQueries("પ્રમાણે", ["प्रमाणे"], "sanskrit_forms").length, 1);
 });
+
+test("spreadsheet columns: the asked ones in the sheet's order, the usual ones by default", async () => {
+  const { parseSearchCsvColumns, searchCsvHeaders, DEFAULT_SEARCH_CSV_COLUMNS } = await import("@/lib/search-csv");
+  assert.deepEqual(parseSearchCsvColumns(["text", "book", "nonsense"]), ["book", "text"]);
+  assert.deepEqual(parseSearchCsvColumns([]), DEFAULT_SEARCH_CSV_COLUMNS);
+  assert.deepEqual(searchCsvHeaders(["book", "page", "line"]), ["Book number", "Granth page number", "Line number on page"]);
+});

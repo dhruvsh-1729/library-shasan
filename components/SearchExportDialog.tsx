@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { CsvColumnPicker, useCsvColumns } from "@/components/CsvColumnPicker";
 import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
 import { LightTableIcon } from "@/components/LightTableIcon";
 import { ExportActions, Sheet, Stepper } from "@/components/Sheet";
@@ -126,6 +127,7 @@ export function SearchExportDialog({
   const [notice, setNotice] = useState<string | null>(null);
   const [busyFormat, setBusyFormat] = useState<ExportFormat | null>(null);
   const [deliveryFormat, setDeliveryFormat] = useState<ExportFormat | null>(null);
+  const [csvColumns, setCsvColumns] = useCsvColumns();
 
   const granthKey = granthIds.join(",");
   const queryKey = queries.join("\n");
@@ -303,6 +305,7 @@ export function SearchExportDialog({
           matchMode,
           scripts,
           ...(format === "pdf" ? { contextPages, maxPagesPerGranth } : {}),
+          ...(format === "csv" ? { columns: csvColumns } : {}),
           delivery,
           email,
           fileName,
@@ -521,6 +524,7 @@ export function SearchExportDialog({
             open={deliveryFormat !== null}
             title={EXPORT_INFO[deliveryFormat ?? "pdf"].label}
             extension={EXPORT_INFO[deliveryFormat ?? "pdf"].ext}
+            extra={deliveryFormat === "csv" ? <CsvColumnPicker columns={csvColumns} onChange={setCsvColumns} /> : null}
             suggestedName={suggestFileName(
               deliveryFormat ?? "pdf",
               queries[0] ?? "",

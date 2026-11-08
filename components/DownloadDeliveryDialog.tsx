@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { LightTableIcon } from "@/components/LightTableIcon";
 import { Sheet } from "@/components/Sheet";
 import { cleanFileName } from "@/lib/download-file";
@@ -15,6 +15,8 @@ type DownloadDeliveryDialogProps = {
   extension?: string;
   busy?: boolean;
   error?: string | null;
+  /** Choices for this kind of file (the spreadsheet's columns), above the buttons. */
+  extra?: ReactNode;
   onClose: () => void;
   /** `fileName` is the name the reader chose, with its extension. */
   onDownload: (fileName: string) => void;
@@ -28,6 +30,7 @@ export function DownloadDeliveryDialog({
   fileLabel,
   suggestedName = "",
   extension = ".pdf",
+  extra = null,
   busy = false,
   error = null,
   onClose,
@@ -106,6 +109,8 @@ export function DownloadDeliveryDialog({
           <span className="sheetFieldSuffix">{extension}</span>
         </div>
       </div>
+
+      {extra}
 
       <button type="button" className="sheetAction is-primary" onClick={() => onDownload(fileName)} disabled={busy}>
         {busy ? (

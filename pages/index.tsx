@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CsvColumnPicker, useCsvColumns } from "@/components/CsvColumnPicker";
 import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/DownloadDeliveryDialog";
 import { LightTableIcon } from "@/components/LightTableIcon";
 import { ExportActions, Sheet, Stepper } from "@/components/Sheet";
@@ -313,6 +314,7 @@ export default function SearchPage() {
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
   const [downloadPreview, setDownloadPreview] = useState<DownloadPreviewState | null>(null);
   const [deliveryFormat, setDeliveryFormat] = useState<ExportFormat | null>(null);
+  const [csvColumns, setCsvColumns] = useCsvColumns();
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const previewCacheRef = useRef(new Map<string, SearchMatchPreview>());
 
@@ -927,6 +929,7 @@ export default function SearchPage() {
           scripts: downloadPreview.scripts,
           pages: downloadPreview.selectedPages,
           ...(format === "pdf" ? { contextPages: downloadPreview.contextPages } : {}),
+          ...(format === "csv" ? { columns: csvColumns } : {}),
           delivery,
           email,
           fileName,
@@ -1696,6 +1699,7 @@ export default function SearchPage() {
                       title={EXPORT_INFO[deliveryFormat ?? "pdf"].label}
                       extension={EXPORT_INFO[deliveryFormat ?? "pdf"].ext}
                       suggestedName={suggestFileName(deliveryFormat ?? "pdf", downloadPreview.queries[0] ?? "", downloadPreview.bookNo || downloadPreview.title)}
+                      extra={deliveryFormat === "csv" ? <CsvColumnPicker columns={csvColumns} onChange={setCsvColumns} /> : null}
                       fileLabel={
                         deliveryFormat === "pdf" || deliveryFormat === null
                           ? `${plural(finalPageCount, "PDF page")}`

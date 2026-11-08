@@ -748,3 +748,56 @@
     width: 100%;
   }
 }
+
+/* Spreadsheet columns, ticked in the download dialog. */
+.sheetColumns {
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.sheetColumns legend {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lt-ink-2, #2b3240);
+}
+
+.sheetColumnsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sheetColumn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--lt-glass-edge, #d5dbe4);
+  border-radius: 999px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sheetColumn.isOn {
+  border-color: var(--lt-cobalt, #1f5390);
+  background: var(--lt-cobalt-wash, #e4edf7);
+}
+
+.sheetColumn input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.sheetColumnsReset {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--lt-cobalt, #1f5390);
+  font-size: 13px;
+  cursor: pointer;
+}

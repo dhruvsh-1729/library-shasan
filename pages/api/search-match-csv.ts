@@ -7,7 +7,7 @@ import { setNoStore } from "@/lib/api-cache";
 import { cleanFileName } from "@/lib/download-file";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
 import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
-import { CsvFileWriter, bookNumber, granthPageLabel } from "@/lib/search-csv";
+import { CsvFileWriter, bookNumber, granthPageLabel, parseSearchCsvColumns, searchCsvHeaders, type SearchCsvColumn } from "@/lib/search-csv";
 import {
   MAX_CSV_GRANTHS,
   MAX_CSV_ROWS,
@@ -33,6 +33,8 @@ type GranthSelection = {
 };
 
 type CsvBody = {
+  /** Which columns go in (lib/search-csv SEARCH_CSV_COLUMNS ids), in any order. */
+  columns?: unknown;
   /** The name the reader gave the file, if any. */
   fileName?: string | null;
   customId?: string | null;
@@ -160,6 +162,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       return {
         relPath,
         granthName: selection.granthName || (source.ok ? source.source.pdfName : selection.customId) || relPath,
+        pdfName: source.ok ? source.source.pdfName : "",
         pages: selection.pages,
       };
     });
@@ -170,7 +173,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
     workDir = await mkdtemp(path.join(tmpdir(), "ndms-search-csv-"));
     const csvPath = path.join(workDir, "search-matches.csv");
-    const writer = new CsvFileWriter(csvPath);
+    const columns = parseSearchCsvColumns(body.columns);
+    const writer = new CsvFileWriter(csvPath, searchCsvHeaders(columns));
     let truncated = false;
     let granthsWithRows = 0;
 
@@ -190,14 +194,18 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       if (lines.length > 0) granthsWithRows += 1;
 
       for (const line of lines) {
-        await writer.writeRow([
-          bookNumber(entry.relPath, entry.granthName),
-          granthPageLabel(line.printed_page, line.page_number),
-          line.line_number,
-          line.occurrence_count,
-          line.line_text,
-          line.page_number,
-        ]);
+        const cell: Record<SearchCsvColumn, unknown> = {
+          book: bookNumber(entry.relPath, entry.granthName),
+          granth: entry.granthName,
+          page: granthPageLabel(line.printed_page, line.page_number),
+          line: line.line_number,
+          count: line.occurrence_count,
+          words: line.matched_words.join(" | "),
+          text: line.line_text,
+          pdfPage: line.page_number,
+          pdfFile: entry.pdfName,
+        };
+        await writer.writeRow(columns.map((id) => cell[id]));
       }
     }
 
