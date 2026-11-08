@@ -84,8 +84,8 @@ test("X + अX pairs split as the word and its negation", async () => {
   const { readFileSync } = await import("node:fs");
   const { compoundParts, createLexicon } = await import("@/lib/sanskrit-compound.mjs");
   const lex = createLexicon(JSON.parse(readFileSync("data/compound-lexicon.json", "utf8")));
-  const terms = (w: string) => compoundParts(w, lex)!.parts.filter((p: { kind: string }) => p.kind === "word").map((p: { term: string }) => p.term);
-  const assert = (await import("node:assert/strict")).default;
+  const terms = (w: string) =>
+    compoundParts(w, lex)!.parts.flatMap((p) => (p.kind === "word" && "term" in p ? [String(p.term)] : []));
   assert.deepEqual(terms("जीवाजीव"), ["जीव", "अजीव"]);
   assert.deepEqual(terms("धर्माधर्म"), ["धर्म", "अधर्म"]);
   assert.deepEqual(terms("शुभाशुभ"), ["शुभ", "अशुभ"]);

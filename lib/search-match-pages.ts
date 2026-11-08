@@ -1,3 +1,4 @@
+import { bookLineNumbers, runningHeads } from "@/lib/page-lines";
 import {
   buildOCRSearchExcerptForQueries,
   findOCRSearchMatchesForQueries,
@@ -581,7 +582,7 @@ export async function loadSearchMatchLines(
   const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
   const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
   const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
-  const result = await loadHitPageContents(sourceRelPath, queries, matchMode);
+  const [result, heads] = await Promise.all([loadHitPageContents(sourceRelPath, queries, matchMode), runningHeads(sourceRelPath)]);
 
   const lines: SearchMatchLine[] = [];
   const matchedPages = new Set<number>();
@@ -602,13 +603,14 @@ export async function loadSearchMatchLines(
     if (pageLines.length === 0) continue;
     matchedPages.add(pageNumber);
     const printedPage = String(row.printed_page ?? "").trim() || null;
+    const bookLine = bookLineNumbers(String(row.content ?? ""), heads, printedPage);
 
     for (const line of pageLines) {
       if (lines.length >= maxRows) {
         truncated = true;
         break;
       }
-      lines.push({ page_number: pageNumber, printed_page: printedPage, ...line });
+      lines.push({ page_number: pageNumber, printed_page: printedPage, ...line, line_number: bookLine(line.line_number) });
     }
     if (truncated) break;
   }
@@ -631,7 +633,7 @@ export async function loadSearchMatchPassages(
   const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
   const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
   const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
-  const result = await loadHitPageContents(sourceRelPath, queries, matchMode);
+  const [result, heads] = await Promise.all([loadHitPageContents(sourceRelPath, queries, matchMode), runningHeads(sourceRelPath)]);
 
   const passages: SearchMatchPassage[] = [];
   let truncated = result.rows.length > MAX_MATCH_PAGE_PREVIEW;
@@ -643,12 +645,13 @@ export async function loadSearchMatchPassages(
 
     const found = findMatchPassagesInPageContent(String(row.content ?? ""), queries, matchMode, options.scripts ?? null);
     const printedPage = String(row.printed_page ?? "").trim() || null;
+    const bookLine = bookLineNumbers(String(row.content ?? ""), heads, printedPage);
     for (const passage of found) {
       if (passages.length >= maxRows) {
         truncated = true;
         break;
       }
-      passages.push({ page_number: pageNumber, printed_page: printedPage, ...passage });
+      passages.push({ page_number: pageNumber, printed_page: printedPage, ...passage, hit_lines: passage.hit_lines.map(bookLine) });
     }
     if (truncated) break;
   }
@@ -662,7 +665,7 @@ export type SearchMatchOccurrence = {
   printed_page: string | null;
   /** The whole word the match sits in, as printed (a compound stays whole). */
   word: string;
-  /** The page's line the word is on, counted as in the line list and the CSV. */
+  /** The page's line the word is on, as a reader counts it (lib/page-lines), as in the line list and the CSV. */
   line_number: number;
 };
 
@@ -716,7 +719,7 @@ export async function loadSearchMatchOccurrences(
   const queries = validateSearchDownloadQueries(query, options.queryVariants, matchMode);
   const pageFilter = options.pages && options.pages.length > 0 ? new Set(options.pages) : null;
   const maxRows = Math.max(1, Math.min(Math.floor(options.maxRows ?? MAX_CSV_ROWS), MAX_CSV_ROWS));
-  const result = await loadHitPageContents(sourceRelPath, queries, matchMode);
+  const [result, heads] = await Promise.all([loadHitPageContents(sourceRelPath, queries, matchMode), runningHeads(sourceRelPath)]);
 
   const occurrences: SearchMatchOccurrence[] = [];
   let truncated = result.rows.length > MAX_MATCH_PAGE_PREVIEW;
@@ -728,6 +731,7 @@ export async function loadSearchMatchOccurrences(
 
     const content = normalizeLineBreaks(String(row.content ?? ""));
     const printed = String(row.printed_page ?? "").trim() || null;
+    const bookLine = bookLineNumbers(content, heads, printed);
     let line = 1;
     let counted = 0;
     for (const match of findOCRSearchMatchesForQueries(content, queries, matchMode, options.scripts ?? null)) {
@@ -738,7 +742,7 @@ export async function loadSearchMatchOccurrences(
       // matches come in reading order, so the line count only moves forward
       for (; counted < match.start; counted += 1) if (content.charCodeAt(counted) === 10) line += 1;
       const word = wholeWordAt(content, match.start, match.end).trim();
-      if (word) occurrences.push({ page_number: pageNumber, printed_page: printed, word, line_number: line });
+      if (word) occurrences.push({ page_number: pageNumber, printed_page: printed, word, line_number: bookLine(line) });
     }
     if (truncated) break;
   }
