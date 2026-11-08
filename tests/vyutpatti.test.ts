@@ -229,3 +229,9 @@ test("an OCR meaning loses AVPK's entry head and cross-references", async () => 
   assert.equal(cleanOcrMeaning("संवर-पुं-९६५-सेतु, पूल, बंध, पाळ. द्र० आलिशब्दः ।"), "सेतु, पूल, बंध, पाळ.");
   assert.equal(cleanOcrMeaning("આસ્રવ-પું-૩૧૬(શે ૯૬) ઉકાળેલા અનાજનું ઘોવણ. દ્ર૦ આચામશબ્દઃ ।"), "ઉકાળેલા અનાજનું ઘોવણ.");
 });
+
+test("Abhidhana Rajendra's head and label are not part of the meaning", async () => {
+  const { cleanOcrMeaning } = await import("@/lib/vyutpatti/pipeline");
+  assert.equal(cleanOcrMeaning("अचोरिय-न० अव्य०। चोरताभावे"), "अव्य०। चोरताभावे");
+  assert.equal(cleanOcrMeaning("सियवाय-पुं० स्यादित्यव्ययम्"), "स्यादित्यव्ययम्");
+});
