@@ -526,7 +526,7 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
               {saved}
             </p>
           ) : null}
-          <p className="anNote">Each page takes a minute or two. The Gujarati is a first draft: read it through and correct it (“Edit the Gujarati”) before printing.</p>
+          <p className="anNote">Each page takes from a few seconds to a minute. The Gujarati is a first draft: read it through and correct it (“Edit the Gujarati”) before printing.</p>
 
           {items.map((item) => (
             <article key={item.key} className={`vyCard anResult is-${item.status}`}>
