@@ -131,7 +131,7 @@ export default function GranthExtractor() {
   const prepared = useMemo(
     () =>
       (works ?? []).map((w) =>
-        prepareRow({ source: `${w.bookNumbers[0] ?? ""}_${w.title}`, extra: [w.nativeTitle, w.author, ...w.bookNumbers].filter(Boolean).join(" ") })
+        prepareRow({ source: `${w.bookNumbers[0] ?? ""}_${w.title}`, extra: [w.nativeTitle, w.author, ...w.bookNumbers].filter(Boolean).join(" "), titles: [w.title, w.nativeTitle ?? ""] })
       ),
     [works]
   );

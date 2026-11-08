@@ -393,7 +393,7 @@ export default function AskPage() {
 
   // Book names match across scripts and spellings, as on the library page.
   const preparedGranths = useMemo(
-    () => granths.map((g) => prepareRow({ source: `${g.granth_key} ${g.granth_name}`, extra: g.granth_name })),
+    () => granths.map((g) => prepareRow({ source: `${g.granth_key} ${g.granth_name}`, extra: g.granth_name, titles: [g.granth_name] })),
     [granths]
   );
   const filteredGranths = useMemo(() => {

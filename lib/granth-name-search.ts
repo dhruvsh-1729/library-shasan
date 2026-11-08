@@ -16,6 +16,8 @@ export type NameSearchRow = {
   source: string;
   /** Further text to match on (collection, title…). */
   extra?: string;
+  /** The granth's catalogue title(s); a query that is exactly one ranks first. */
+  titles?: string[];
 };
 
 const LEADING_NUMBER = /^(\d{1,4})(?:-(\d{1,4}))?(?=[_\s.-])/;
@@ -105,13 +107,17 @@ export function foldName(text: string): string {
     .trim();
 }
 
-/** Consonants only: survives inherent-vowel and vowel-length differences. */
+/**
+ * Consonants only: survives inherent-vowel and vowel-length differences. The h
+ * goes too, as aspiration is spelled so loosely ("kleshhanopay" typed for
+ * "Klesh Hanopay", "sanskrithindi" for "Sanskrit Hindi").
+ */
 function skeleton(folded: string) {
-  return folded.replace(/[aeiou\s]/g, "").replace(/([a-z])\1+/g, "$1");
+  return folded.replace(/[aeiouh\s]/g, "").replace(/([a-z])\1+/g, "$1");
 }
 
 // ---------------------------------------------------------------- rank
-type Prepared = { numbers: number[]; folded: string; words: string[]; skel: string; raw: string };
+type Prepared = { numbers: number[]; folded: string; words: string[]; skel: string; raw: string; titles: string[] };
 
 export function prepareRow(row: NameSearchRow): Prepared {
   const base = String(row.source ?? "").split(/[\\/]/).pop() ?? "";
@@ -123,12 +129,13 @@ export function prepareRow(row: NameSearchRow): Prepared {
     words: folded.split(" ").filter(Boolean),
     skel: skeleton(folded),
     raw: text.toLowerCase(),
+    titles: (row.titles ?? []).map((t) => foldName(t).replace(/ /g, "")).filter(Boolean),
   };
 }
 
 /**
  * Scores one row for the query; 0 means no match. Higher is better:
- *   1000 book number, 400+ whole phrase at a word start, 300 phrase inside,
+ *   1000 book number, 600 the whole title, 400+ whole phrase at a word start, 300 phrase inside,
  *   200 every word found, 150/100 consonant skeleton match within/across words.
  */
 export function scoreRow(p: Prepared, q: string): number {
@@ -139,6 +146,8 @@ export function scoreRow(p: Prepared, q: string): number {
   const fq = foldName(q);
   if (!fq) return 0;
   let score = 0;
+  // "bhagvati" is the book titled Bhagvati before the many that only contain the word
+  if (p.titles.includes(fq.replace(/ /g, ""))) return 600;
   if (raw && p.raw.includes(raw)) score = Math.max(score, 450);
   if (p.folded.startsWith(fq) || p.folded.includes(` ${fq}`)) score = Math.max(score, 400);
   else if (p.folded.includes(fq)) score = Math.max(score, 300);

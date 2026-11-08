@@ -354,6 +354,7 @@ export default function SearchPage() {
         prepareRow({
           source: row.kind === "pdf" ? row.source_name : `${row.granth_key} ${row.source_name}`,
           extra: `${row.key} ${row.title} ${row.native_title} ${row.series ?? ""}`,
+          titles: [row.title, row.native_title],
         })
       ),
     [granthOptions]

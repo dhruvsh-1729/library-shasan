@@ -74,6 +74,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const supabase = getSupabaseAdmin();
       const catalog = await getGranthCatalog();
       const catalogEntry = (customId: unknown) => catalog.byCustomId.get(String(customId ?? ""));
+      const catalogTitles = (customId: unknown) => {
+        const entry = catalogEntry(customId);
+        return entry ? [entry.title, entry.native_title].filter(Boolean).map(String) : [];
+      };
       const catalogText = (customId: unknown) => {
         const entry = catalogEntry(customId);
         return entry ? `${entry.title} ${entry.native_title} ${entry.series ?? ""}` : "";
@@ -102,6 +106,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           prepareRow({
             source: String(row.file_name ?? row.original_rel_path ?? ""),
             extra: `${row.original_rel_path ?? ""} ${row.collection ?? ""} ${row.subcollection ?? ""} ${catalogText(row.custom_id)}`,
+            titles: catalogTitles(row.custom_id),
           })
         );
         return rankRows(prepared, q).map((i) => rows[i]);
@@ -115,7 +120,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const textOnly = q
         ? rankRows(
             allTextOnly.map((row) =>
-              prepareRow({ source: row.sourceRelPath || row.name, extra: `${row.granthKey} ${row.name} ${catalogText(row.customId)}` })
+              prepareRow({ source: row.sourceRelPath || row.name, extra: `${row.granthKey} ${row.name} ${catalogText(row.customId)}`, titles: catalogTitles(row.customId) })
             ),
             q
           ).map((i) => allTextOnly[i])
