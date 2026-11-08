@@ -206,3 +206,20 @@ test("Apte's bracketed gender is the gender, not the derivation, and not a later
   assert.equal(reading.gender, "न.");
   assert.equal(reading.derivation, "चोर+ ष्यञ्");
 });
+
+test("the gender printed after a headword is read in every kosh's style", async () => {
+  const { readGender } = await import("@/lib/vyutpatti/pipeline");
+  const cases: Array<[string, string]> = [
+    ["अहिंसा–સ્ત્રી-૮૨ કોઈ જીવને", "स्त्री."],
+    ["अचोरिय-न० (अचौर्य) अव्य०।", "न."],
+    ["आस्रव पु. (आस्रवति मनोऽनेन", "पुं."],
+    ["આસ્રવ-પું-૩૧૬(શે ૯૬)", "पुं."],
+    ["उपवास-पुं न०-८४२-उपवास.", "पुंन."],
+    ["चौर्यम् (नपुं.) [चोर+", "न."],
+    ["भाष्य-ન.-૨૫૪-સૂત્રમાં", "न."],
+    ["आचार्य-पुं -७८-आचार्य", "पुं."],
+    ["निर्जरा स्री. गणो", "स्त्री."],
+    ["नय न करोति", ""],
+  ];
+  for (const [text, gender] of cases) assert.equal(readGender(text), gender, text);
+});

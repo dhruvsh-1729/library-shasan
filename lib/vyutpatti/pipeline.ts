@@ -18,6 +18,7 @@
 //   7. A compound vishay ends with its samāsa vigraha.
 
 import { readFileSync } from "node:fs";
+import { gujaratiToDevanagari } from "@/lib/to-devanagari";
 import path from "node:path";
 import { extractPdfPagesByRange } from "@/lib/pdf-range-subset.mjs";
 import { headwordKeys, vyutpattiKosh } from "@/lib/kosh-headwords.mjs";
@@ -332,6 +333,26 @@ const PENDING = new Map<string, Promise<EntryReading | undefined>>();
  * An entry read from its OCR text alone, with no AI: the headword must be the
  * word; the derivation is AVPK's * line or the first bracket after the label.
  */
+/**
+ * The grammar label printed right after a kosh headword, in any kosh's style:
+ * AVPK "अहिंसा–સ્ત્રી-૮૨", "उपवास-पुं न०-८४२"; ARK "अचोरिय-न० (अचौर्य)";
+ * SRM "आस्रव पु. (…)"; Apte "चौर्यम् (नपुं.)". Returned as पुं. स्त्री. न.
+ * त्रि. वि. अव्य. or पुंन.; "" when none is printed there.
+ */
+export function readGender(text: string) {
+  const start = gujaratiToDevanagari(String(text ?? "").normalize("NFC").slice(0, 90)).replace(/^[-–'‘’"\s]+/, "");
+  const LABEL = "(नपुं|पुं|पु|स्त्री|स्री|त्रि|वि|अव्य|न)";
+  // a label ends in "." or "०", a dash or bracket, or is followed by a second label ("पुं न०"); a bare न is the negation
+  const END = "(?:\\s*[.०]|\\s*[-–)]|(?=\\s+(?:नपुं|पुं|पु|स्त्री|न)\\s*[.०]))";
+  const m = start.match(new RegExp(`^[^\\s\\-–(]+\\s*[-–,]?\\s*\\(?\\s*${LABEL}${END}\\s*\\)?(?:\\s*${LABEL}\\s*[.०])?`, "u"));
+  if (!m) return "";
+  const tag = (label: string | undefined) => (label === "पु" ? "पुं" : label === "नपुं" ? "न" : label === "स्री" ? "स्त्री" : label ?? "");
+  const first = tag(m[1]);
+  const second = tag(m[2]);
+  if (first === "पुं" && second === "न") return "पुंन.";
+  return `${first}.`;
+}
+
 export function ocrReading(word: string, c: Candidate): EntryReading & { fromOcr: true } {
   const want = new Set(headwordKeys(word));
   const matches = [c.head, c.sanskrit ?? ""].some((h) => h && headwordKeys(h).some((k) => want.has(k)));
@@ -367,9 +388,9 @@ export function ocrReading(word: string, c: Candidate): EntryReading & { fromOcr
     }
     if (label) rest = `${label[1]}. ${rest}`;
   }
-  // the label printed first, near the headword (not a later "(स्त्री.)" of a compound)
+  // the label printed right after the headword; else one printed near it (not a later "(स्त्री.)" of a compound)
   const near = rest.slice(0, 120).replace(/नपुं\./u, "न.");
-  const gender = (near.match(/(पुं\.|स्त्री\.|न\.|त्रि\.|वि\.|अव्य\.|पुंन\.)/u) ?? [])[1] ?? "";
+  const gender = readGender(text) || ((near.match(/(पुं\.|स्त्री\.|न\.|त्रि\.|वि\.|अव्य\.|पुंन\.)/u) ?? [])[1] ?? "");
   const meaning = rest.replace(/\s+/g, " ").trim().slice(0, 700);
   return { is_entry: true, why: "", head: c.head, gender, derivation, meaning, meaning_gu: meaning, base: null, fromOcr: true };
 }
