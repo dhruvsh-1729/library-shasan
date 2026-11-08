@@ -116,3 +116,14 @@ test("Gujarati letters inside the quoted derivation are written back in Devanaga
   assert.equal(devanagariQuotes("સ્ત્રીલિંગ. 'મિત્રો દેવતાઽસ્યા मैत्री' — અર્થ"), "સ્ત્રીલિંગ. 'मित्रो देवताऽस्या मैत्री' — અર્થ");
   assert.equal(devanagariQuotes("'उप+अधि+इड्+ ઘઃ'"), "'उप+अधि+इड्+ घः'");
 });
+
+test("Gujarati between two quoted pieces is left Gujarati", async () => {
+  const { devanagariQuotes } = await import("@/lib/anuvaad/vyutpatti");
+  const text = "'चौरस्य भावः' — ચોરનો ભાવ તે 'चौर्य'";
+  assert.equal(devanagariQuotes(text), text);
+});
+
+test("words ending in द्र. are not taken for a cross-reference", async () => {
+  const { entryForTranslation } = await import("@/lib/anuvaad/vyutpatti");
+  assert.ok(entryForTranslation({ head: "इन्द्र", body: "पुं. (इन्दतीति इन्द्रः) - इन्द्र. देवराज" }).body.includes("इन्द्र. देवराज"));
+});

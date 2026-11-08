@@ -113,7 +113,7 @@ export function entryForTranslation(entry: VyutpattiEntryInput): VyutpattiEntryI
     .replace(/,?\s*[“"‘][^”"’]{1,80}[”"’]\s*[॥।]/g, "")
     // AVPK's cross-references and list marks: "[क्षान्ति शि. २७]", "द्र० अचलाशब्दः", "☐", "-૩૯૧-"
     .replace(/\s*\[[^\]]{1,60}\]/g, "")
-    .replace(/\s*द्र[०.]\s*\S+/g, "")
+    .replace(/(?<![\u0900-\u097f])\s*द्र[०.]\s*\S+/gu, "")
     .replace(/[☐□■●]/g, "")
     .replace(/-[૦-૯०-९0-9]{1,4}-/g, "-")
     // the Prakrit koshes' citations in brackets, once sūtra numbers are gone: "(उत्त. २९)", "(आचा; औप; उव.)"
@@ -147,7 +147,17 @@ function tidyPoint(content: string, entry: VyutpattiEntryInput) {
 
 /** Quoted text written back in Devanagari where Gujarati letters slipped in. */
 export function devanagariQuotes(text: string) {
-  return text.replace(/'([^']*[\u0a80-\u0aff][^']*)'/gu, (_, quoted: string) => `'${gujaratiToDevanagari(quoted)}'`);
+  // quotes paired strictly in order (1st with 2nd, 3rd with 4th): the Gujarati
+  // between two quoted pieces is never touched
+  const parts = text.split("'");
+  for (let i = 1; i < parts.length - 1; i += 2) {
+    const quoted = parts[i];
+    const deva = (quoted.match(/[\u0900-\u097f]/g) ?? []).length;
+    const guj = (quoted.match(/[\u0a80-\u0aff]/g) ?? []).length;
+    // a quote mixing both scripts (or with + or इति) is a derivation; one wholly in Gujarati is a gloss
+    if (guj && (deva > 0 || /\+|इति/.test(quoted))) parts[i] = gujaratiToDevanagari(quoted);
+  }
+  return parts.join("'");
 }
 
 /**

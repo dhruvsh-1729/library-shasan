@@ -397,12 +397,13 @@ export function ocrReading(word: string, c: Candidate): EntryReading & { fromOcr
     const label = head.match(/^[^()[\]]{0,40}\(\s*(नपुं|पुं|स्त्री|वि|अव्य|त्रि|न)\.?\s*\)/u);
     const from = label ? label.index! + label[0].length : 0;
     const m = head.slice(from).match(/[([]([^()[\]]{2,160})[)\]]/u);
-    if (label) rest = text.slice(0, label.index! + label[0].length - label[0].length) + " " + text.slice(from);
+    // the headword stays, the bracketed label goes ("चौर्यम् (नपुं.) …" → "चौर्यम् …")
+    if (label) rest = `${text.slice(0, label.index! + label[0].indexOf("("))} ${text.slice(from)}`;
     if (m) {
       derivation = m[1].trim();
       rest = rest.replace(m[0], " ");
     }
-    if (label) rest = `${label[1]}. ${rest}`;
+
   }
   // the label printed right after the headword; else one printed near it (not a later "(स्त्री.)" of a compound)
   const near = rest.slice(0, 120).replace(/नपुं\./u, "न.");

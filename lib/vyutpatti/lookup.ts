@@ -119,7 +119,8 @@ export function cutEntry(format: string, page: PageText, line: number) {
 // and a running head in brackets ("[आकाश-आकाशदीप शब्दरत्नमहोदधिः]"); OCR
 // runs them into the text when an entry crosses a page.
 const SCAN_FOOTER = /\s*(?:Jain\s+Education\s+International|For\s+Private\s*(?:&|and)\s*Personal\s+Use\s+Only|www\.jainelibrary\.org)\s*/giu;
-const RUNNING_HEAD = /\s*\[[^\]\n]{0,60}(?:शब्दरत्नमहोदधि|महोदधि|कोशः?|कोषः?|प्रक्रियाकोश)[^\]\n]{0,20}\]?\s*/gu;
+// a running head names the kosh and closes its bracket; a derivation ([कोश+कृ+अण्]) has a +
+const RUNNING_HEAD = /\s*\[(?![^\]\n]*\+)[^\]\n]{0,60}(?:शब्दरत्नमहोदधि|महोदधि|प्रक्रियाकोश|कोशः|कोषः)[^\]\n]{0,20}\]\s*/gu;
 
 /** Entry text without the scanner's footer or a page's running head. */
 export function cleanKoshText(text: string) {

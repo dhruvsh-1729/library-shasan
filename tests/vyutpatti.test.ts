@@ -235,3 +235,8 @@ test("Abhidhana Rajendra's head and label are not part of the meaning", async ()
   assert.equal(cleanOcrMeaning("अचोरिय-न० अव्य०। चोरताभावे"), "अव्य०। चोरताभावे");
   assert.equal(cleanOcrMeaning("सियवाय-पुं० स्यादित्यव्ययम्"), "स्यादित्यव्ययम्");
 });
+
+test("a derivation bracket naming a kosh is not taken for a running head", async () => {
+  const { cleanKoshText } = await import("@/lib/vyutpatti/lookup");
+  assert.equal(cleanKoshText("कोशकारः [कोश+कृ+अण्] रेशम का कीड़ा"), "कोशकारः [कोश+कृ+अण्] रेशम का कीड़ा");
+});

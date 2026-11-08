@@ -67,9 +67,11 @@ export async function chat(opts: ChatOpts) {
 /**
  * Sarvam answers 429 when too many requests arrive at once (a vishay with ten
  * kosh entries sends ten). Instead of failing the entry, wait and ask again:
- * 1.5 s, 3 s, 6 s, or as long as the reply's Retry-After says (up to 15 s).
+ * 1.5 s, then 3.5 s, or as long as the reply's Retry-After says (up to 8 s),
+ * so that with the callers' own retries a vishay stays inside the server's
+ * time limit.
  */
-const RATE_LIMIT_WAITS_MS = [1500, 3000, 6000];
+const RATE_LIMIT_WAITS_MS = [1500, 3500];
 
 async function chatOnce(opts: ChatOpts) {
   for (let attempt = 0; ; attempt += 1) {
@@ -78,7 +80,7 @@ async function chatOnce(opts: ChatOpts) {
     } catch (e) {
       if (!(e instanceof SarvamChatError) || e.status !== 429 || attempt >= RATE_LIMIT_WAITS_MS.length) throw e;
       const asked = Number((e.body as { retryAfter?: number })?.retryAfter);
-      const wait = Number.isFinite(asked) && asked > 0 ? Math.min(15_000, asked * 1000) : RATE_LIMIT_WAITS_MS[attempt];
+      const wait = Number.isFinite(asked) && asked > 0 ? Math.min(8_000, asked * 1000) : RATE_LIMIT_WAITS_MS[attempt];
       await new Promise((resolve) => setTimeout(resolve, wait + Math.random() * 400));
     }
   }
