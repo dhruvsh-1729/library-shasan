@@ -198,3 +198,11 @@ test("kosh entry text loses the scanner's footer and the page's running head", a
   const text = cleanKoshText("सिद्धि Jain Education International [आकाश-आकाशदीप शब्दरत्नमहोदधिः] अनुभवथी\nFor Private & Personal Use Only\nआकाश [अर्थात्] सूर्य");
   assert.equal(text, "सिद्धि अनुभवथी\nआकाश [अर्थात्] सूर्य");
 });
+
+test("Apte's bracketed gender is the gender, not the derivation, and not a later compound's label", async () => {
+  const { ocrReading } = await import("@/lib/vyutpatti/pipeline");
+  const candidate = { head: "चौर्यम्", text: "चौर्यम् (नपुं.) [चोर+ ष्यञ् ] 1. चोरी, लूट । सम.-रतम् छिपे-छिपे स्त्री संभोग;-वृत्तिः\n(स्त्री.) लूटने की आदत ।", kosh: { family: "apte" } };
+  const reading = ocrReading("चौर्य", candidate as never);
+  assert.equal(reading.gender, "न.");
+  assert.equal(reading.derivation, "चोर+ ष्यञ्");
+});

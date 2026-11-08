@@ -332,7 +332,7 @@ const PENDING = new Map<string, Promise<EntryReading | undefined>>();
  * An entry read from its OCR text alone, with no AI: the headword must be the
  * word; the derivation is AVPK's * line or the first bracket after the label.
  */
-function ocrReading(word: string, c: Candidate): EntryReading & { fromOcr: true } {
+export function ocrReading(word: string, c: Candidate): EntryReading & { fromOcr: true } {
   const want = new Set(headwordKeys(word));
   const matches = [c.head, c.sanskrit ?? ""].some((h) => h && headwordKeys(h).some((k) => want.has(k)));
   const text = String(c.text ?? "").normalize("NFC");
@@ -354,13 +354,22 @@ function ocrReading(word: string, c: Candidate): EntryReading & { fromOcr: true 
       rest = [...lines.slice(0, at), ...lines.slice(i + 1)].join(" ");
     }
   } else {
-    const m = text.slice(0, 240).match(/[([]([^()[\]]{2,160})[)\]]/u);
+    // Apte prints the gender in brackets first ("चौर्यम् (नपुं.) [चोर+ष्यञ्]"):
+    // a bracketed grammar label is the gender, the next bracket the derivation.
+    const head = text.slice(0, 240);
+    const label = head.match(/^[^()[\]]{0,40}\(\s*(नपुं|पुं|स्त्री|वि|अव्य|त्रि|न)\.?\s*\)/u);
+    const from = label ? label.index! + label[0].length : 0;
+    const m = head.slice(from).match(/[([]([^()[\]]{2,160})[)\]]/u);
+    if (label) rest = text.slice(0, label.index! + label[0].length - label[0].length) + " " + text.slice(from);
     if (m) {
       derivation = m[1].trim();
-      rest = text.replace(m[0], " ");
+      rest = rest.replace(m[0], " ");
     }
+    if (label) rest = `${label[1]}. ${rest}`;
   }
-  const gender = (rest.match(/(पुं\.|स्त्री\.|न\.|त्रि\.|वि\.|अव्य\.|पुंन\.)/u) ?? [])[1] ?? "";
+  // the label printed first, near the headword (not a later "(स्त्री.)" of a compound)
+  const near = rest.slice(0, 120).replace(/नपुं\./u, "न.");
+  const gender = (near.match(/(पुं\.|स्त्री\.|न\.|त्रि\.|वि\.|अव्य\.|पुंन\.)/u) ?? [])[1] ?? "";
   const meaning = rest.replace(/\s+/g, " ").trim().slice(0, 700);
   return { is_entry: true, why: "", head: c.head, gender, derivation, meaning, meaning_gu: meaning, base: null, fromOcr: true };
 }
