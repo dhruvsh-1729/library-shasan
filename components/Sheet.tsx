@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { LightTableIcon } from "@/components/LightTableIcon";
+import { useBackToClose } from "@/lib/use-back-to-close";
 
 /** Open sheets, innermost last: Escape closes only the one on top. */
 const openSheets: symbol[] = [];
@@ -33,6 +34,7 @@ export function Sheet({
   children?: ReactNode;
 }) {
   const titleId = useId();
+  useBackToClose(open, onClose, busy);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const busyRef = useRef(busy);
   const closeRef = useRef(onClose);

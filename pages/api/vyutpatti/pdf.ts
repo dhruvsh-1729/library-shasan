@@ -4,11 +4,11 @@ import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import type { EntrySource, ReaderLine, TableRow } from "@/lib/vyutpatti/format";
 import { type VyutpattiPdfSection, buildVyutpattiPdf } from "@/lib/vyutpatti/pdf";
-import { parseAnuvaad } from "@/lib/anuvaad/markup";
 
-// The vyutpatti PDF from what the page shows (after the reader's edits): the
-// internal tables, then the reader pages, then the Gujarati anuvaad when asked. Built from the request alone;
-// nothing is stored.
+// The vyutpatti PDF from what the page shows (after the reader's edits): by
+// default the plain line-by-line sheet, each entry's Gujarati anuvaad under it;
+// { layout: "table" } gives the old internal table. Built from the request
+// alone; nothing is stored.
 
 export const config = { api: { bodyParser: { sizeLimit: "2mb" }, responseLimit: false } };
 
@@ -27,14 +27,13 @@ function readSections(raw: unknown): VyutpattiPdfSection[] | null {
     const rows = (Array.isArray(section.rows) ? section.rows : []).slice(0, MAX_ITEMS).map((r): TableRow => {
       const row = (r ?? {}) as Record<string, unknown>;
       const granthNo = text(row.granthNo, 8);
-      return { granth: text(row.granth), granthNo: /^\d{3}$/.test(granthNo) ? granthNo : undefined, shastraPath: text(row.shastraPath), pubRem: text(row.pubRem), inRem: text(row.inRem), source: source(row.source) };
+      return { granth: text(row.granth), granthNo: /^\d{3}$/.test(granthNo) ? granthNo : undefined, shastraPath: text(row.shastraPath), pubRem: text(row.pubRem), inRem: text(row.inRem), source: source(row.source), anuvaad: text(row.anuvaad) || undefined };
     });
     const lines = (Array.isArray(section.lines) ? section.lines : []).slice(0, MAX_ITEMS).map((l): ReaderLine => {
       const line = (l ?? {}) as Record<string, unknown>;
       return { head: text(line.head, 200), body: text(line.body), source: source(line.source) };
     });
-    const anuvaad = typeof section.anuvaad === "string" ? parseAnuvaad(text(section.anuvaad, 40_000)) : [];
-    return { number: text(section.number, 24), vishay: text(section.vishay, 200), box: text(section.box, 12), rows, lines, anuvaad };
+    return { number: text(section.number, 24), vishay: text(section.vishay, 200), box: text(section.box, 12), rows, lines, closing: text(section.closing) || undefined };
   });
 }
 
@@ -46,7 +45,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
   const sections = readSections((req.body ?? {}).sections);
   if (!sections) return res.status(400).json({ error: "Nothing to put in the PDF." });
-  const bytes = await buildVyutpattiPdf(sections);
+  const bytes = await buildVyutpattiPdf(sections, { layout: (req.body ?? {}).layout === "table" ? "table" : "plain" });
   const name = sections.length === 1 ? `${sections[0].number ? `${sections[0].number} ` : ""}${sections[0].vishay} vyutpatti.pdf` : "vyutpatti.pdf";
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="vyutpatti.pdf"; filename*=UTF-8''${encodeURIComponent(name)}`);

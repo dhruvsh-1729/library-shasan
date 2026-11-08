@@ -60,7 +60,22 @@ export type TableRow = {
   pubRem: string;
   inRem: string;
   source: EntrySource;
+  /** The entry's Gujarati anuvaad, printed directly under it (made on the page when the switch is on). */
+  anuvaad?: string;
 };
+
+/** "देव - पुं. (…) (kosh, पृ. 348)" → the word and the rest of the ShastraPath. */
+export function splitShastraPath(shastraPath: string) {
+  const text = String(shastraPath ?? "").trim();
+  const at = text.indexOf(" - ");
+  return at > 0 ? { head: text.slice(0, at).trim(), rest: text.slice(at + 3).trim() } : { head: text, rest: "" };
+}
+
+/** One entry as sent for its Gujarati anuvaad: the word, then its ShastraPath and meaning. */
+export function rowEntry(row: Pick<TableRow, "shastraPath" | "inRem">) {
+  const { head, rest } = splitShastraPath(row.shastraPath);
+  return { head, body: [rest, String(row.inRem ?? "").trim()].filter(Boolean).join(" - ") };
+}
 
 const GENDER_SCRIPT: Record<string, string> = {
   "પું": "पुं", "પુ": "पुं", "સ્ત્રી": "स्त्री", "ન": "न", "ત્રિ": "त्रि", "અવ્ય": "अव्य",

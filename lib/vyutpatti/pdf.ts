@@ -1,23 +1,25 @@
-// The vyutpatti PDF, in the two layouts of Maharaj Saheb's sample (WhatsApp
-// scan, 28 Sep 2026 17.19):
+// The vyutpatti PDF. Three layouts:
 //
-//   1. the internal table (the box sheet): Sr | V.T | Granth | ShastraPath |
-//      Pub.Rem | In.Rem with one row per kosh entry, the kosh named by its
-//      3-digit granth number, and under the table a key of those numbers to the
-//      koshes' names. The sample's vishay heading, "BOX No - n" and the vishay
-//      band across the table are left out (Sahebji, 9 Oct 2026). The
-//      table spans the full page width (Dhruv, 6 Oct 2026: the file sent to
-//      Maharaj Saheb); { fullWidth: false } gives the old left-60% layout with
-//      the right 40% blank for notes;
-//   2. the reader page: "1.1 | अचौर्य" large, then "व्युत्पत्तिअर्थ" and one line
-//      per word, each starting with a corner mark.
+//   1. plain (the default; Maharaj Saheb, 2 and 6 Nov 2026: "we don't want
+//      the box … a normal format", "remove the tables; we want line-to-line
+//      data"): one entry after another as ordinary lines, no borders —
 //
-// All the tables come first, then all the reader pages, so the reader part
-// prints as one run. Text is shaped with HarfBuzz (lib/word-list-pdf).
+//          1.  देव - पुं. (दीव्यतीति देवः) (अभिधानव्युत्पत्तिप्रक्रियाकोश भाग-2, पृ. 349)
+//              દેવતા અર્થમાં.
+//              અનુવાદ: પુંલિંગ. 'दीव्यति इति देवः' — …
 //
-// For now only the internal table is exported (Dhruv, 3 Oct 2026): the reader
-// page, the layout as it will go in the book, is still being worked on. Its
-// code below is kept and runs again with { readerPages: true }.
+//      the Gujarati anuvaad of each entry directly under it, every vishay
+//      running on from the last on the same pages;
+//   2. table ({ layout: "table" }), the internal table of the 28 Sep 2026
+//      sample: Sr | V.T | Granth | ShastraPath | Pub.Rem | In.Rem, one row
+//      per kosh entry, the kosh named by its 3-digit granth number, and a key
+//      of those numbers under it; the anuvaad on pages of its own after the
+//      tables. { fullWidth: false } gives the old left-60% table;
+//   3. reader pages ({ readerPages: true }): "1.1 | अचौर्य" large, then
+//      "व्युत्पत्तिअर्थ" and one line per word — the layout for the book, not
+//      exported while it is being worked on.
+//
+// Text is shaped with HarfBuzz (lib/word-list-pdf).
 
 import { PDFDocument, type PDFPage, rgb } from "pdf-lib";
 import {
@@ -32,7 +34,7 @@ import {
   strokeRect,
   wrapPieces,
 } from "@/lib/word-list-pdf";
-import type { ReaderLine, TableRow } from "@/lib/vyutpatti/format";
+import { type ReaderLine, type TableRow, splitShastraPath } from "@/lib/vyutpatti/format";
 import { drawAnuvaadPages } from "@/lib/anuvaad/pdf";
 import type { AnuvaadBlock } from "@/lib/anuvaad/markup";
 
@@ -40,11 +42,14 @@ export type VyutpattiPdfSection = {
   number: string;
   vishay: string;
   box: string;
+  /** One per kosh entry; each may carry its Gujarati anuvaad. */
   rows: TableRow[];
   lines: ReaderLine[];
-  /** The Gujarati anuvaad, printed after all the tables (and reader pages). */
-  anuvaad?: AnuvaadBlock[];
+  /** The closing Gujarati line on what the vishay means, after its entries. */
+  closing?: string;
 };
+
+export type VyutpattiPdfLayout = "plain" | "table";
 
 const BLACK = rgb(0, 0, 0);
 
@@ -104,7 +109,34 @@ function cornerMark(page: PDFPage, x: number, baseline: number, size: number) {
 /** The book-format reader pages are left out of the export until that layout is settled. */
 export const EXPORT_READER_PAGES = false;
 
-export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options: { readerPages?: boolean; fullWidth?: boolean } = {}) {
+// ------------------------------------------------------------------ plain
+
+const PLAIN_SIZE = 11.5;
+const PLAIN_LEADING = 1.55;
+const PLAIN_HEADING_SIZE = 15;
+const PLAIN_INDENT = 24; // the entry's lines hang under its text, clear of the serial
+const ENTRY_GAP = 9;
+const SECTION_GAP = 22;
+const PLAIN_FOOTER_SIZE = 9;
+
+/** The Gujarati anuvaad of each entry as anuvaad blocks, for the table layout's anuvaad pages. */
+function anuvaadBlocks(section: VyutpattiPdfSection): AnuvaadBlock[] {
+  const points = section.rows.flatMap((row, i): AnuvaadBlock[] =>
+    row.anuvaad?.trim() ? [{ kind: "point", label: `${i + 1}. ${splitShastraPath(row.shastraPath).head}`, text: row.anuvaad.trim(), level: 1 }] : []
+  );
+  if (!points.length && !section.closing?.trim()) return [];
+  return [
+    { kind: "title", text: `${section.vishay} — વ્યુત્પત્તિનો ગુજરાતી અનુવાદ` },
+    ...points,
+    ...(section.closing?.trim() ? [{ kind: "para", text: section.closing.trim() } as AnuvaadBlock] : []),
+  ];
+}
+
+export async function buildVyutpattiPdf(
+  sections: VyutpattiPdfSection[],
+  options: { layout?: VyutpattiPdfLayout; readerPages?: boolean; fullWidth?: boolean } = {}
+) {
+  const layout = options.layout ?? "plain";
   const readerPages = options.readerPages ?? EXPORT_READER_PAGES;
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
@@ -117,7 +149,6 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
   const reference = faces.devanagari.regular;
   const ascentOf = (size: number) => (reference.ascender / reference.upem) * size;
 
-  // ---------------------------------------------------------------- tables
   const fullWidth = options.fullWidth ?? true;
   const tableWidth = fullWidth ? width : NOTES_TABLE_RIGHT - MARGIN;
   const cols = [...(fullWidth ? FULL_WIDTH_COLUMNS : TABLE_COLUMNS)];
@@ -144,7 +175,73 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
     return top - layout.height;
   };
 
-  for (const section of sections) {
+  // ---------------------------------------------------------------- plain
+  if (layout === "plain") {
+    const top = pageHeight - MARGIN;
+    const bottom = MARGIN + PLAIN_FOOTER_SIZE * 2;
+    const step = PLAIN_SIZE * PLAIN_LEADING;
+    let pageNo = 0;
+    let page: PDFPage | null = null;
+    let y = top;
+    const newPage = () => {
+      page = doc.addPage(A4);
+      pageNo += 1;
+      const runs = text.layout(String(pageNo), "regular");
+      text.draw(page, runs, (pageWidth - text.width(runs, PLAIN_FOOTER_SIZE)) / 2, MARGIN - 6, PLAIN_FOOTER_SIZE);
+      y = top;
+      return page;
+    };
+    /** Room for `height` more points, else a fresh page. */
+    const room = (height: number): PDFPage => (!page || y - height < bottom ? newPage() : page);
+    /** Wrapped lines at x, one at a time, so a long entry runs on over the page break. */
+    const flow = (lines: ReturnType<typeof wrapPieces>, x: number, size: number, leading: number, keepWith = 1) => {
+      const lineStep = size * leading;
+      lines.forEach((line, i) => {
+        const p = room(lineStep * (i === 0 ? Math.min(keepWith, lines.length) : 1));
+        drawWrapped(text, p, [line], x, y - ascentOf(size), size, leading);
+        y -= lineStep;
+      });
+    };
+
+    sections.forEach((section, s) => {
+      if (s && page) y -= SECTION_GAP;
+      // the vishay on a line of its own: "1.1 देवपर्षदा"
+      const heading = [section.number, section.vishay].filter(Boolean).join(" ");
+      flow(wrapPieces(text, plain(heading, "bold"), PLAIN_HEADING_SIZE, width), MARGIN, PLAIN_HEADING_SIZE, 1.35, 3);
+      y -= PLAIN_SIZE * 0.5;
+      if (!section.rows.length) {
+        flow(wrapPieces(text, plain("No kosh entry was found."), PLAIN_SIZE, width), MARGIN, PLAIN_SIZE, PLAIN_LEADING);
+        return;
+      }
+      const room2 = width - PLAIN_INDENT;
+      section.rows.forEach((row, index) => {
+        if (index) y -= ENTRY_GAP;
+        const { head, rest } = splitShastraPath(row.shastraPath);
+        const first = wrapPieces(text, [{ text: head, weight: "bold" }, { text: rest ? ` - ${rest}` : "", weight: "regular" }], PLAIN_SIZE, room2);
+        const extra: ReturnType<typeof wrapPieces> = [];
+        if (row.inRem.trim()) extra.push(...wrapPieces(text, plain(row.inRem.trim()), PLAIN_SIZE, room2));
+        if (row.pubRem.trim()) extra.push(...wrapPieces(text, [{ text: "Pub. Rem: ", weight: "bold" }, { text: row.pubRem.trim(), weight: "regular" }], PLAIN_SIZE, room2));
+        const gu = row.anuvaad?.trim() ? wrapPieces(text, [{ text: "અનુવાદ: ", weight: "bold" }, { text: row.anuvaad.trim(), weight: "regular" }], PLAIN_SIZE, room2) : [];
+        // the serial and the entry's first two lines stay together
+        const p = room(step * Math.min(2, first.length + extra.length + gu.length));
+        const serial = text.layout(`${index + 1}.`, "regular");
+        text.draw(p, serial, MARGIN, y - ascentOf(PLAIN_SIZE), PLAIN_SIZE);
+        flow(first, MARGIN + PLAIN_INDENT, PLAIN_SIZE, PLAIN_LEADING);
+        flow(extra, MARGIN + PLAIN_INDENT, PLAIN_SIZE, PLAIN_LEADING);
+        if (gu.length) {
+          y -= PLAIN_SIZE * 0.2;
+          flow(gu, MARGIN + PLAIN_INDENT, PLAIN_SIZE, PLAIN_LEADING);
+        }
+      });
+      if (section.closing?.trim()) {
+        y -= ENTRY_GAP;
+        flow(wrapPieces(text, plain(section.closing.trim()), PLAIN_SIZE, width), MARGIN, PLAIN_SIZE, PLAIN_LEADING, 2);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- tables
+  for (const section of layout === "table" ? sections : []) {
     // No heading, "BOX No" line or vishay band: the sheet is the table alone
     // (Sahebji, 9 Oct 2026). No organisation's name or mark either.
     let page = doc.addPage(A4);
@@ -233,15 +330,15 @@ export async function buildVyutpattiPdf(sections: VyutpattiPdfSection[], options
   }
 
   // ------------------------------------------------------------ anuvaad
-  // The Gujarati anuvaad of each vishay at the end, one vishay to a page run.
-  const withAnuvaad = sections.filter((s) => s.anuvaad?.length);
+  // Table layout: the Gujarati anuvaad of each vishay at the end, one vishay to a page run.
+  const withAnuvaad = layout === "table" ? sections.map((s) => ({ s, blocks: anuvaadBlocks(s) })).filter((x) => x.blocks.length) : [];
   if (withAnuvaad.length) {
     const guj = faces.gujarati.regular;
     drawAnuvaadPages(
       doc,
       text,
       (size) => (guj.ascender / guj.upem) * size,
-      withAnuvaad.map((s) => ({ caption: [s.number, s.vishay].filter(Boolean).join(" "), blocks: s.anuvaad! }))
+      withAnuvaad.map(({ s, blocks }) => ({ caption: [s.number, s.vishay].filter(Boolean).join(" "), blocks }))
     );
   }
 

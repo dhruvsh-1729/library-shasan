@@ -35,3 +35,14 @@ export function filenameFromResponse(response: Response, fallback: string) {
   if (plainMatch?.[1]) return plainMatch[1];
   return fallback;
 }
+
+/** A name any phone or computer can save: no slashes or other reserved characters. */
+export function cleanFileName(value: string, extension: string) {
+  const base = value
+    .replace(new RegExp(`\\${extension}$`, "i"), "")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  return base ? `${base}${extension}` : "";
+}

@@ -1,6 +1,6 @@
 // The search page, the app's home page ("/"). Kept deliberately plain: one
 // search box, a sentence saying what was found, and one card per page with an
-// "Open this page" button. Everything else sits behind "More options".
+// "Read this page" button. Everything else sits behind "More options".
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -10,7 +10,7 @@ import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/Download
 import { LightTableIcon } from "@/components/LightTableIcon";
 import { ExportActions, Sheet, Stepper } from "@/components/Sheet";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
-import { EXPORT_ENDPOINTS, SearchExportDialog, type ExportFormat } from "@/components/SearchExportDialog";
+import { EXPORT_ENDPOINTS, EXPORT_INFO, MORE_EXPORT_DETAILS, SearchExportDialog, suggestFileName, type ExportFormat } from "@/components/SearchExportDialog";
 import { downloadBlob, fileSafe, filenameFromResponse } from "@/lib/download-file";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
 import { parseGranthPageInput, pdfPagesForGranthPages } from "@/lib/granth-pages";
@@ -93,6 +93,8 @@ type SearchMatchPreview = {
 type DownloadPreviewState = {
   result: SearchResult;
   title: string;
+  /** The book's number ("300"), for the suggested file name; "" when it has none. */
+  bookNo: string;
   query: string;
   queries: string[];
   matchMode: OCRSearchMode;
@@ -825,6 +827,7 @@ export default function SearchPage() {
     setDownloadPreview({
       result,
       title: granthTitle(result),
+      bookNo: bookNo(result.granth_key ? optionByGranthKey.get(result.granth_key)?.key : undefined),
       query: queries[0],
       queries,
       matchMode: summary.matchMode,
@@ -903,7 +906,7 @@ export default function SearchPage() {
     });
   }
 
-  async function downloadMatchedPages(format: ExportFormat, delivery: DeliveryMode, email?: string) {
+  async function downloadMatchedPages(format: ExportFormat, delivery: DeliveryMode, fileName: string, email?: string) {
     if (!downloadPreview?.preview || downloadPreview.selectedPages.length === 0) return;
     const preview = downloadPreview.preview;
     setDownloadPreview((prev) => (prev ? { ...prev, downloading: true, error: null, notice: null } : prev));
@@ -923,12 +926,13 @@ export default function SearchPage() {
           ...(format === "pdf" ? { contextPages: downloadPreview.contextPages } : {}),
           delivery,
           email,
+          fileName,
           title: downloadPreview.title,
         }),
       });
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(json.error || `${{ pdf: "PDF", csv: "CSV", wordlist: "Word list", linelist: "Line list" }[format]} export failed (${res.status})`);
+        throw new Error(json.error || `${EXPORT_INFO[format].label} export failed (${res.status})`);
       }
       if (delivery === "email") {
         const json = (await res.json()) as { email?: string; row_count?: number };
@@ -938,21 +942,15 @@ export default function SearchPage() {
             ? {
                 ...prev,
                 downloading: false,
-                notice: `Sent to ${json.email || email}${typeof json.row_count === "number" ? ` with ${plural(json.row_count, format === "wordlist" ? "word" : format === "linelist" ? "line" : "CSV row")}` : ""}.`,
+                notice: `Sent to ${json.email || email}${typeof json.row_count === "number" ? ` with ${plural(json.row_count, EXPORT_INFO[format].unit)}` : ""}.`,
               }
             : prev
         );
         return;
       }
       const blob = await res.blob();
-      const base = `${fileSafe(downloadPreview.title)}_${fileSafe(downloadPreview.queries.join("_"))}`;
-      const fallbackName = {
-        pdf: `${base}_matched_pages.pdf`,
-        csv: `${base}_page_lines.csv`,
-        wordlist: `${base}_word_list.pdf`,
-        linelist: `${base}_line_list.pdf`,
-      }[format];
-      downloadBlob(blob, filenameFromResponse(res, fallbackName));
+      const fallbackName = `${fileSafe(downloadPreview.title)}_${fileSafe(downloadPreview.queries.join("_"))}${EXPORT_INFO[format].ext}`;
+      downloadBlob(blob, fileName || filenameFromResponse(res, fallbackName));
       setDeliveryFormat(null);
       setDownloadPreview(null);
     } catch (e) {
@@ -1036,11 +1034,11 @@ export default function SearchPage() {
                 })
               }
             >
-              Open this page
+              Read this page
             </button>
           ) : result.granth_key ? (
             <Link className="ltPrimary" href={textViewerHref(result)}>
-              Open this page
+              Read this page
             </Link>
           ) : null}
           {occurrences.length > 1 ? (
@@ -1567,8 +1565,9 @@ export default function SearchPage() {
                       secondary={{ id: "linelist", label: "Line list", detail: "A PDF of every matching line with two lines above and below, and its line and page number", busyLabel: "Building", ...choice("linelist") }}
                       primary={{ id: "pdf", label: "Full PDF", detail: "The chosen pages as one PDF, cover first", busyLabel: "Building", ...choice("pdf") }}
                       more={[
-                        { id: "wordlist", label: "Word list (PDF)", detail: "Each matching word with the book's page number", busyLabel: "Building word list", ...choice("wordlist") },
-                        { id: "csv", label: "Spreadsheet (CSV)", detail: "One row per matching line, for Excel or Sheets", busyLabel: "Building CSV", ...choice("csv") },
+                        { id: "wordlist", label: "Word list (PDF)", detail: MORE_EXPORT_DETAILS.wordlist, busyLabel: "Building word list", ...choice("wordlist") },
+                        { id: "numbers", label: "Page & line numbers (PDF)", detail: MORE_EXPORT_DETAILS.numbers, busyLabel: "Building list", ...choice("numbers") },
+                        { id: "csv", label: "Spreadsheet (CSV)", detail: MORE_EXPORT_DETAILS.csv, busyLabel: "Building CSV", ...choice("csv") },
                       ]}
                     />
                   ) : null
@@ -1694,29 +1693,19 @@ export default function SearchPage() {
 
                     <DownloadDeliveryDialog
                       open={deliveryFormat !== null}
-                      title={
-                        deliveryFormat === "csv"
-                          ? "Spreadsheet (CSV)"
-                          : deliveryFormat === "wordlist"
-                            ? "Word list"
-                            : deliveryFormat === "linelist"
-                              ? "Line list"
-                              : "Full PDF"
-                      }
+                      title={EXPORT_INFO[deliveryFormat ?? "pdf"].label}
+                      extension={EXPORT_INFO[deliveryFormat ?? "pdf"].ext}
+                      suggestedName={suggestFileName(deliveryFormat ?? "pdf", downloadPreview.queries[0] ?? "", downloadPreview.bookNo || downloadPreview.title)}
                       fileLabel={
-                        deliveryFormat === "csv"
-                          ? `${plural(selectedCount, "chosen page")}, one row per matching line`
-                          : deliveryFormat === "wordlist"
-                            ? `${plural(selectedCount, "chosen page")}, one row per matching word`
-                            : deliveryFormat === "linelist"
-                              ? `${plural(selectedCount, "chosen page")}, one row per matching line`
-                              : `${plural(finalPageCount, "PDF page")}, cover first`
+                        deliveryFormat === "pdf" || deliveryFormat === null
+                          ? `${plural(finalPageCount, "PDF page")}, cover first`
+                          : `${plural(selectedCount, "chosen page")}, one row per matching ${deliveryFormat === "csv" || deliveryFormat === "linelist" ? "line" : "word"}`
                       }
                       busy={busy}
                       error={downloadPreview.error}
                       onClose={() => setDeliveryFormat(null)}
-                      onDownload={() => void downloadMatchedPages(deliveryFormat ?? "pdf", "download")}
-                      onEmail={(email) => void downloadMatchedPages(deliveryFormat ?? "pdf", "email", email)}
+                      onDownload={(fileName) => void downloadMatchedPages(deliveryFormat ?? "pdf", "download", fileName)}
+                      onEmail={(email, fileName) => void downloadMatchedPages(deliveryFormat ?? "pdf", "email", fileName, email)}
                     />
                   </>
                 ) : null}

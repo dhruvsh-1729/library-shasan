@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { LightTableIcon } from "@/components/LightTableIcon";
 import { Sheet } from "@/components/Sheet";
+import { cleanFileName } from "@/lib/download-file";
 
 export type DeliveryMode = "download" | "email";
 
@@ -8,17 +9,25 @@ type DownloadDeliveryDialogProps = {
   open: boolean;
   title: string;
   fileLabel: string;
+  /** The file name offered before the reader changes it, without the extension. */
+  suggestedName?: string;
+  /** ".pdf" or ".csv", shown after the name field. */
+  extension?: string;
   busy?: boolean;
   error?: string | null;
   onClose: () => void;
-  onDownload: () => void;
-  onEmail: (email: string) => void;
+  /** `fileName` is the name the reader chose, with its extension. */
+  onDownload: (fileName: string) => void;
+  onEmail: (email: string, fileName: string) => void;
 };
+
 
 export function DownloadDeliveryDialog({
   open,
   title,
   fileLabel,
+  suggestedName = "",
+  extension = ".pdf",
   busy = false,
   error = null,
   onClose,
@@ -31,6 +40,16 @@ export function DownloadDeliveryDialog({
   const [savedEmails, setSavedEmails] = useState<string[]>([]);
   const [loadingEmails, setLoadingEmails] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const nameId = useId();
+  const [name, setName] = useState(suggestedName);
+  // Each time the dialog opens, the name starts from that file's suggestion.
+  const [openedFor, setOpenedFor] = useState<string | null>(null);
+  const key = open ? `${title}|${suggestedName}` : null;
+  if (key !== openedFor) {
+    setOpenedFor(key);
+    if (key) setName(suggestedName);
+  }
+  const fileName = cleanFileName(name, extension) || cleanFileName(suggestedName, extension) || `download${extension}`;
 
   useEffect(() => {
     if (!open) return;
@@ -64,14 +83,31 @@ export function DownloadDeliveryDialog({
       return;
     }
     setLocalError(null);
-    onEmail(value);
+    onEmail(value, fileName);
   }
 
   return (
     <Sheet open title={title} subtitle={fileLabel} onClose={onClose} busy={busy} size="narrow" layer={1}>
       {(error || localError) ? <p className="sheetNote is-error" role="alert">{error || localError}</p> : null}
 
-      <button type="button" className="sheetAction is-primary" onClick={onDownload} disabled={busy}>
+      <div className="sheetField">
+        <label htmlFor={nameId}>File name</label>
+        <div className="sheetFieldRow">
+          <input
+            id={nameId}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onFocus={(event) => event.target.select()}
+            placeholder={suggestedName || "File name"}
+            disabled={busy}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <span className="sheetFieldSuffix">{extension}</span>
+        </div>
+      </div>
+
+      <button type="button" className="sheetAction is-primary" onClick={() => onDownload(fileName)} disabled={busy}>
         {busy ? (
           <>
             <span className="sheetSpinner" aria-hidden="true" />

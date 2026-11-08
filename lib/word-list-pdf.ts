@@ -1,6 +1,5 @@
-// The word-list PDF: for each granth, the searched word, the granth name and
-// the number of occurrences, then a table of क्रमः | शब्दः | पृष्ठम् with one row per
-// occurrence (the word as printed and the granth's printed page number).
+// The word-list PDF: for each granth, one numbered line per occurrence with
+// the word as printed and its line, book number and page; and the line list.
 //
 // pdf-lib cannot shape Devanagari or Gujarati (its fontkit fails on Indic
 // scripts), so text is shaped with HarfBuzz and drawn glyph by glyph from
@@ -34,13 +33,16 @@ import {
 
 export type WordListRow = {
   word: string;
+  /** The page's line the word is on. */
+  line: number;
   /** Printed page ("91", or "73-74" for two book pages per scan); null when unknown. */
   printedPage: string | null;
   pdfPage: number;
 };
 
 export type WordListSection = {
-  granthName: string;
+  /** The granth's 3-digit book number, printed in the footer and in every reference. */
+  heading: string;
   rows: WordListRow[];
 };
 
@@ -54,14 +56,7 @@ export type Weight = "regular" | "bold";
 
 export const A4: [number, number] = [595.28, 841.89];
 export const MARGIN = 42.5; // 15 mm
-const TITLE_SIZE = 16;
-const TEXT_SIZE = 12;
-const MIN_WORD_SIZE = 7;
-const CELL_PAD_X = 8.5; // 3 mm
-const ROW_HEIGHT = 24;
 const BORDER = 0.75;
-const SERIAL_WIDTH = 34; // 12 mm
-const PAGE_WIDTH_COL = 85; // 30 mm
 
 const DEVANAGARI_DIGITS = "०१२३४५६७८९";
 export const toDevanagariDigits = (value: string | number) =>
@@ -366,70 +361,77 @@ export function strokeRect(page: PDFPage, x: number, y: number, width: number, h
 // ------------------------------------------------------------------ document
 
 /** Baseline inside a row of the given height, centring the font's ascender–descender box. */
-function baselineIn(rowBottom: number, height: number, face: LoadedFace, size: number) {
-  const asc = (face.ascender / face.upem) * size;
-  const desc = (-face.descender / face.upem) * size;
-  return rowBottom + (height - (asc + desc)) / 2 + desc;
-}
-
-export async function buildWordListPdf(options: { word: string; sections: WordListSection[] }) {
+/**
+ * The word list (Sahebji, 5 Nov 2026): no heading lines and no table. Each
+ * occurrence is one numbered line, "१. जीव [३९, 300/३५०]": the word as
+ * printed, then the line and the book number with the page (underlined), the
+ * same reference as the line list. With `numbersOnly` the word is left out,
+ * "१. [३९, 300/३५०]", for a plain list of where the word is. The book number
+ * is printed in the footer of every page. Short lines are set in as many
+ * columns as fit across the page, read down each column.
+ */
+export async function buildWordListPdf(options: { word: string; sections: WordListSection[]; numbersOnly?: boolean }) {
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
-  doc.setTitle(`${options.word} - word list`);
+  doc.setTitle(`${options.word} - ${options.numbersOnly ? "page and line numbers" : "word list"}`);
   doc.setProducer("Granth library word search");
   const embedder = new FontEmbedder(doc);
   const text = new TextDrawer(faces, embedder);
   const [pageWidth, pageHeight] = A4;
-  const tableWidth = pageWidth - 2 * MARGIN;
-  const columns = [SERIAL_WIDTH, tableWidth - SERIAL_WIDTH - PAGE_WIDTH_COL, PAGE_WIDTH_COL];
-  const columnX = [MARGIN, MARGIN + columns[0], MARGIN + columns[0] + columns[1]];
-  const referenceFace = faces.devanagari.regular;
-
-  const drawCell = (page: PDFPage, col: number, rowBottom: number, value: string, weight: Weight) => {
-    // A word too long for its cell is set smaller rather than cut.
-    const runs = text.layout(value, weight);
-    const room = columns[col] - 2 * CELL_PAD_X;
-    const width = text.width(runs, TEXT_SIZE);
-    const size = width > room ? Math.max(MIN_WORD_SIZE, (TEXT_SIZE * room) / width) : TEXT_SIZE;
-    text.draw(page, runs, columnX[col] + CELL_PAD_X, baselineIn(rowBottom, ROW_HEIGHT, referenceFace, size), size);
-  };
-
-  const drawRow = (page: PDFPage, rowTop: number, cells: [string, string, string], weight: Weight) => {
-    const bottom = rowTop - ROW_HEIGHT;
-    for (let col = 0; col < 3; col += 1) {
-      strokeRect(page, columnX[col], bottom, columns[col], ROW_HEIGHT);
-      drawCell(page, col, bottom, cells[col], weight);
-    }
-    return bottom;
-  };
-
-  const header: [string, string, string] = ["क्रमः", "शब्दः", "पृष्ठम्"];
+  const room = pageWidth - 2 * MARGIN;
+  const size = WORD_ROW_SIZE;
+  const lineHeight = size * 1.55;
+  const reference = faces.devanagari.regular;
+  const ascent = (reference.ascender / reference.upem) * size;
+  const descent = (-reference.descender / reference.upem) * size;
+  const columnGap = 22;
+  const top = pageHeight - MARGIN;
+  const bottom = MARGIN + FOOTER_ROOM;
+  const rowsPerColumn = Math.max(1, Math.floor((top - bottom) / lineHeight));
 
   for (const section of options.sections) {
-    let page = doc.addPage(A4);
-    let y = pageHeight - MARGIN;
-
-    const titleRuns = text.layout(`शब्दः : ${options.word}`, "bold");
-    y -= TITLE_SIZE;
-    text.draw(page, titleRuns, MARGIN, y, TITLE_SIZE);
-    y -= TEXT_SIZE * 1.9;
-    const infoRuns = text.layout(
-      `ग्रन्थः : ${section.granthName}   |   कुल : ${toDevanagariDigits(section.rows.length)}`,
-      "regular"
-    );
-    const infoSize = Math.min(TEXT_SIZE, TEXT_SIZE * (tableWidth / Math.max(1, text.width(infoRuns, TEXT_SIZE))));
-    text.draw(page, infoRuns, MARGIN, y, infoSize);
-    y -= 14;
-
-    y = drawRow(page, y, header, "bold");
-    section.rows.forEach((row, index) => {
-      if (y - ROW_HEIGHT < MARGIN) {
-        page = doc.addPage(A4);
-        y = drawRow(page, pageHeight - MARGIN, header, "bold");
-      }
-      const printed = row.printedPage ? toDevanagariDigits(row.printedPage) : `PDF ${toDevanagariDigits(row.pdfPage)}`;
-      y = drawRow(page, y, [toDevanagariDigits(index + 1), row.word, printed], "regular");
+    const rows = section.rows.map((row, index) => {
+      const pieces: Piece[] = [{ text: `${toDevanagariDigits(index + 1)}.\u00a0`, weight: "regular" }];
+      if (!options.numbersOnly) pieces.push({ text: `${row.word} `, weight: "bold" });
+      pieces.push(...lineReference([row.line], row.printedPage, row.pdfPage, section.heading));
+      // a row wider than the page wraps, so it may take more than one line
+      return wrapPieces(text, pieces, size, room);
     });
+    const widest = Math.max(1, ...rows.flatMap((lines) => lines.map((words) => words.reduce((w, word, k) => w + word.width + (k ? word.space : 0), 0))));
+    const columns = Math.max(1, Math.min(4, Math.floor((room + columnGap) / (widest + columnGap))));
+    const columnWidth = (room - (columns - 1) * columnGap) / columns;
+
+    let page: PDFPage | null = null;
+    let column = 0;
+    let used = rowsPerColumn; // forces a new page for the first row
+    for (const lines of rows) {
+      if (used + lines.length > rowsPerColumn) {
+        column += 1;
+        used = 0;
+        if (!page || column >= columns) {
+          page = doc.addPage(A4);
+          drawFooter(text, page, section.heading, MARGIN, pageWidth - MARGIN);
+          column = 0;
+        }
+      }
+      const x = MARGIN + column * (columnWidth + columnGap);
+      lines.forEach((words, i) => {
+        const baseline = top - ascent - (used + i) * lineHeight;
+        let at = x;
+        words.forEach((word, k) => {
+          if (k) at += word.space;
+          for (const part of word.parts) {
+            const start = at;
+            at = text.draw(page as PDFPage, part.runs, at, baseline, size);
+            if (part.underline) {
+              const y = baseline - descent * 0.45;
+              (page as PDFPage).drawLine({ start: { x: start, y }, end: { x: at, y }, thickness: UNDERLINE, color: rgb(0, 0, 0) });
+            }
+          }
+        });
+      });
+      used += lines.length;
+    }
   }
 
   embedder.finish();
@@ -452,6 +454,7 @@ export type LineListRow = {
 export type LineListSection = { heading: string; rows: LineListRow[] };
 
 const LINE_TEXT_SIZE = 10.5;
+const WORD_ROW_SIZE = 11;
 // tight leading so as many lines as possible fit on a page
 const LINE_LEADING = 1.25;
 const LINE_HEADING_SIZE = 12;
@@ -543,16 +546,15 @@ export function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room
 }
 
 /**
- * "[५, २८४]": the line, then the page, the page underlined (Sahebji, 9 Oct
- * 2026). In a file of several granths the page follows the granth's book
- * number, in English digits: "[५, 073/२८४]". A page with no printed number
- * says so in full: "[५, PDF page number १२]". No-break spaces keep a
- * reference on one line.
+ * "[५, 300/२८४]": the line, then the book number and the page, the page
+ * underlined (Sahebji, 9 Oct 2026; the book number with the page on 5 Nov
+ * 2026). A page with no printed number says so in full: "[५, 300/PDF page
+ * number १२]". No-break spaces keep a reference on one line.
  */
-function referencePieces(row: LineListRow, book: string | null): Piece[] {
-  const page = row.printedPage ? toDevanagariDigits(row.printedPage) : toDevanagariDigits(row.pdfPage);
-  const pageLabel = row.printedPage ? "" : "PDF\u00a0page\u00a0number\u00a0";
-  return row.hitLines.flatMap((line, i): Piece[] => [
+function lineReference(lines: number[], printedPage: string | null, pdfPage: number, book: string | null): Piece[] {
+  const page = printedPage ? toDevanagariDigits(printedPage) : toDevanagariDigits(pdfPage);
+  const pageLabel = printedPage ? "" : "PDF\u00a0page\u00a0number\u00a0";
+  return lines.flatMap((line, i): Piece[] => [
     { text: `${i ? " " : "\u00a0"}[${toDevanagariDigits(line)},\u00a0${book ? `${book}/` : ""}${pageLabel}`, weight: "regular" },
     { text: page, weight: "regular", underline: true },
     { text: "]", weight: "regular" },
@@ -567,8 +569,7 @@ function referencePieces(row: LineListRow, book: string | null): Piece[] {
  * carries a reference for each. The text spans the full page width (for the
  * next month or so, so the longer records print on fewer pages); the old
  * left-40% column with the rest blank for notes is gone. The book number is
- * printed in the footer of each page, and in a file of several granths also in
- * every reference. No table and no serial numbers: a thin rule across the page
+ * printed in the footer of each page and in every reference. No table and no serial numbers: a thin rule across the page
  * separates one record from the next.
  */
 export async function buildLineListPdf(options: { word: string; sections: LineListSection[] }) {
@@ -585,7 +586,6 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
   const reference = faces.devanagari.regular;
   const ascent = (reference.ascender / reference.upem) * LINE_TEXT_SIZE;
   const descent = (-reference.descender / reference.upem) * LINE_TEXT_SIZE;
-  const severalGranths = options.sections.length > 1;
 
   const drawLines = (page: PDFPage, lines: Word[][], x: number, top: number) =>
     lines.forEach((words, i) => {
@@ -614,7 +614,7 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
     section.rows.forEach((row, index) => {
       const pieces: Piece[] = [
         ...row.pieces.map((piece): Piece => ({ text: piece.text, weight: piece.hit ? "bold" : "regular" })),
-        ...referencePieces(row, severalGranths ? section.heading : null),
+        ...lineReference(row.hitLines, row.printedPage, row.pdfPage, section.heading),
       ];
       const wrapped = wrapPieces(text, pieces, LINE_TEXT_SIZE, room);
       const height = wrapped.length * lineHeight + 2 * LINE_RECORD_PAD;

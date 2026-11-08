@@ -694,3 +694,159 @@
   font-weight: 600;
   color: var(--lt-ink-2);
 }
+
+/* ------------------------------------------------------------ plain entries
+   Maharaj Saheb, 2 Nov 2026: "we don't want the box; a simple, normal form".
+   The results are plain text on the page: no card, no shadow, no table; one
+   kosh entry after another, its Gujarati anuvaad right under it. */
+
+.vyList {
+  gap: 0;
+}
+
+.vyCard,
+.vyCard.is-error {
+  padding: 16px 2px 18px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.vyCard + .vyCard {
+  border-top: 1px solid var(--lt-rule);
+}
+
+.vyEntries {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vyEntry {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 2px 8px;
+}
+
+.vyEntryNo {
+  min-width: 1.6em;
+  padding-top: 2px;
+  font-size: 16px;
+  color: var(--lt-ink-3);
+}
+
+.vyEntryText {
+  min-width: 0;
+  font-size: 17px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.vyEntryPath strong {
+  font-size: 18px;
+}
+
+.vyEntryMeaning {
+  color: var(--lt-ink-2);
+}
+
+.vyEntryGu {
+  margin-top: 2px;
+}
+
+.vyEntryGuLabel {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.vyEntry.is-ai .vyEntryText,
+.vyEntry.is-vigraha .vyEntryText {
+  color: var(--lt-ink);
+}
+
+.vyEntry.is-ai .vyEntryNo,
+.vyEntry.is-vigraha .vyEntryNo {
+  color: var(--lt-amber);
+}
+
+.vyCard .vyAnuvaad {
+  gap: 6px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.vyClosing {
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.vyAnuvaadAgain,
+.vyTableLink {
+  justify-self: start;
+}
+
+.vyTableLink {
+  margin-top: 4px;
+}
+
+.vyHint.vyHintPlain {
+  color: var(--lt-ink-3);
+}
+
+/* the kosh pages: plain rows, not boxes */
+.vyKoshList {
+  gap: 0;
+}
+
+.vyKoshList li {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--lt-rule);
+  border-radius: 0;
+  background: none;
+}
+
+.vyKoshList li:last-child {
+  border-bottom: 0;
+}
+
+@media (min-width: 700px) {
+  .vyCard,
+  .vyCard.is-error {
+    padding: 20px 4px 22px;
+  }
+
+  .vyEntryText {
+    font-size: 18px;
+  }
+
+  .vyEntryPath {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .vyEntryPath strong {
+    flex: none;
+  }
+
+  .vyEntryPath strong::after {
+    content: " -";
+    font-weight: 400;
+  }
+
+  .vyEntryGu {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .vyEntryGuLabel {
+    flex: none;
+    padding-top: 2px;
+  }
+}

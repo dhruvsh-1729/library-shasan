@@ -13,7 +13,7 @@ import { getTursoClient } from "@/lib/turso";
 const granthByPdf = new WeakMap<GranthCatalog, Map<string, string>>();
 
 /** The granth a PDF address belongs to. */
-async function granthKeyForPdf(pdfUrl: string) {
+export async function granthKeyForPdf(pdfUrl: string) {
   const catalog = await getGranthCatalog();
   let map = granthByPdf.get(catalog);
   if (!map) {

@@ -1,4 +1,6 @@
 import type { FormEvent } from "react";
+import { useBackToClose } from "@/lib/use-back-to-close";
+import { printedPageNumbers } from "@/lib/granth-pages";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   findOCRSearchMatchesForQueries,
@@ -160,7 +162,12 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState(pageCountHint);
   const [currentPage, setCurrentPage] = useState(requestedPage);
-  const [pageEntry, setPageEntry] = useState(String(requestedPage));
+  // What the reader is typing in the page box; null shows the current page.
+  const [pageEntry, setPageEntry] = useState<string | null>(null);
+  // The book's printed page number for each PDF page, when our OCR knows it:
+  // the page box then counts in book pages, as the reader expects (Sahebji,
+  // 2 Nov 2026: "PDF page 265 is the book's 262; it counts from the start").
+  const [printedPages, setPrintedPages] = useState<{ url: string; pages: Map<number, string> } | null>(null);
   // null: fit the page to the viewer's width, which is how a phone opens it;
   // the − and + buttons then zoom from whatever that came to.
   const [zoom, setZoom] = useState<number | null>(1.25);
@@ -172,6 +179,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   const requestedPageRef = useRef(requestedPage);
   requestedPageRef.current = requestedPage;
   const isOpen = Boolean(target);
+  useBackToClose(isOpen, onClose);
   useEffect(() => {
     if (isOpen && window.innerWidth < 760) setZoom(null);
   }, [isOpen]);
@@ -217,7 +225,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
     const loaded = loadedDocRef.current && loadedDocRef.current.url === pdfUrl ? loadedDocRef.current.doc : null;
     const page = loaded ? clamp(requestedPage, 1, loaded.numPages) : requestedPage;
     setCurrentPage(page);
-    setPageEntry(String(page));
+    setPageEntry(null);
     setPageCount(loaded ? loaded.numPages : pageCountHint);
     setTextDivCount(0);
     setHighlightCount(0);
@@ -315,8 +323,24 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
   }, [isOpen, pdfModule, pdfUrl]);
 
   useEffect(() => {
-    setPageEntry(String(currentPage));
+    setPageEntry(null);
   }, [currentPage]);
+
+  useEffect(() => {
+    if (!pdfUrl || printedPages?.url === pdfUrl) return;
+    let active = true;
+    fetch(`/api/pdf-printed-pages?pdfUrl=${encodeURIComponent(pdfUrl)}`)
+      .then((res) => (res.ok ? res.json() : { pages: [] }))
+      .then((json: { pages?: Array<[number, string]> }) => {
+        if (active) setPrintedPages({ url: pdfUrl, pages: new Map(json.pages ?? []) });
+      })
+      .catch(() => {
+        if (active) setPrintedPages({ url: pdfUrl, pages: new Map() });
+      });
+    return () => {
+      active = false;
+    };
+  }, [pdfUrl, printedPages?.url]);
 
   useEffect(() => {
     if (!pdfDoc || !pdfModule || !target) return;
@@ -495,14 +519,29 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
     setCurrentPage(clamp(Math.floor(page), 1, maxPage));
   }
 
+  const bookPages = printedPages && printedPages.url === pdfUrl && printedPages.pages.size ? printedPages.pages : null;
+  const bookPageOf = (page: number) => bookPages?.get(page) ?? null;
+  const currentBookPage = bookPageOf(currentPage);
+
+  /** The PDF page holding a book page; estimated from the nearest known page when it has no number. */
+  function pdfPageForBookPage(wanted: number) {
+    if (!bookPages) return wanted;
+    let nearest: { pdf: number; printed: number } | null = null;
+    for (const [pdf, label] of bookPages) {
+      for (const printed of printedPageNumbers(label)) {
+        if (printed === wanted) return pdf;
+        if (!nearest || Math.abs(printed - wanted) < Math.abs(nearest.printed - wanted)) nearest = { pdf, printed };
+      }
+    }
+    return nearest ? nearest.pdf + (wanted - nearest.printed) : wanted;
+  }
+
   function submitPage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const parsed = Number(pageEntry);
-    if (!Number.isFinite(parsed)) {
-      setPageEntry(String(currentPage));
-      return;
-    }
-    goToPage(parsed);
+    setPageEntry(null);
+    if (!pageEntry || !Number.isFinite(parsed)) return;
+    goToPage(bookPages ? pdfPageForBookPage(parsed) : parsed);
   }
 
   const canGoPrev = currentPage > 1;
@@ -546,18 +585,24 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
                 ‹
               </button>
               <form className="pvPageForm" onSubmit={submitPage}>
+                {bookPages ? <span className="pvBookLabel">Page</span> : null}
                 <input
                   id="pdf-dialog-page"
-                  value={pageEntry}
+                  value={pageEntry ?? (bookPages ? (currentBookPage ?? "") : String(currentPage))}
+                  placeholder={bookPages && !currentBookPage ? "–" : undefined}
                   onChange={(event) => setPageEntry(event.target.value)}
-                  onBlur={() => setPageEntry(String(currentPage))}
+                  onBlur={() => setPageEntry(null)}
                   inputMode="numeric"
-                  min={1}
-                  max={pageCount || undefined}
-                  type="number"
-                  aria-label="Page number"
+                  type={bookPages ? "text" : "number"}
+                  aria-label={bookPages ? "Book page number" : "Page number"}
                 />
-                <span>/ {pageCount || "–"}</span>
+                {bookPages ? (
+                  <span className="pvPdfPage" title="The page of the PDF file">
+                    PDF {currentPage}/{pageCount || "–"}
+                  </span>
+                ) : (
+                  <span>/ {pageCount || "–"}</span>
+                )}
               </form>
               <button type="button" className="pvBtn" onClick={() => goToPage(currentPage + 1)} disabled={!canGoNext} aria-label="Next page">
                 ›

@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setNoStore } from "@/lib/api-cache";
+import { cleanFileName } from "@/lib/download-file";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
 import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
 import {
@@ -15,6 +16,7 @@ import {
   validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
 import { type LineListSection, type WordListSection, buildLineListPdf, buildWordListPdf } from "@/lib/word-list-pdf";
+import { bookNumber } from "@/lib/search-csv";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 
@@ -32,6 +34,8 @@ type GranthSelection = {
 };
 
 type WordListBody = {
+  /** The name the reader gave the file, if any. */
+  fileName?: string | null;
   customId?: string | null;
   sourceRelPath?: string | null;
   granthName?: string | null;
@@ -97,17 +101,6 @@ function parseGranthSelections(value: unknown): GranthSelection[] {
   return selections;
 }
 
-/**
- * The book number a line list's footer shows: the granth's 3-digit serial from
- * the start of its file name ("069_B037418_…" → "069", "226_prashamrati_…" →
- * "226"), never the accession or library number. A file with no serial falls
- * back to the granth's name.
- */
-function bookNumber(relPath: string, granthName: string) {
-  const serial = path.basename(relPath).match(/^(\d+)(?=[-_ .])/);
-  return serial ? serial[1].padStart(3, "0") : granthName;
-}
-
 /** The word shown in the PDF heading: the first query written in an Indian script, else the query itself. */
 function headingWord(queries: string[]) {
   return queries.find((query) => /[\u0900-\u097F\u0A80-\u0AFF]/.test(query)) ?? queries[0];
@@ -125,6 +118,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     // ?layout=lines: one record per matched line, with the lines around it and
     // its line and page number; otherwise one row per word.
     const lineLayout = String(req.query.layout || "") === "lines";
+    // ?layout=numbers: the word list without the words, only line, book and page.
+    const numbersOnly = String(req.query.layout || "") === "numbers";
     const body = (req.body || {}) as WordListBody;
     const delivery = body.delivery === "email" ? "email" : "download";
     const matchMode = parseOCRSearchMode(body.matchMode);
@@ -209,9 +204,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       if (occurrences.length === 0) continue;
       rowCount += occurrences.length;
       sections.push({
-        granthName: entry.granthName,
+        heading: bookNumber(entry.relPath, entry.granthName),
         rows: occurrences.map((occurrence) => ({
           word: occurrence.word,
+          line: occurrence.line_number,
           printedPage: occurrence.printed_page,
           pdfPage: occurrence.page_number,
         })),
@@ -223,12 +219,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     }
 
     const word = headingWord(queries);
-    const bytes = lineLayout ? await buildLineListPdf({ word, sections: lineSections }) : await buildWordListPdf({ word, sections });
+    const bytes = lineLayout ? await buildLineListPdf({ word, sections: lineSections }) : await buildWordListPdf({ word, sections, numbersOnly });
 
-    const named = lineLayout ? lineSections.map((section) => section.heading) : sections.map((section) => section.granthName);
+    const named = (lineLayout ? lineSections : sections).map((section) => section.heading);
     const queryLabel = safeFileName(word, "search");
     const scopeLabel = named.length === 1 ? safeFileName(named[0], "granth") : `${named.length}_granths`;
-    const filename = `granth_search_${queryLabel}_${scopeLabel}_${lineLayout ? "line" : "word"}_list.pdf`;
+    const defaultName = `granth_search_${queryLabel}_${scopeLabel}_${lineLayout ? "line" : numbersOnly ? "page_numbers" : "word"}_list.pdf`;
+    const filename = cleanFileName(String(body.fileName || ""), ".pdf") || defaultName;
 
     if (delivery === "email") {
       workDir = await mkdtemp(path.join(tmpdir(), "ndms-word-list-"));

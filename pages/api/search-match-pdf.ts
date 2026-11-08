@@ -9,6 +9,7 @@ import {
 } from "@/lib/pdf-highlight-builder";
 import { expandPagesWithContext, normalizeContextPageRadius } from "@/lib/page-context";
 import { setNoStore } from "@/lib/api-cache";
+import { cleanFileName } from "@/lib/download-file";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
 import {
   MAX_COMBINED_PDF_GRANTHS,
@@ -35,6 +36,8 @@ type GranthSelection = {
 };
 
 type DownloadBody = {
+  /** The name the reader gave the file, if any. */
+  fileName?: string | null;
   customId?: string | null;
   sourceRelPath?: string | null;
   q?: string | null;
@@ -215,7 +218,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const combined = await buildCombinedSearchPdf({ sources: combinedSources, queries, matchMode, scripts });
       built = { filePath: combined.filePath, cleanupDir: combined.cleanupDir };
       const granthLabel = combinedSources.length === 1 ? safeFileName(combinedSources[0].label, "granth") : `${combinedSources.length}_granths`;
-      filename = `granth_search_${queryLabel}_${granthLabel}_matched_pages.pdf`;
+      filename = cleanFileName(String(body.fileName || ""), ".pdf") || `granth_search_${queryLabel}_${granthLabel}_matched_pages.pdf`;
       emailTitle = `${queries.join(", ")} matched pages from ${combinedSources.length} granth(s)`;
     } else {
       const customId = String(body.customId || "").trim();
@@ -253,7 +256,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         scripts,
       });
       const title = safeFileName(String(body.title || source.pdfName || customId), "matched_pages");
-      filename = `${title}_${queryLabel}_matched_pages.pdf`;
+      filename = cleanFileName(String(body.fileName || ""), ".pdf") || `${title}_${queryLabel}_matched_pages.pdf`;
       emailTitle = `${title} matched pages`;
     }
 

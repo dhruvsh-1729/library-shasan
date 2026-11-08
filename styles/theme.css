@@ -819,6 +819,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.pvPdfPage,
+.pvBookLabel {
+  font-size: 12px;
+  color: var(--lt-ink-3, var(--lt-ink-2));
+  white-space: nowrap;
+}
+
 .pvPageForm input {
   width: 58px;
   height: 30px;

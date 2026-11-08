@@ -4,9 +4,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setNoStore } from "@/lib/api-cache";
+import { cleanFileName } from "@/lib/download-file";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
 import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
-import { CsvFileWriter, granthPageLabel } from "@/lib/search-csv";
+import { CsvFileWriter, bookNumber, granthPageLabel } from "@/lib/search-csv";
 import {
   MAX_CSV_GRANTHS,
   MAX_CSV_ROWS,
@@ -32,6 +33,8 @@ type GranthSelection = {
 };
 
 type CsvBody = {
+  /** The name the reader gave the file, if any. */
+  fileName?: string | null;
   customId?: string | null;
   sourceRelPath?: string | null;
   granthName?: string | null;
@@ -157,7 +160,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       return {
         relPath,
         granthName: selection.granthName || (source.ok ? source.source.pdfName : selection.customId) || relPath,
-        pdfName: source.ok ? source.source.pdfName : "",
         pages: selection.pages,
       };
     });
@@ -189,12 +191,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
       for (const line of lines) {
         await writer.writeRow([
-          entry.granthName,
-          entry.pdfName,
+          bookNumber(entry.relPath, entry.granthName),
           granthPageLabel(line.printed_page, line.page_number),
           line.line_number,
           line.occurrence_count,
-          line.matched_words.join(" | "),
           line.line_text,
           line.page_number,
         ]);
@@ -211,7 +211,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       resolvedRelPaths.length === 1
         ? safeFileName(resolvedRelPaths[0].granthName, "granth")
         : `${granthsWithRows || resolvedRelPaths.length}_granths`;
-    const filename = `granth_search_${queryLabel}_${scopeLabel}_page_lines.csv`;
+    const filename = cleanFileName(String(body.fileName || ""), ".csv") || `granth_search_${queryLabel}_${scopeLabel}_page_lines.csv`;
 
     if (delivery === "email") {
       const recipientClientKey = getDownloadRecipientClientKey(req, res);

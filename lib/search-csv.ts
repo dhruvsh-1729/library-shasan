@@ -1,19 +1,32 @@
 import { once } from "node:events";
 import { createWriteStream, type WriteStream } from "node:fs";
+import path from "node:path";
 
 /** Excel needs the byte order mark to read Gujarati and Devanagari columns. */
 const UTF8_BOM = "\uFEFF";
 
+/**
+ * The columns Sahebji asked for (5 Nov 2026): the book number first, and no
+ * granth name, PDF file name or matched-words columns.
+ */
 export const SEARCH_CSV_HEADERS = [
-  "Granth name",
-  "PDF file",
+  "Book number",
   "Granth page number",
   "Line number on page",
   "Matches on line",
-  "Matched words",
   "Line text",
   "PDF page number",
 ];
+
+/**
+ * The granth's 3-digit book number from the start of its file name
+ * ("069_B037418_…" → "069", "226_prashamrati_…" → "226"), never the accession
+ * or library number. A file with no serial falls back to the granth's name.
+ */
+export function bookNumber(relPath: string, granthName: string) {
+  const serial = path.basename(relPath).match(/^(\d+)(?=[-_ .])/);
+  return serial ? serial[1].padStart(3, "0") : granthName;
+}
 
 /** The page as printed in the granth; "PDF 123" where the printed number is unknown. */
 export function granthPageLabel(printedPage: string | null | undefined, pdfPage: number) {

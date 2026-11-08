@@ -179,3 +179,16 @@ test("a derived word offers the bases the koshes may list", () => {
   assert.ok(baseCandidates("एकादशत्व").includes("एकादश"));
   assert.deepEqual(baseCandidates("गुरु"), []);
 });
+
+test("every kosh entry goes for its own Gujarati anuvaad, the kosh reference and sūtra numbers left out", async () => {
+  const { rowEntry } = await import("@/lib/vyutpatti/format");
+  const { entryForTranslation } = await import("@/lib/anuvaad/vyutpatti");
+  const rows = [
+    { shastraPath: "देव - पुं. (दीव्यतीति देवः) (अभिधानव्युत्पत्तिप्रक्रियाकोश भाग-2, पृ. 349)", inRem: "દેવતા અર્થમાં." },
+    { shastraPath: "देव - पुं. (दीव्यन्ति क्रीडन्तीति वा देवाः । लिहादिभ्यः’ ५।१।५०॥ इत्यच्) (अभिधानव्युत्पत्तिप्रक्रियाकोश भाग-2, पृ. 349)", inRem: "દેવતા અર્થમાં. (પાના સાથે ચકાસો)" },
+  ];
+  const entries = rows.map(rowEntry).map(entryForTranslation);
+  assert.equal(entries.length, 2);
+  assert.deepEqual(entries[0], { head: "देव", body: "पुं. (दीव्यतीति देवः) - દેવતા અર્થમાં." });
+  assert.equal(entries[1].body, "पुं. (दीव्यन्ति क्रीडन्तीति वा देवाः । लिहादिभ्यः’ इत्यच्) - દેવતા અર્થમાં.");
+});

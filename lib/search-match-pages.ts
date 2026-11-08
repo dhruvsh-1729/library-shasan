@@ -662,6 +662,8 @@ export type SearchMatchOccurrence = {
   printed_page: string | null;
   /** The whole word the match sits in, as printed (a compound stays whole). */
   word: string;
+  /** The page's line the word is on, counted as in the line list and the CSV. */
+  line_number: number;
 };
 
 const WORD_CHAR = /[\p{L}\p{M}‌‍]/u;
@@ -726,13 +728,17 @@ export async function loadSearchMatchOccurrences(
 
     const content = normalizeLineBreaks(String(row.content ?? ""));
     const printed = String(row.printed_page ?? "").trim() || null;
+    let line = 1;
+    let counted = 0;
     for (const match of findOCRSearchMatchesForQueries(content, queries, matchMode, options.scripts ?? null)) {
       if (occurrences.length >= maxRows) {
         truncated = true;
         break;
       }
+      // matches come in reading order, so the line count only moves forward
+      for (; counted < match.start; counted += 1) if (content.charCodeAt(counted) === 10) line += 1;
       const word = wholeWordAt(content, match.start, match.end).trim();
-      if (word) occurrences.push({ page_number: pageNumber, printed_page: printed, word });
+      if (word) occurrences.push({ page_number: pageNumber, printed_page: printed, word, line_number: line });
     }
     if (truncated) break;
   }

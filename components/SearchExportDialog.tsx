@@ -7,18 +7,40 @@ import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
 import { MAX_CONTEXT_PAGE_RADIUS, normalizeContextPageRadius } from "@/lib/page-context";
 
 /**
- * pdf: matched pages; csv: page and line list; wordlist: PDF table of each word
- * and its granth page; linelist: PDF table of each matched line (granth page,
- * line number, the line with the words marked, the words).
+ * pdf: matched pages; csv: page and line list; wordlist: a PDF list of each
+ * word with its line, book and page; numbers: the same without the words;
+ * linelist: each matched line with the lines around it and its reference.
  */
-export type ExportFormat = "pdf" | "csv" | "wordlist" | "linelist";
+export type ExportFormat = "pdf" | "csv" | "wordlist" | "numbers" | "linelist";
 
 export const EXPORT_ENDPOINTS: Record<ExportFormat, string> = {
   pdf: "/api/search-match-pdf",
   csv: "/api/search-match-csv",
   wordlist: "/api/search-match-wordlist",
+  numbers: "/api/search-match-wordlist?layout=numbers",
   linelist: "/api/search-match-wordlist?layout=lines",
 };
+
+/** What each export is called, what one of its rows is, and its file name ending. */
+export const EXPORT_INFO: Record<ExportFormat, { label: string; unit: string; ext: string; suffix: string }> = {
+  pdf: { label: "Full PDF", unit: "page", ext: ".pdf", suffix: "pages" },
+  csv: { label: "Spreadsheet (CSV)", unit: "row", ext: ".csv", suffix: "lines" },
+  wordlist: { label: "Word list", unit: "word", ext: ".pdf", suffix: "word list" },
+  numbers: { label: "Page & line numbers", unit: "word", ext: ".pdf", suffix: "page numbers" },
+  linelist: { label: "Line list", unit: "passage", ext: ".pdf", suffix: "line list" },
+};
+
+/** The extra choices behind "More", the same on both download screens. */
+export const MORE_EXPORT_DETAILS: Record<"wordlist" | "numbers" | "csv", string> = {
+  wordlist: "Each matching word, numbered, with its line, book and page number",
+  numbers: "Only the line, book and page number of each match, numbered",
+  csv: "Book, page and line numbers with the line, to open in Excel or Sheets",
+};
+
+/** "जीव 300 line list": the word, the book (or how many) and the kind of file. */
+export function suggestFileName(format: ExportFormat, word: string, scope: string) {
+  return [word, scope, EXPORT_INFO[format].suffix].filter(Boolean).join(" ");
+}
 
 type ExportGranth = {
   granth_key: string;
@@ -55,6 +77,12 @@ type SearchExportDialogProps = {
   scopeLabel: string;
   onClose: () => void;
 };
+
+/** The book's 3-digit number from its file name, else its name. */
+function bookNo(granth: ExportGranth) {
+  const serial = (granth.source_rel_path.split("/").pop() ?? "").match(/^(\d+)(?=[-_ .])/);
+  return serial ? serial[1].padStart(3, "0") : granth.granth_name || granth.pdf_name;
+}
 
 function pagesTakenFromGranth(granth: ExportGranth, maxPagesPerGranth: number) {
   if (maxPagesPerGranth <= 0) return granth.matched_pages;
@@ -245,7 +273,7 @@ export function SearchExportDialog({
     );
   }
 
-  async function runExport(format: ExportFormat, delivery: DeliveryMode, email?: string) {
+  async function runExport(format: ExportFormat, delivery: DeliveryMode, fileName: string, email?: string) {
     if (!preview) return;
     setBusyFormat(format);
     setError(null);
@@ -277,6 +305,7 @@ export function SearchExportDialog({
           ...(format === "pdf" ? { contextPages, maxPagesPerGranth } : {}),
           delivery,
           email,
+          fileName,
         }),
       });
 
@@ -291,7 +320,7 @@ export function SearchExportDialog({
         setNotice(
           `Email sent to ${json.email || email}${
             typeof json.row_count === "number"
-              ? ` with ${json.row_count} ${format === "wordlist" ? "word" : format === "linelist" ? "line" : "CSV row"}(s)`
+              ? ` with ${json.row_count} ${EXPORT_INFO[format].unit}(s)`
               : ""
           }.`
         );
@@ -299,24 +328,18 @@ export function SearchExportDialog({
       }
 
       const blob = await res.blob();
-      const listPdf = format === "wordlist" || format === "linelist";
+      const listPdf = format === "wordlist" || format === "numbers" || format === "linelist";
       const rowCount = res.headers.get(listPdf ? "X-Library-Wordlist-Rows" : "X-Library-Csv-Rows");
       const rowsTruncated =
         res.headers.get(listPdf ? "X-Library-Wordlist-Truncated" : "X-Library-Csv-Truncated") === "1";
-      const fallbackName = {
-        pdf: "granth_search_matched_pages.pdf",
-        csv: "granth_search_page_lines.csv",
-        wordlist: "granth_search_word_list.pdf",
-        linelist: "granth_search_line_list.pdf",
-      }[format];
-      downloadBlob(blob, filenameFromResponse(res, fallbackName));
+      downloadBlob(blob, fileName || filenameFromResponse(res, `granth_search${EXPORT_INFO[format].ext}`));
       setDeliveryFormat(null);
       const cutOff = rowsTruncated ? `, cut off at the ${preview.max_csv_rows} row limit` : "";
       setNotice(
         format === "pdf"
           ? "Combined PDF downloaded."
-          : format === "wordlist"
-            ? `Word list downloaded${rowCount ? ` with ${rowCount} word(s)` : ""}${cutOff}.`
+          : format === "wordlist" || format === "numbers"
+            ? `${EXPORT_INFO[format].label} downloaded${rowCount ? ` with ${rowCount} word(s)` : ""}${cutOff}.`
             : format === "linelist"
               ? `Line list downloaded${rowCount ? ` with ${rowCount} passage(s)` : ""}${cutOff}.`
               : `CSV downloaded${rowCount ? ` with ${rowCount} row(s)` : ""}${cutOff}.`
@@ -370,14 +393,21 @@ export function SearchExportDialog({
               {
                 id: "wordlist",
                 label: "Word list (PDF)",
-                detail: "Each matching word with the book's page number",
+                detail: MORE_EXPORT_DETAILS.wordlist,
                 busyLabel: "Building word list",
                 ...choice("wordlist"),
               },
               {
+                id: "numbers",
+                label: "Page & line numbers (PDF)",
+                detail: MORE_EXPORT_DETAILS.numbers,
+                busyLabel: "Building list",
+                ...choice("numbers"),
+              },
+              {
                 id: "csv",
                 label: "Spreadsheet (CSV)",
-                detail: "Page and line numbers, to open in Excel or Sheets",
+                detail: MORE_EXPORT_DETAILS.csv,
                 busyLabel: "Building CSV",
                 ...choice("csv"),
               },
@@ -489,15 +519,15 @@ export function SearchExportDialog({
 
           <DownloadDeliveryDialog
             open={deliveryFormat !== null}
-            title={
-              deliveryFormat === "csv"
-                ? "Spreadsheet (CSV)"
-                : deliveryFormat === "wordlist"
-                  ? "Word list"
-                  : deliveryFormat === "linelist"
-                    ? "Line list"
-                    : "Full PDF"
-            }
+            title={EXPORT_INFO[deliveryFormat ?? "pdf"].label}
+            extension={EXPORT_INFO[deliveryFormat ?? "pdf"].ext}
+            suggestedName={suggestFileName(
+              deliveryFormat ?? "pdf",
+              queries[0] ?? "",
+              (deliveryFormat === "pdf" ? pdfGranths : selectedGranths).length === 1
+                ? bookNo((deliveryFormat === "pdf" ? pdfGranths : selectedGranths)[0])
+                : `${(deliveryFormat === "pdf" ? pdfGranths : selectedGranths).length} books`
+            )}
             fileLabel={
               deliveryFormat === "pdf" || deliveryFormat === null
                 ? `${pdfGranths.length} ${pdfGranths.length === 1 ? "book" : "books"}, about ${pdfRange} PDF pages`
@@ -506,8 +536,8 @@ export function SearchExportDialog({
             busy={busyFormat !== null}
             error={error}
             onClose={() => setDeliveryFormat(null)}
-            onDownload={() => void runExport(deliveryFormat ?? "pdf", "download")}
-            onEmail={(email) => void runExport(deliveryFormat ?? "pdf", "email", email)}
+            onDownload={(fileName) => void runExport(deliveryFormat ?? "pdf", "download", fileName)}
+            onEmail={(email, fileName) => void runExport(deliveryFormat ?? "pdf", "email", fileName, email)}
           />
         </>
       ) : null}

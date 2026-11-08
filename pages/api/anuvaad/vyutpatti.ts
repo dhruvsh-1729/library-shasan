@@ -5,8 +5,10 @@ import { PERMISSIONS } from "@/lib/auth-permissions";
 import { AnuvaadError } from "@/lib/anuvaad/translate";
 import { translateVyutpatti } from "@/lib/anuvaad/vyutpatti";
 
-// The Gujarati anuvaad of one vishay's vyutpatti lines (after the reader's
-// edits). Built from the request alone; nothing is stored.
+// The Gujarati anuvaad of one vishay's vyutpatti, one per entry (after the
+// reader's edits): { vishay, entries: [{ head, body }], fresh? } →
+// { entries: string[], closing, failed }. Built from the request alone;
+// nothing is stored ("fresh" asks again instead of reusing an earlier anuvaad).
 
 export const config = { api: { bodyParser: { sizeLimit: "200kb" } }, maxDuration: 300 };
 
@@ -19,12 +21,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const lines = (Array.isArray(body.lines) ? body.lines : []).slice(0, 80).map((l) => {
+  const raw = Array.isArray(body.entries) ? body.entries : Array.isArray(body.lines) ? body.lines : [];
+  const entries = raw.slice(0, 80).map((l) => {
     const line = (l ?? {}) as Record<string, unknown>;
-    return { head: text(line.head, 200), body: text(line.body, 2000) };
+    return { head: text(line.head, 200), body: text(line.body, 4000) };
   });
   try {
-    return res.status(200).json(await translateVyutpatti(text(body.vishay, 300), lines));
+    return res.status(200).json(await translateVyutpatti(text(body.vishay, 300), entries, { fresh: body.fresh === true }));
   } catch (error) {
     const status = error instanceof AnuvaadError ? error.status : 500;
     if (!(error instanceof AnuvaadError)) console.error("vyutpatti anuvaad failed:", error instanceof Error ? error.message : error);

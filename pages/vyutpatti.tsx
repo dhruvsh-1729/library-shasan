@@ -6,19 +6,19 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
 import { Sheet } from "@/components/Sheet";
-import type { ReaderLine, TableRow } from "@/lib/vyutpatti/format";
+import { type ReaderLine, type TableRow, rowEntry, splitShastraPath } from "@/lib/vyutpatti/format";
 import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
 import { needsDevanagari, toDevanagari } from "@/lib/to-devanagari";
 import { AppNav } from "@/components/AppNav";
-import { AnuvaadView } from "@/components/AnuvaadView";
 import { AI_ENABLED } from "@/lib/vyutpatti/llm";
 
 // Vyutpatti: the reader types each vishay (in Devanagari) and gets its
-// derivation from the koshes in Maharaj Saheb's order, as a reader page and an
-// internal table, editable here and downloaded as one PDF.
+// derivation from the koshes in Maharaj Saheb's order: one kosh entry after
+// another as plain lines, no boxes or table (Maharaj Saheb, 2 and 6 Nov 2026),
+// editable here and downloaded as one PDF in the same plain form.
 //
-// With "ગુજરાતી અનુવાદ" on, each vyutpatti also gets its Gujarati anuvaad,
-// shown under it to read and correct and printed at the end of the PDF.
+// With "ગુજરાતી અનુવાદ" on, every entry also gets its own Gujarati anuvaad,
+// shown directly under it to read and correct, and printed under it in the PDF.
 //
 // Nothing is kept: no vishay is saved on the server or in the browser
 // (Sahebji's instruction), so the page warns before it is left with results.
@@ -35,7 +35,8 @@ type Item = {
   result?: VyutpattiResult;
   lines: ReaderLine[];
   rows: TableRow[];
-  anuvaad?: { status: "running" | "done" | "error"; markup: string; error?: string };
+  /** The anuvaad run; each entry's Gujarati is kept on its row (rows[i].anuvaad). */
+  anuvaad?: { status: "running" | "done" | "error"; closing: string; failed?: number; error?: string };
 };
 
 // Letters may be typed in Devanagari, Gujarati or Roman; the last two are
@@ -217,20 +218,34 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
   const update = (key: number, change: Partial<Item> | ((item: Item) => Partial<Item>)) =>
     setItems((list) => list.map((item) => (item.key === key ? { ...item, ...(typeof change === "function" ? change(item) : change) } : item)));
 
-  async function translateItem(key: number, vishay: string, lines: ReaderLine[]) {
-    if (!lines.length) return;
-    update(key, { anuvaad: { status: "running", markup: "" } });
+  /** Every entry's Gujarati anuvaad, one per row (not one per word). */
+  async function translateItem(key: number, vishay: string, rows: TableRow[], fresh = false) {
+    if (!rows.length) return;
+    const entries = rows.map(rowEntry);
+    update(key, (it) => ({ anuvaad: { status: "running", closing: it.anuvaad?.closing ?? "" } }));
     try {
       const res = await fetch("/api/anuvaad/vyutpatti", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vishay, lines: lines.map((l) => ({ head: l.head, body: l.body })) }),
+        body: JSON.stringify({ vishay, entries, fresh }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "The Gujarati anuvaad could not be prepared.");
-      update(key, { anuvaad: { status: "done", markup: String(json.markup ?? "") } });
+      const texts: string[] = Array.isArray(json.entries) ? json.entries.map((t: unknown) => String(t ?? "")) : [];
+      // Matched by the entry's text, so a row removed or edited meanwhile does not take another's anuvaad.
+      const byText = new Map(entries.map((e, i) => [`${e.head}\u0000${e.body}`, texts[i] ?? ""]));
+      update(key, (it) => ({
+        rows: it.rows.map((r) => {
+          const e = rowEntry(r);
+          const t = byText.get(`${e.head}\u0000${e.body}`);
+          return t ? { ...r, anuvaad: t } : r;
+        }),
+        anuvaad: { status: "done", closing: String(json.closing ?? ""), failed: Number(json.failed) || 0 },
+      }));
     } catch (error) {
-      update(key, { anuvaad: { status: "error", markup: "", error: error instanceof Error ? error.message : "The Gujarati anuvaad could not be prepared." } });
+      update(key, (it) => ({
+        anuvaad: { status: "error", closing: it.anuvaad?.closing ?? "", error: error instanceof Error ? error.message : "The Gujarati anuvaad could not be prepared." },
+      }));
     }
   }
 
@@ -250,7 +265,7 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
           const result = event.result as VyutpattiResult;
           update(item.key, { status: "done", result, lines: result.lines, rows: result.rows, progress: "" });
           // not awaited: the next vishay starts while this one is translated
-          if (withAnuvaad) void translateItem(item.key, result.vishay, result.lines);
+          if (withAnuvaad) void translateItem(item.key, result.vishay, result.rows);
         } else if (event.type === "error") {
           finished = true;
           update(item.key, { status: "error", error: String(event.error ?? "Something went wrong."), progress: "" });
@@ -285,7 +300,7 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
     setRunning(false);
   }
 
-  async function download(only?: Item) {
+  async function download(only?: Item, layout: "plain" | "table" = "plain") {
     // In the order they were typed (the list shows the newest batch first).
     const chosen = only ? [only] : [...done].sort((a, b) => a.key - b.key);
     if (!chosen.length) return;
@@ -296,13 +311,15 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          layout,
           sections: chosen.map((i) => ({
             number: i.number,
             vishay: i.result?.vishay ?? i.vishay,
             box: i.result?.box ?? box,
-            rows: i.rows,
+            // the Gujarati of each entry goes with its row, when the switch is on
+            rows: withAnuvaad ? i.rows : i.rows.map((r) => ({ ...r, anuvaad: undefined })),
             lines: i.lines,
-            anuvaad: withAnuvaad && i.anuvaad?.status === "done" ? i.anuvaad.markup : undefined,
+            closing: withAnuvaad ? i.anuvaad?.closing : undefined,
           })),
         }),
       });
@@ -352,7 +369,7 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
   const editLine = (key: number, index: number, body: string) =>
     update(key, (item) => ({ lines: item.lines.map((l, i) => (i === index ? { ...l, body } : l)) }));
   const removeLine = (key: number, index: number) => update(key, (item) => ({ lines: item.lines.filter((_, i) => i !== index) }));
-  const editRow = (key: number, index: number, field: keyof TableRow, value: string) =>
+  const editRow = (key: number, index: number, field: "shastraPath" | "pubRem" | "inRem" | "anuvaad", value: string) =>
     update(key, (item) => ({ rows: item.rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)) }));
   const removeRow = (key: number, index: number) => update(key, (item) => ({ rows: item.rows.filter((_, i) => i !== index) }));
 
@@ -478,7 +495,7 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
             <label className="anCheck vyAnuvaadSwitch">
               <input type="checkbox" checked={withAnuvaad} onChange={(e) => setWithAnuvaad(e.target.checked)} />
               <span>
-                Add the <span className="indic anGu">ગુજરાતી અનુવાદ</span> — shown under each vyutpatti and printed at the end of the PDF
+                Add the <span className="indic anGu">ગુજરાતી અનુવાદ</span> — under every entry, on the page and in the PDF
               </span>
             </label>
             <button type="submit" className="vyGo exWide" disabled={running || !input.trim() || Boolean(problem)}>
@@ -557,29 +574,45 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
                       </p>
                     ) : null}
 
-                    {item.lines.length ? (
-                      <ol className="vyLines">
-                        {item.lines.map((line, index) => (
-                          <li key={index} className={`vyLine is-${line.source}`}>
-                            <div className="vyLineText indic">
-                              <strong>{line.head}</strong>
-                              {/* The line's leading " - " is drawn by the page, kept in the PDF. */}
-                              <AutoGrow
-                                className="vyEdit indic"
-                                label={`Line for ${line.head}`}
-                                value={line.body.replace(/^\s*-\s*/, "")}
-                                onChange={(v) => editLine(item.key, index, ` - ${v.replace(/^\s*-\s*/, "")}`)}
-                              />
-                            </div>
-                            <div className="vyLineMeta">
-                              {line.source !== "kosh" ? <span className="vyTag">AI · check</span> : null}
-                              {line.source === "kosh" && line.note ? <span className="vyTag">check page</span> : null}
-                              <button type="button" className="vyX" onClick={() => removeLine(item.key, index)} aria-label={`Remove the line for ${line.head}`}>
-                                ×
-                              </button>
-                            </div>
-                          </li>
-                        ))}
+                    {/* One kosh entry after another, as plain lines; the Gujarati anuvaad of each right under it. */}
+                    {item.rows.length ? (
+                      <ol className="vyEntries">
+                        {item.rows.map((row, index) => {
+                          const { head, rest } = splitShastraPath(row.shastraPath);
+                          return (
+                            <li key={index} className={`vyEntry is-${row.source}`}>
+                              <span className="vyEntryNo">{index + 1}.</span>
+                              <div className="vyEntryText indic">
+                                <div className="vyEntryPath">
+                                  <strong>{head}</strong>
+                                  <AutoGrow
+                                    className="vyEdit indic"
+                                    label={`Entry ${index + 1}, ${head}`}
+                                    value={rest}
+                                    onChange={(v) => editRow(item.key, index, "shastraPath", `${head} - ${v.replace(/^\s*-\s*/, "")}`)}
+                                  />
+                                </div>
+                                <AutoGrow className="vyEdit vyEntryMeaning indic" label={`Meaning of entry ${index + 1}`} value={row.inRem} onChange={(v) => editRow(item.key, index, "inRem", v)} />
+                                {row.pubRem ? (
+                                  <AutoGrow className="vyEdit indic" label={`Remark on entry ${index + 1}`} value={row.pubRem} onChange={(v) => editRow(item.key, index, "pubRem", v)} />
+                                ) : null}
+                                {withAnuvaad && row.anuvaad !== undefined ? (
+                                  <div className="vyEntryGu">
+                                    <span className="vyEntryGuLabel anGu">અનુવાદ:</span>
+                                    <AutoGrow className="vyEdit indic" label={`Gujarati anuvaad of entry ${index + 1}`} value={row.anuvaad} onChange={(v) => editRow(item.key, index, "anuvaad", v)} />
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="vyLineMeta">
+                                {row.source !== "kosh" ? <span className="vyTag">AI · check</span> : null}
+                                {row.source === "kosh" && /પાના સાથે ચકાસો/.test(row.inRem) ? <span className="vyTag">check page</span> : null}
+                                <button type="button" className="vyX" onClick={() => removeRow(item.key, index)} aria-label={`Remove entry ${index + 1}, ${head}`}>
+                                  ×
+                                </button>
+                              </div>
+                            </li>
+                          );
+                        })}
                       </ol>
                     ) : (
                       <p className="vyEmpty">None of the koshes has these words.</p>
@@ -587,18 +620,14 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
 
                     {withAnuvaad || item.anuvaad ? (
                       <section className="vyAnuvaad" aria-label="Gujarati anuvaad">
-                        <div className="vyKoshHead">
-                          <h3 className="vySection indic anGu">ગુજરાતી અનુવાદ</h3>
-                          {item.lines.length && item.anuvaad?.status !== "running" ? (
-                            <button
-                              type="button"
-                              className="vyLink"
-                              onClick={() => translateItem(item.key, item.result?.vishay ?? item.vishay, item.lines)}
-                            >
-                              {item.anuvaad ? "Translate again" : "Make it"}
-                            </button>
-                          ) : null}
-                        </div>
+                        {item.anuvaad?.closing ? (
+                          <AutoGrow
+                            className="vyEdit vyClosing indic"
+                            label="What the vishay means, in Gujarati"
+                            value={item.anuvaad.closing}
+                            onChange={(closing) => update(item.key, (it) => ({ anuvaad: { ...(it.anuvaad ?? { status: "done" }), closing } }))}
+                          />
+                        ) : null}
                         {item.anuvaad?.status === "running" ? (
                           <p className="vyStatus">
                             <span className="chTyping" aria-hidden="true">
@@ -606,16 +635,25 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
                               <span />
                               <span />
                             </span>
-                            Translating
+                            <span>
+                              <span className="indic anGu">ગુજરાતી અનુવાદ</span> of {item.rows.length} entr{item.rows.length === 1 ? "y" : "ies"}…
+                            </span>
                           </p>
                         ) : null}
                         {item.anuvaad?.status === "error" ? <p className="vyProblem">{item.anuvaad.error}</p> : null}
-                        {item.anuvaad?.status === "done" ? (
-                          <AnuvaadView
-                            hideTitle
-                            markup={item.anuvaad.markup}
-                            onChange={(markup) => update(item.key, (it) => ({ anuvaad: { ...(it.anuvaad ?? { status: "done" }), status: "done", markup } }))}
-                          />
+                        {item.anuvaad?.status === "done" && item.anuvaad.failed ? (
+                          <p className="vyProblem">
+                            {item.anuvaad.failed} entr{item.anuvaad.failed === 1 ? "y has" : "ies have"} no anuvaad yet. Try again.
+                          </p>
+                        ) : null}
+                        {item.rows.length && item.anuvaad?.status !== "running" ? (
+                          <button
+                            type="button"
+                            className="vyLink vyAnuvaadAgain"
+                            onClick={() => translateItem(item.key, item.result?.vishay ?? item.vishay, item.rows, Boolean(item.anuvaad))}
+                          >
+                            {item.anuvaad ? "Gujarati anuvaad again" : "Make the Gujarati anuvaad"}
+                          </button>
                         ) : null}
                       </section>
                     ) : null}
@@ -677,45 +715,30 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
                     <details className="vyDetails">
                       <summary>Details</summary>
 
-                      <h3 className="vySection">Internal table</h3>
-                      <div className="vyTableScroll">
-                        <table className="vyTable">
-                          <thead>
-                            <tr>
-                              <th>Sr.</th>
-                              <th>Granth</th>
-                              <th>ShastraPath</th>
-                              <th>Pub.Rem</th>
-                              <th>In.Rem</th>
-                              <th aria-label="Remove" />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {item.rows.map((row, index) => (
-                              <tr key={index} className={`is-${row.source}`}>
-                                <td data-label="Sr.">{index + 1}</td>
-                                <td data-label="Granth" className="indic">
-                                  {row.granth}
-                                </td>
-                                <td data-label="ShastraPath">
-                                  <AutoGrow className="vyEdit indic" label="ShastraPath" value={row.shastraPath} onChange={(v) => editRow(item.key, index, "shastraPath", v)} />
-                                </td>
-                                <td data-label="Pub.Rem">
-                                  <AutoGrow className="vyEdit indic" label="Pub.Rem" value={row.pubRem} onChange={(v) => editRow(item.key, index, "pubRem", v)} />
-                                </td>
-                                <td data-label="In.Rem">
-                                  <AutoGrow className="vyEdit indic" label="In.Rem" value={row.inRem} onChange={(v) => editRow(item.key, index, "inRem", v)} />
-                                </td>
-                                <td>
-                                  <button type="button" className="vyX" onClick={() => removeRow(item.key, index)} aria-label={`Remove row ${index + 1}`}>
-                                    ×
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      {/* One line per word (the reader page's form), kept to read and correct; not in the PDF. */}
+                      <h3 className="vySection">One line per word</h3>
+                      {item.lines.length ? (
+                        <ol className="vyLines">
+                          {item.lines.map((line, index) => (
+                            <li key={index} className={`vyLine is-${line.source}`}>
+                              <div className="vyLineText indic">
+                                <strong>{line.head}</strong>
+                                <AutoGrow
+                                  className="vyEdit indic"
+                                  label={`Line for ${line.head}`}
+                                  value={line.body.replace(/^\s*-\s*/, "")}
+                                  onChange={(v) => editLine(item.key, index, ` - ${v.replace(/^\s*-\s*/, "")}`)}
+                                />
+                              </div>
+                              <div className="vyLineMeta">
+                                <button type="button" className="vyX" onClick={() => removeLine(item.key, index)} aria-label={`Remove the line for ${line.head}`}>
+                                  ×
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      ) : null}
 
                       {item.result.notes.length ? (
                         <ul className="vyNotes">
@@ -738,12 +761,15 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
           <div className="exExport">
             <section className="exExportBlock">
               <h3>Vyutpatti</h3>
-              <p className="vyHint">
-                Every vishay in the order typed, with your edits, as the internal table
-                {withAnuvaad ? <>, then the <span className="indic anGu">ગુજરાતી અનુવાદ</span> of each</> : null}.
+              <p className="vyHint vyHintPlain">
+                Every vishay in the order typed, with your edits: one entry after another as plain lines
+                {withAnuvaad ? <>, each with its <span className="indic anGu">ગુજરાતી અનુવાદ</span> under it</> : null}.
               </p>
               <button type="button" className="vyGo exWide" onClick={() => download()} disabled={downloading || !done.length}>
                 {downloading ? "Making the PDF…" : done.length === 1 ? "Download PDF" : `Download PDF (${done.length})`}
+              </button>
+              <button type="button" className="vyLink vyTableLink" onClick={() => download(undefined, "table")} disabled={downloading || !done.length}>
+                Old table layout instead
               </button>
             </section>
             {allPages.length ? (
