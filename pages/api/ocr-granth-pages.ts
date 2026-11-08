@@ -36,10 +36,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         args: [granthKey],
       }),
       client.execute({
-        sql: `SELECT page_number, content
-              FROM ocr_pages
-              WHERE granth_key = ?
-              ORDER BY page_number ASC`,
+        sql: `SELECT p.page_number, p.content, pp.printed_page
+              FROM ocr_pages p
+              LEFT JOIN ocr_printed_pages pp
+                ON pp.granth_key = p.granth_key AND pp.page_number = p.page_number
+                AND (pp.verified IS NULL OR pp.verified <> 'conflict')
+              WHERE p.granth_key = ?
+              ORDER BY p.page_number ASC`,
         args: [granthKey],
       }),
     ]);
@@ -66,6 +69,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       },
       rows: pagesResult.rows.map((row) => ({
         page_number: toInt(row.page_number),
+        printed_page: row.printed_page == null || String(row.printed_page).trim() === "" ? null : toStr(row.printed_page),
         content: toStr(row.content),
       })),
     });

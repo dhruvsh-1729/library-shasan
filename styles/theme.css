@@ -656,6 +656,11 @@ body {
   box-shadow: 0 0 0 2px var(--lt-cobalt), var(--lt-slip-shadow);
 }
 
+.tvFolio small {
+  font-size: 11px;
+  color: var(--lt-ink-3);
+}
+
 .tvFolio {
   display: grid;
   justify-items: start;

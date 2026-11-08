@@ -27,6 +27,8 @@ type GranthMeta = {
 
 type PageRow = {
   page_number: number;
+  /** The number printed on the page in the book, when known. */
+  printed_page?: string | null;
   content: string;
 };
 
@@ -353,10 +355,11 @@ export default function OCRTextViewerPage() {
                       type="button"
                       className="tvFolio"
                       onClick={() => scrollToPage(row.page_number)}
-                      aria-label={`Page ${row.page_number}`}
+                      aria-label={row.printed_page ? `Page ${row.printed_page} (PDF page ${row.page_number})` : `Page ${row.page_number}`}
                     >
                       <span>page</span>
-                      <strong>{row.page_number}</strong>
+                      <strong>{row.printed_page ?? row.page_number}</strong>
+                      {row.printed_page ? <small>PDF {row.page_number}</small> : null}
                     </button>
                     <div className="tvText indic">
                       {renderHighlightedText(row.content)}
