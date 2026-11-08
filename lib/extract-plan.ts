@@ -3,6 +3,8 @@
 // and after. The preview, the page count, the size estimate and the built file
 // all read these, so they can never disagree. No network, no database.
 
+import { pdfPagesForGranthPages } from "@/lib/granth-pages";
+
 export type GathaRow = {
   gatha: number;
   gathaTo: number | null;
@@ -142,6 +144,49 @@ export function planPages(spec: string, volumeKey: string, pdfUrl: string, pageC
     after: 0,
     pageCount,
   }));
+  return { passages, missing, asked };
+}
+
+/**
+ * Book (printed) page ranges of one volume: "242-250" → the PDF pages that
+ * carry them (front matter shifts the book against the PDF: its 265 can be
+ * the book's 242, Sahebji's note of 2 Nov 2026). `printed` is the volume's
+ * [PDF page, printed page] list; a book page it cannot place is missing.
+ */
+export function planBookPages(
+  spec: string,
+  volumeKey: string,
+  pdfUrl: string,
+  pageCount: number | null,
+  printed: Array<[number, string]>
+): Plan {
+  const asked = askedNumbers(spec);
+  const rows = printed.map(([page_number, printed_page]) => ({ page_number, printed_page }));
+  const placed = new Map<number, number>();
+  const missing: number[] = [];
+  for (const bookPage of asked) {
+    const { pdfPages } = pdfPagesForGranthPages(rows, [bookPage], pageCount ?? 0);
+    if (pdfPages.length) placed.set(bookPage, pdfPages[0]);
+    else missing.push(bookPage);
+  }
+  const bookOf = new Map<number, number[]>();
+  for (const [book, pdf] of placed) bookOf.set(pdf, [...(bookOf.get(pdf) ?? []), book]);
+  const passages = runs([...bookOf.keys()]).map(([a, b], i) => {
+    const books = [...bookOf].filter(([pdf]) => pdf >= a && pdf <= b).flatMap(([, list]) => list);
+    const lo = Math.min(...books);
+    const hi = Math.max(...books);
+    return {
+      id: `${volumeKey}:b${a}:${i}`,
+      label: lo === hi ? `Book page ${lo}` : `Book pages ${lo}–${hi}`,
+      volumeKey,
+      pdfUrl,
+      first: a,
+      last: b,
+      before: 0,
+      after: 0,
+      pageCount,
+    };
+  });
   return { passages, missing, asked };
 }
 

@@ -14,6 +14,7 @@ import {
   parseAsked,
   passagePages,
   planGathas,
+  planBookPages,
   planPages,
   splitForEmail,
   type Passage,
@@ -90,6 +91,10 @@ export default function GranthExtractor() {
   const [chapter, setChapter] = useState<ExtractChapter | null>(null);
   const [gathas, setGathas] = useState<ExtractGatha[] | null>(null);
   const [spec, setSpec] = useState("");
+  // Pages are asked by the number printed in the book unless the reader
+  // switches to the PDF's own numbering (or the book's numbers are unknown).
+  const [pageKind, setPageKind] = useState<"book" | "pdf">("book");
+  const [printedMap, setPrintedMap] = useState<{ url: string; pages: Array<[number, string]> } | null>(null);
   const [passages, setPassages] = useState<Passage[] | null>(null);
   const [missing, setMissing] = useState<number[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
@@ -207,16 +212,39 @@ export default function GranthExtractor() {
   );
   const volume = work?.volumes.find((v) => v.key === volumeKey) ?? null;
 
-  function planFor(m: Mode, w: ExtractWork, ch: ExtractChapter | null, rows: ExtractGatha[] | null, vol: string | null, text: string): Plan | null {
+  // The volume's printed page numbers, for asking pages by the book's numbering.
+  const volumePdf = mode === "pages" ? (work?.volumes.find((v) => v.key === volumeKey)?.pdfUrl ?? null) : null;
+  useEffect(() => {
+    if (!volumePdf || printedMap?.url === volumePdf) return;
+    let active = true;
+    fetch(`/api/pdf-printed-pages?pdfUrl=${encodeURIComponent(volumePdf)}`)
+      .then((res) => (res.ok ? res.json() : { pages: [] }))
+      .then((json: { pages?: Array<[number, string]> }) => {
+        if (active) setPrintedMap({ url: volumePdf, pages: json.pages ?? [] });
+      })
+      .catch(() => {
+        if (active) setPrintedMap({ url: volumePdf, pages: [] });
+      });
+    return () => {
+      active = false;
+    };
+  }, [volumePdf, printedMap?.url]);
+  const bookNumbering = Boolean(volumePdf && printedMap?.url === volumePdf && printedMap.pages.length);
+  const byBookPage = pageKind === "book" && bookNumbering;
+
+  function planFor(m: Mode, w: ExtractWork, ch: ExtractChapter | null, rows: ExtractGatha[] | null, vol: string | null, text: string, kind: "book" | "pdf" = byBookPage ? "book" : "pdf"): Plan | null {
     if (m === "gathas") return rows && ch ? planGathas(text, rows, new Map(w.volumes.map((v) => [v.key, v.pageCount])), unitWord(ch)) : null;
     const v = w.volumes.find((x) => x.key === vol);
-    return v ? planPages(text, v.key, v.pdfUrl, v.pageCount) : null;
+    if (!v) return null;
+    if (kind === "book" && printedMap?.url === v.pdfUrl && printedMap.pages.length) return planBookPages(text, v.key, v.pdfUrl, v.pageCount, printedMap.pages);
+    return planPages(text, v.key, v.pdfUrl, v.pageCount);
   }
 
   const parsed = parseAsked(spec);
   const draft = useMemo(
     () => (mode && work ? planFor(mode, work, chapter, gathas, volumeKey, spec) : null),
-    [mode, work, chapter, gathas, volumeKey, spec]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mode, work, chapter, gathas, volumeKey, spec, byBookPage, printedMap]
   );
 
   function showPlan(plan: Plan | null, w = work, ch = chapter, vol = volumeKey, text = spec, remember = true) {
@@ -238,7 +266,7 @@ export default function GranthExtractor() {
           workTitle: w.title,
           volumeKey: vol,
           chapterId: ch?.id ?? null,
-          chapterLabel: ch?.label ?? null,
+          chapterLabel: ch?.label ?? (mode === "pages" && byBookPage ? "book pages" : null),
           spec: text.trim(),
         }),
       }).then(loadRecents);
@@ -269,7 +297,17 @@ export default function GranthExtractor() {
     }
     setMode(item.mode);
     setSpec(item.spec);
+    if (item.mode === "pages" && item.chapter_label === "book pages") {
+      // asked by book page: the numbers come back once the book's page numbers are loaded
+      setPageKind("book");
+      setWork(w);
+      setVolumeKey(item.volume_key);
+      setChapter(null);
+      setPassages(null);
+      return;
+    }
     if (item.mode === "pages") {
+      setPageKind("pdf");
       setWork(w);
       setVolumeKey(item.volume_key);
       setChapter(null);
@@ -394,7 +432,7 @@ export default function GranthExtractor() {
                 </button>
                 <button type="button" className="exChoice" onClick={() => setMode("pages")}>
                   <strong>Pages</strong>
-                  <span>Choose a granth and the PDF page numbers</span>
+                  <span>Choose a granth and the page numbers printed in it</span>
                 </button>
               </div>
               {recents.length ? (
@@ -531,9 +569,23 @@ export default function GranthExtractor() {
                 </p>
               ) : null}
               {mode === "pages" && volume ? (
-                <p className="exHave">
-                  {volumeName(work, volume.key)}: pages 1–{volume.pageCount ?? "?"}
-                </p>
+                <>
+                  {bookNumbering ? (
+                    <div className="exKinds" role="radiogroup" aria-label="Which page numbers">
+                      <button type="button" role="radio" aria-checked={pageKind === "book"} className={pageKind === "book" ? "isOn" : ""} onClick={() => setPageKind("book")}>
+                        Book page numbers
+                      </button>
+                      <button type="button" role="radio" aria-checked={pageKind === "pdf"} className={pageKind === "pdf" ? "isOn" : ""} onClick={() => setPageKind("pdf")}>
+                        PDF page numbers
+                      </button>
+                    </div>
+                  ) : null}
+                  <p className="exHave">
+                    {byBookPage
+                      ? `${volumeName(work, volume.key)}: the numbers printed on the pages`
+                      : `${volumeName(work, volume.key)}: PDF pages 1–${volume.pageCount ?? "?"}`}
+                  </p>
+                </>
               ) : null}
               <form
                 className="exNumbers"

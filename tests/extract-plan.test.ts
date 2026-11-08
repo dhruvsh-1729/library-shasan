@@ -56,3 +56,12 @@ test("email parts each stay under the limit, cutting a passage that is too big a
   for (const g of groups) assert.ok(pageTotal(g) <= 8, `group of ${pageTotal(g)} pages`);
   assert.equal(groups.reduce((n, g) => n + pageTotal(g), 0), 26);
 });
+
+test("pages asked by the book's printed numbers land on the PDF pages that carry them", async () => {
+  const { planBookPages } = await import("@/lib/extract-plan");
+  // front matter: book page 242 is PDF page 265
+  const printed: Array<[number, string]> = Array.from({ length: 30 }, (_, i) => [260 + i, String(237 + i)]);
+  const plan = planBookPages("242-244, 250", "v", "u", 400, printed);
+  assert.deepEqual(plan.passages.map((p) => [p.first, p.last, p.label]), [[265, 267, "Book pages 242–244"], [273, 273, "Book page 250"]]);
+  assert.deepEqual(plan.missing, []);
+});

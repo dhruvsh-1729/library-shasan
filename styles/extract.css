@@ -676,3 +676,31 @@
     width: 100%;
   }
 }
+
+/* Pages asked by the book's printed numbers or by the PDF's. */
+.exKinds {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 4px;
+  border: 1px solid var(--lt-glass-edge);
+  border-radius: 999px;
+  background: var(--lt-glass-lit);
+}
+
+.exKinds button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--lt-ink-2);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.exKinds button.isOn {
+  background: var(--lt-cobalt);
+  color: #fff;
+}
