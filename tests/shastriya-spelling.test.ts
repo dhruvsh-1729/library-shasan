@@ -25,3 +25,20 @@ test("a shastriya word written in Gujarati letters folds to the same search term
 test("the word's own form is always among its Sanskrit forms", () => {
   for (const { word } of SHASTRIYA_WORDS) assert.ok(sanskritQueryForms(word).includes(foldSanskrit(word)), word);
 });
+
+test("s-, vat- and ū-stems are declined as Sanskrit declines them", () => {
+  const has = (word: string, ...forms: string[]) => {
+    const all = sanskritQueryForms(word);
+    for (const form of forms) assert.ok(all.includes(foldSanskrit(form)), `${word} → ${form}`);
+  };
+  has("तपस्", "तपः", "तपसा", "तपोभिः", "तपांसि", "तपःसु");
+  has("तपः", "तपसा", "तपोभिः");
+  has("मनस्", "मनः", "मनसा", "मनोभिः");
+  has("ज्योतिस्", "ज्योतिः", "ज्योतिषा", "ज्योतिर्भिः");
+  has("आयुस्", "आयुः", "आयुषा", "आयुर्भिः");
+  has("भगवत्", "भगवान्", "भगवन्तम्", "भगवता", "भगवद्भिः");
+  has("भगवान्", "भगवता", "भगवन्तः");
+  has("वधू", "वधूः", "वध्वा", "वधूनाम्");
+  has("कर्म", "कर्मणा", "कर्माणि");
+  assert.ok(!sanskritQueryForms("तपस्").includes(foldSanskrit("तपस्भिः")));
+});
