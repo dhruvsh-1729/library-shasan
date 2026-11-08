@@ -126,6 +126,8 @@ export function isTooShortForContains(query: string) {
 }
 
 const GUJARATI_CHAR = /[\u0A80-\u0AFF]/;
+/** Folded Sanskrit forms that, printed in Gujarati, are common Gujarati words. */
+const GUJARATI_HOMOGRAPHS = new Set(["प्रमाणे", "वधु", "माटे", "जेवा", "तेवा", "पासे", "साथे"].map((w) => foldSanskrit(w)));
 const gujaratiOnlyCache = new Map<string, string[]>();
 /** Gujarati-inflected forms that are not also Sanskrit forms of the word. */
 function gujaratiOnlyForms(query: string) {
@@ -191,6 +193,9 @@ function findInFolded(folded: FoldedContent, query: string, mode: OCRSearchMode)
     if (mode === "sanskrit_forms" && isGrammarLabelAt(source, start, end, hit)) continue;
     // A Gujarati case ending only makes sense on a word written in Gujarati.
     if (mode === "sanskrit_forms" && !GUJARATI_CHAR.test(source.slice(start, end)) && gujaratiOnlyForms(needle).includes(hit)) continue;
+    // A Sanskrit form that is also an everyday Gujarati word (પ્રમાણે "according
+    // to") is not the searched word when it is printed in Gujarati.
+    if (mode === "sanskrit_forms" && GUJARATI_HOMOGRAPHS.has(hit) && hit !== foldSanskrit(needle) && GUJARATI_CHAR.test(source.slice(start, end))) continue;
     matches.push({ start, end, text: source.slice(start, end), query: needle });
   }
 

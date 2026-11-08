@@ -145,3 +145,9 @@ test("search defaults: anywhere inside a word, Devanagari only; both scripts are
   assert.equal(again.scripts, null);
   assert.equal(again.matchMode, "exact_word");
 });
+
+test("a Sanskrit form that is an everyday Gujarati word is not counted in Gujarati text", () => {
+  const page = "શાસ્ત્ર પ્રમાણે ચાલવું. प्रमाणे सति कार्यं भवति।";
+  assert.deepEqual(texts(findOCRSearchMatchesForQueries(page, ["प्रमाण"], "sanskrit_forms")), ["प्रमाणे"]);
+  assert.equal(findOCRSearchMatchesForQueries("પ્રમાણે", ["प्रमाणे"], "sanskrit_forms").length, 1);
+});
