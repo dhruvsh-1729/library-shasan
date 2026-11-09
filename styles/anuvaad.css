@@ -431,3 +431,70 @@
     flex-basis: 100%;
   }
 }
+
+/* Saved words (components/AnuvaadWords) */
+.awAdd {
+  display: grid;
+  gap: 12px;
+}
+
+.awRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.awList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.awItem {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.awItem.isOn {
+  border-color: rgba(30, 80, 160, 0.45);
+}
+
+.awTake {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.awHead {
+  font-size: 18px;
+}
+
+.awWord {
+  max-width: 320px;
+}
+
+.awGu {
+  width: 100%;
+  resize: vertical;
+}
+
+.awProposals {
+  display: grid;
+  gap: 12px;
+}
+
+.vySavedWords ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.vySavedWords li + li {
+  margin-top: 4px;
+}

@@ -17,6 +17,7 @@
 //
 // The reader never sees which service writes the anuvaad.
 
+import { savedWordsInText } from "@/lib/anuvaad/saved-words";
 import { CHAT_MODELS, SarvamChatError, chat } from "@/lib/sarvam-chat";
 import { type AnuvaadBlock, parseAnuvaad, toMarkup } from "@/lib/anuvaad/markup";
 
@@ -243,7 +244,7 @@ function stopRepeats(text: string, lines = false) {
   return out.join(lines ? "\n" : " ").trim();
 }
 
-async function literal(piece: string, depth = 0): Promise<string> {
+async function literal(piece: string, depth = 0, saved = ""): Promise<string> {
   let best = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const { content } = await chat({
@@ -251,7 +252,7 @@ async function literal(piece: string, depth = 0): Promise<string> {
       temperature: attempt ? 0.3 : 0,
       maxTokens: Math.min(4000, 400 + piece.length * 4),
       messages: [
-        { role: "system", content: LITERAL_RULES },
+        { role: "system", content: LITERAL_RULES + saved },
         {
           role: "user",
           content: attempt ? `Translate the meaning of this into Gujarati sentences (not a transliteration):\n${piece}` : piece,
@@ -270,11 +271,23 @@ async function literal(piece: string, depth = 0): Promise<string> {
     const cuts = [...piece.matchAll(/[,।;]\s/g)].map((m) => (m.index ?? 0) + 1);
     const cut = cuts.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid))[0] ?? piece.lastIndexOf(" ", mid);
     if (cut > 0 && cut < piece.length - 1) {
-      const halves = await Promise.all([literal(piece.slice(0, cut).trim(), depth + 1), literal(piece.slice(cut).trim(), depth + 1)]);
+      const halves = await Promise.all([literal(piece.slice(0, cut).trim(), depth + 1, saved), literal(piece.slice(cut).trim(), depth + 1, saved)]);
       return halves.join(" ");
     }
   }
   return best;
+}
+
+/**
+ * Maharaj Saheb's own Gujarati for the saved words this text prints
+ * (lib/anuvaad/saved-words), as a glossary that comes before the general one.
+ */
+async function savedGlossary(text: string) {
+  const words = await savedWordsInText(text).catch(() => []);
+  if (!words.length) return "";
+  return `\n\nMaharaj Saheb's own Gujarati for words in this text — use exactly these meanings, before the glossary above:\n${words
+    .map((w) => `${w.word} = ${w.gujarati}`)
+    .join("\n")}`;
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>) {
@@ -298,14 +311,15 @@ export async function translatePassage(input: PassageInput): Promise<Anuvaad> {
   const passage = input.passage.replace(/\s+/g, " ").trim();
   if (!passage) throw new AnuvaadError("This row has no passage to translate.", 400);
   if (passage.length > MAX_PASSAGE) throw new AnuvaadError("This passage is too long to translate at once. Split it into two rows.", 400);
+  const saved = await savedGlossary(passage);
 
   let lastError: unknown = null;
   let literals: string[] | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      literals ??= await mapLimit(splitPassage(passage), 4, (piece) => literal(piece));
+      literals ??= await mapLimit(splitPassage(passage), 4, (piece) => literal(piece, 0, saved));
       const literalText = literals.join("\n");
-      const system = STRUCTURE_RULES.replace("{EXAMPLE}", EXAMPLE_ANUVAAD);
+      const system = STRUCTURE_RULES.replace("{EXAMPLE}", EXAMPLE_ANUVAAD) + saved;
       const user = [
         `Vishay of the box: ${input.vishay || "(not given)"}`,
         `Granth: ${input.granth || "(not given)"}`,
@@ -425,12 +439,13 @@ export async function translatePage(input: PageInput): Promise<Anuvaad> {
   const devanagari = text.match(/[ऀ-ॿ]/g)?.length ?? 0;
   if (devanagari < 20) throw new AnuvaadError("No Sanskrit or Prakrit text was found on this page.", 400);
   if (text.length > MAX_PAGE_TEXT) throw new AnuvaadError("This page has too much text to translate at once.", 400);
+  const saved = await savedGlossary(text);
 
   let lastError: unknown = null;
   let literals: string[] | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      literals ??= await mapLimit(pagePieces(text), 4, (piece) => literal(piece));
+      literals ??= await mapLimit(pagePieces(text), 4, (piece) => literal(piece, 0, saved));
       const literalText = literals.join("\n");
       const user = [
         input.source ? `Book: ${input.source}` : "",
@@ -441,13 +456,13 @@ export async function translatePage(input: PageInput): Promise<Anuvaad> {
       ]
         .filter((line, i) => line || i > 0)
         .join("\n");
-      const room = 31_000 - tokensFor(PAGE_RULES.length + user.length);
+      const room = 31_000 - tokensFor(PAGE_RULES.length + saved.length + user.length);
       const { content } = await chat({
         model: CHAT_MODELS.fast,
         temperature: 0,
         maxTokens: Math.max(1500, Math.min(8000, room)),
         messages: [
-          { role: "system", content: PAGE_RULES },
+          { role: "system", content: PAGE_RULES + saved },
           { role: "user", content: user },
         ],
       });

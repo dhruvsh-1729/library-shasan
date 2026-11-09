@@ -54,7 +54,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   };
   try {
     const pdf = type.includes("pdf") ? bytes : await imageToPdf(bytes, type);
-    const pages = await ocrPdf(pdf, "hi-IN", (done, total) => emit({ type: "progress", done, total }));
+    // Gujarati pages (an anuvaad) are read as Gujarati; box pages as Sanskrit/Hindi
+    const language = req.query.language === "gu-IN" ? "gu-IN" : "hi-IN";
+    const pages = await ocrPdf(pdf, language, (done, total) => emit({ type: "progress", done, total }));
     emit({ type: "done", pages });
   } catch (error) {
     if (!(error instanceof OcrError)) console.error("anuvaad ocr failed:", error instanceof Error ? error.message : error);

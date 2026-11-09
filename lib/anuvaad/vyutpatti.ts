@@ -16,9 +16,12 @@
 import { CHAT_MODELS, SarvamChatError, chat } from "@/lib/sarvam-chat";
 import { gujaratiToDevanagari } from "@/lib/to-devanagari";
 import { AnuvaadError, parseAnuvaad } from "@/lib/anuvaad/translate";
+import type { AnuvaadSource } from "@/lib/vyutpatti/format";
+import { koshGujaratiFor } from "@/lib/vyutpatti/kosh-gujarati";
+import { savedGujaratiFor } from "@/lib/anuvaad/saved-words";
 
 /** One entry of the vyutpatti: its word and the rest of what the sheet prints for it. */
-export type VyutpattiEntryInput = { head: string; body: string };
+export type VyutpattiEntryInput = { head: string; body: string; granthKey?: string; page?: number };
 
 export type VyutpattiAnuvaad = {
   /** The anuvaad of each entry, in the order sent; "" where it could not be made. */
@@ -27,6 +30,10 @@ export type VyutpattiAnuvaad = {
   closing: string;
   /** How many entries are left without an anuvaad. */
   failed: number;
+  /** Where each entry's anuvaad is from ("" where there is none). */
+  sources: Array<AnuvaadSource | "">;
+  /** Maharaj Saheb's saved Gujarati for the vishay's words, once per word. */
+  savedWords: Array<{ word: string; gujarati: string }>;
 };
 
 const RULES = `You write the Gujarati anuvaad of one line of a Sanskrit vyutpatti sheet for a Jain ācārya. The line gives a word, its gender, its derivation as printed in a Sanskrit kosh (or a samāsa vigraha), and its meaning. Sanskrit grammar, never Hindi.
@@ -121,7 +128,11 @@ export function entryForTranslation(entry: VyutpattiEntryInput): VyutpattiEntryI
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 1200);
-  return { head: String(entry.head ?? "").normalize("NFC").trim(), body };
+  return {
+    head: String(entry.head ?? "").normalize("NFC").trim(),
+    body,
+    ...(entry.granthKey && entry.page ? { granthKey: entry.granthKey, page: entry.page } : {}),
+  };
 }
 
 // ------------------------------------------------------------ one entry
@@ -288,11 +299,28 @@ export async function translateVyutpatti(vishay: string, input: VyutpattiEntryIn
   if (!usable.length) throw new AnuvaadError("There is no vyutpatti to translate.", 400);
   const fresh = Boolean(options.fresh);
 
+  // First what is already printed or saved: the Gujarati the kosh prints for
+  // the entry (Shabda Ratna Mahodadhi, AVPK), then Maharaj Saheb's own
+  // anuvaad of the word for an entry whose kosh prints none. Only the other
+  // entries are written.
+  const saved = await savedGujaratiFor(input).catch((error) => {
+    console.error("saved anuvaad lookup failed:", error instanceof Error ? error.message : error);
+    return new Map<number, string>();
+  });
+  const fromKosh = await koshGujaratiFor(input).catch((error) => {
+    console.error("kosh Gujarati failed:", error instanceof Error ? error.message : error);
+    return new Map<number, string>();
+  });
+  const given = (i: number): { text: string; from: AnuvaadSource } | null =>
+    fromKosh.has(i) ? { text: fromKosh.get(i)!, from: "kosh" } : saved.has(i) ? { text: saved.get(i)!, from: "saved" } : null;
+
   // Identical entries are asked once, then shared.
   const pending = new Map<string, Promise<string>>();
   const jobs: Array<() => Promise<string>> = [];
-  const results: Array<Promise<string>> = entries.map((e) => {
+  const results: Array<Promise<string>> = entries.map((e, i) => {
     if (!e.head || !e.body) return Promise.resolve("");
+    const ready = given(i);
+    if (ready) return Promise.resolve(ready.text);
     const id = `${e.head}\u0000${e.body}`;
     let job = pending.get(id);
     if (!job) {
@@ -311,5 +339,12 @@ export async function translateVyutpatti(vishay: string, input: VyutpattiEntryIn
 
   const failed = entries.filter((e, i) => e.head && e.body && !texts[i]).length;
   if (failed === usable.length) throw new AnuvaadError("The Gujarati anuvaad could not be prepared just now. Please try again.");
-  return { entries: texts, closing: await closing, failed };
+  const sources = entries.map((e, i): AnuvaadSource | "" => (!texts[i] ? "" : given(i)?.from ?? "written"));
+  // Maharaj Saheb's saved Gujarati of each word, shown with the vyutpatti even where the kosh's is used
+  const savedWords: Array<{ word: string; gujarati: string }> = [];
+  for (const [i, gujarati] of saved) {
+    const word = entries[i].head;
+    if (!savedWords.some((w) => w.word === word)) savedWords.push({ word, gujarati });
+  }
+  return { entries: texts, closing: await closing, failed, sources, savedWords };
 }

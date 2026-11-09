@@ -36,7 +36,7 @@ type Item = {
   lines: ReaderLine[];
   rows: TableRow[];
   /** The anuvaad run; each entry's Gujarati is kept on its row (rows[i].anuvaad). */
-  anuvaad?: { status: "running" | "done" | "error"; closing: string; failed?: number; error?: string };
+  anuvaad?: { status: "running" | "done" | "error"; closing: string; failed?: number; error?: string; savedWords?: Array<{ word: string; gujarati: string }> };
 };
 
 // Letters may be typed in Devanagari, Gujarati or Roman; the last two are
@@ -251,15 +251,22 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "The Gujarati anuvaad could not be prepared.");
       const texts: string[] = Array.isArray(json.entries) ? json.entries.map((t: unknown) => String(t ?? "")) : [];
+      const sources: string[] = Array.isArray(json.sources) ? json.sources.map((t: unknown) => String(t ?? "")) : [];
       // Matched by the entry's text, so a row removed or edited meanwhile does not take another's anuvaad.
-      const byText = new Map(entries.map((e, i) => [`${e.head}\u0000${e.body}`, texts[i] ?? ""]));
+      const byText = new Map(entries.map((e, i) => [`${e.head}\u0000${e.body}`, { text: texts[i] ?? "", from: sources[i] ?? "" }]));
       update(key, (it) => ({
         rows: it.rows.map((r) => {
           const e = rowEntry(r);
           const t = byText.get(`${e.head}\u0000${e.body}`);
-          return t ? { ...r, anuvaad: t } : r;
+          const from = t?.from === "kosh" || t?.from === "saved" || t?.from === "written" ? t.from : undefined;
+          return t?.text ? { ...r, anuvaad: t.text, anuvaadFrom: from } : r;
         }),
-        anuvaad: { status: "done", closing: String(json.closing ?? ""), failed: Number(json.failed) || 0 },
+        anuvaad: {
+          status: "done",
+          closing: String(json.closing ?? ""),
+          failed: Number(json.failed) || 0,
+          savedWords: Array.isArray(json.savedWords) ? json.savedWords.map((w: { word?: unknown; gujarati?: unknown }) => ({ word: String(w.word ?? ""), gujarati: String(w.gujarati ?? "") })) : [],
+        },
       }));
     } catch (error) {
       update(key, (it) => ({
@@ -641,7 +648,9 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
                                 ) : null}
                                 {withAnuvaad && row.anuvaad !== undefined ? (
                                   <div className="vyEntryGu">
-                                    <span className="vyEntryGuLabel anGu">અનુવાદ:</span>
+                                    <span className="vyEntryGuLabel anGu">
+                                      {row.anuvaadFrom === "kosh" ? "કોશમાંથી:" : row.anuvaadFrom === "saved" ? "મહારાજ સાહેબનો અનુવાદ:" : "અનુવાદ:"}
+                                    </span>
                                     <AutoGrow className="vyEdit indic" label={`Gujarati anuvaad of entry ${index + 1}`} value={row.anuvaad} onChange={(v) => editRow(item.key, index, "anuvaad", v)} />
                                   </div>
                                 ) : null}
@@ -663,6 +672,18 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
 
                     {withAnuvaad || item.anuvaad ? (
                       <section className="vyAnuvaad" aria-label="Gujarati anuvaad">
+                        {item.anuvaad?.savedWords?.length ? (
+                          <div className="vySavedWords">
+                            <p className="vyEntryGuLabel anGu">મહારાજ સાહેબનો અનુવાદ:</p>
+                            <ul>
+                              {item.anuvaad.savedWords.map((w) => (
+                                <li key={w.word} className="indic">
+                                  <strong>{w.word}:</strong> {w.gujarati}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
                         {item.anuvaad?.closing ? (
                           <AutoGrow
                             className="vyEdit vyClosing indic"

@@ -62,7 +62,14 @@ export type TableRow = {
   source: EntrySource;
   /** The entry's Gujarati anuvaad, printed directly under it (made on the page when the switch is on). */
   anuvaad?: string;
+  /** Where that anuvaad is from: the kosh's own printed Gujarati, Maharaj Saheb's saved anuvaad, or written for the entry. */
+  anuvaadFrom?: AnuvaadSource;
+  /** The kosh and PDF page the entry was read from, so its printed Gujarati can be found. */
+  granthKey?: string;
+  pdfPage?: number;
 };
+
+export type AnuvaadSource = "kosh" | "saved" | "written";
 
 /** "देव - पुं. (…) (kosh, पृ. 348)" → the word and the rest of the ShastraPath. */
 export function splitShastraPath(shastraPath: string) {
@@ -72,9 +79,13 @@ export function splitShastraPath(shastraPath: string) {
 }
 
 /** One entry as sent for its Gujarati anuvaad: the word, then its ShastraPath and meaning. */
-export function rowEntry(row: Pick<TableRow, "shastraPath" | "inRem">) {
+export function rowEntry(row: Pick<TableRow, "shastraPath" | "inRem"> & Partial<Pick<TableRow, "granthKey" | "pdfPage">>) {
   const { head, rest } = splitShastraPath(row.shastraPath);
-  return { head, body: [rest, String(row.inRem ?? "").trim()].filter(Boolean).join(" - ") };
+  return {
+    head,
+    body: [rest, String(row.inRem ?? "").trim()].filter(Boolean).join(" - "),
+    ...(row.granthKey && row.pdfPage ? { granthKey: row.granthKey, page: row.pdfPage } : {}),
+  };
 }
 
 const GENDER_SCRIPT: Record<string, string> = {
@@ -171,6 +182,8 @@ export function tableRowForEntry(entry: VyutpattiEntry): TableRow {
     // The full Gujarati meaning; when the reading gave only the vishay's sense, that sense (never an empty cell).
     inRem: `${meaningPhrase(entry.meaningGu || entry.relevantGu)}${flags}`.trim(),
     source: "kosh",
+    granthKey: entry.granthKey,
+    pdfPage: entry.pdfPage,
   };
 }
 

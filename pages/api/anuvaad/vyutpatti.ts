@@ -24,7 +24,12 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   const raw = Array.isArray(body.entries) ? body.entries : Array.isArray(body.lines) ? body.lines : [];
   const entries = raw.slice(0, 80).map((l) => {
     const line = (l ?? {}) as Record<string, unknown>;
-    return { head: text(line.head, 200), body: text(line.body, 4000) };
+    const page = Number(line.page);
+    return {
+      head: text(line.head, 200),
+      body: text(line.body, 4000),
+      ...(line.granthKey && Number.isInteger(page) && page > 0 ? { granthKey: text(line.granthKey, 40), page } : {}),
+    };
   });
   try {
     return res.status(200).json(await translateVyutpatti(text(body.vishay, 300), entries, { fresh: body.fresh === true }));

@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import { AppNav } from "@/components/AppNav";
 import { AnuvaadView } from "@/components/AnuvaadView";
+import { AnuvaadWords } from "@/components/AnuvaadWords";
 import { AnuvaadPages } from "@/components/AnuvaadPages";
 import { type BoxRow, parseBoxPages } from "@/lib/anuvaad/box";
 import { addImagePage, fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
@@ -532,14 +533,14 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
   );
 }
 
-type Mode = "box" | "pages";
+type Mode = "box" | "pages" | "words";
 
 export default function AnuvaadPage() {
   const router = useRouter();
   // The way chosen lives in the address (?mode=pages or ?mode=box), so a link
   // can open it straight away. It replaces the address rather than adding to
   // the history: the phone's back button must not drop work on the page.
-  const mode: Mode | null = router.query.mode === "box" || router.query.mode === "pages" ? router.query.mode : null;
+  const mode: Mode | null = router.query.mode === "box" || router.query.mode === "pages" || router.query.mode === "words" ? router.query.mode : null;
 
   // The action bar pins just under the page header, whose height changes with
   // the width (two rows of menu on a phone).
@@ -570,6 +571,7 @@ export default function AnuvaadPage() {
 
         {mode === "box" ? <BoxFlow onBack={() => choose(null)} /> : null}
         {mode === "pages" ? <AnuvaadPages onBack={() => choose(null)} /> : null}
+        {mode === "words" ? <AnuvaadWords onBack={() => choose(null)} /> : null}
         {mode === null ? (
           <main className="vyMain">
             <section className="vyForm exStep">
@@ -582,6 +584,10 @@ export default function AnuvaadPage() {
                 <button type="button" className="exChoice" onClick={() => choose("box")}>
                   <strong>Box files</strong>
                   <span>The printed box tables (Sr · V.T · Granth · ShastraPath). Each passage is translated.</span>
+                </button>
+                <button type="button" className="exChoice" onClick={() => choose("words")}>
+                  <strong>Saved words</strong>
+                  <span>Maharaj Saheb&apos;s Gujarati for the words of the box files. Add words from a box and its anuvaad, or correct them.</span>
                 </button>
               </div>
             </section>
