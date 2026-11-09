@@ -128,7 +128,11 @@ export function gujaratiOfEntry(pageText: string, granthKey: string, head: strin
     .filter((s) => headwordKeys(s.head).some((k: string) => want.has(k)))
     .map((s) => ({ ...s, text: lines.slice(s.line, s.end).join(" ").replace(/\s+/g, " ").trim() }));
   if (!found.length) return "";
-  const best = found.length === 1 || !hint ? found[0] : found.reduce((a, b) => (overlap(hint, b.text) > overlap(hint, a.text) ? b : a));
+  // the headword printed exactly as asked comes before a look-alike sharing its stem (हिंसा, not हिंस्रा);
+  // among those, the entry whose derivation is the one the vyutpatti read
+  const exact = found.filter((s) => foldSanskrit(s.head) === foldSanskrit(head));
+  const pool = exact.length ? exact : found;
+  const best = pool.length === 1 || !hint ? pool[0] : pool.reduce((a, b) => (overlap(hint, b.text) > overlap(hint, a.text) ? b : a));
   return printedGujarati(best.text, kosh.family);
 }
 

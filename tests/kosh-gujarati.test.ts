@@ -63,3 +63,10 @@ test("only real explanations are kept from an anuvaad page", () => {
   assert.equal(isAnuvaadPage("વિષય: વિરત જીવનો કર્મબંધ ".repeat(20)), true);
   assert.equal(isAnuvaadPage("स्थावराः पृथिव्यादयः किं बहुनोक्तेन ".repeat(20)), false);
 });
+
+test("the entry printed with the asked headword wins over a look-alike", () => {
+  const page = `हिंसा स्त्री. (हिंस्+अ+टाप्) વધ, મારી નાંખવું તે,
+ચોરી વગેરે કામ.
+हिंस्रा स्त्री. (हिंस्र+टाप्) જટામાંસી વનસ્પતિ, કાકાદની વનસ્પતિ.`;
+  assert.equal(gujaratiOfEntry(page, "382", "हिंसा", "स्त्री. - y"), "વધ, મારી નાંખવું તે, ચોરી વગેરે કામ.");
+});
