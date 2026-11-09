@@ -146,11 +146,15 @@ export function printedGujarati(entryText: string, family: string) {
     // चोर-पुं-३८१-ચોરી કરનાર, ચોર. ☐ synonyms… * derivation…
     // चोर-पुं-३८१-…, जीरण-पुं-४२२-शे० (१०३)-…, अहिंसा-સ્ત્રી-૮૨ …, जीर्ण-पुं न०-१४४૮-…
     text = text.replace(
-      /^[^-–]+[-–]\s*[^\s\-–]{1,8}(?:\s+[^\s\-–]{1,4})?\s*[-–]\s*[०-९૦-૯0-9]{1,5}(?:\s*[-–]?\s*\(?\s*(?:शे|શે)[०૦.]?\s*\(?[०-९૦-૯0-9]+\)?)?\s*[-–]?\s*/u,
+      /^[^-–]+[-–]\s*[^\s\-–]{1,8}(?:\s*[-–]?\s*(?:न|ન|पुं|પું)[.०૦]?)?\s*[-–]\s*[०-९૦-૯0-9]{1,5}(?:\s*[-–]?\s*\(?\s*(?:शे|શે)[०૦.]?\s*\(?[०-९૦-૯0-9]+\)?)?\s*[-–]?\s*/u,
       ""
     );
+    // a reference to the Śeṣa list left at the start: ", (शे. १५३)-"
+    text = text.replace(/^[\s,]*\(?\s*(?:शे|શે)[०૦.]?\s*[०-९૦-૯0-9]+\s*\)?\s*[-–]?\s*/u, "");
     // the meaning ends where the synonyms (☐), the derivation (*) or a cross-reference (द्र०) begin
     text = text.split(/[☐□*]|(?:द्र|દ્ર)[०૦.]/u)[0];
+    // a sūtra number is not meaning: "(उणा-३३८)"
+    text = text.replace(/\s*\(\s*(?:उणा|ઉણા)[^)]*\)/gu, "");
     // AVPK prints this part in Gujarati: letters the reading took for Devanagari are put back
     return text
       .replace(/[\u0900-\u0963\u0966-\u097f]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x180))

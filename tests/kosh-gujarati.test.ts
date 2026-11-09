@@ -70,3 +70,8 @@ test("the entry printed with the asked headword wins over a look-alike", () => {
 हिंस्रा स्त्री. (हिंस्र+टाप्) જટામાંસી વનસ્પતિ, કાકાદની વનસ્પતિ.`;
   assert.equal(gujaratiOfEntry(page, "382", "हिंसा", "स्त्री. - y"), "વધ, મારી નાંખવું તે, ચોરી વગેરે કામ.");
 });
+
+test("AVPK heads with two labels or a Śeṣa reference are left out", () => {
+  assert.equal(printedGujarati("धर्म-पुं-न.-१३७६-स्वरूप, स्वभाव. (उणा-३३८)", "avpk"), "સ્વરૂપ, સ્વભાવ.");
+  assert.equal(printedGujarati(", (शे. १५३)-नियम, व्रत. ☐ नियम", "avpk"), "નિયમ, વ્રત.");
+});
