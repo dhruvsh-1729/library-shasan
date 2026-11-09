@@ -32,8 +32,12 @@ export type WordProposal = { word: string; gujarati: string; inBox: boolean; onP
 
 let ready: Promise<unknown> | null = null;
 function ensureTable() {
-  ready ??= getTursoClient()
-    .batch(
+  // a read first: creating is a write, which waits behind any long write elsewhere
+  ready ??= (async () => {
+    const client = getTursoClient();
+    const found = await client.execute(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'anuvaad_saved_words'`);
+    if (found.rows.length) return;
+    await client.batch(
       [
         `CREATE TABLE IF NOT EXISTS anuvaad_saved_words (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,11 +51,11 @@ function ensureTable() {
         `CREATE INDEX IF NOT EXISTS anuvaad_saved_words_key ON anuvaad_saved_words (word_key)`,
       ],
       "write"
-    )
-    .catch((error) => {
-      ready = null;
-      throw error;
-    });
+    );
+  })().catch((error) => {
+    ready = null;
+    throw error;
+  });
   return ready;
 }
 

@@ -139,8 +139,8 @@ export function AnuvaadWords({ onBack }: { onBack: () => void }) {
       <section className="vyForm exStep">
         <h1 className="exQuestion">Saved words</h1>
         <p className="vyHint">
-          Maharaj Saheb&apos;s own Gujarati for the words of the box files. Vyutpatti shows it first for these words, and the Anuvaad uses it when the word is
-          in a passage.
+          Maharaj Saheb&apos;s own Gujarati for the words of the box files. Vyutpatti shows it with the kosh entries of these words, and the Anuvaad uses it
+          when the word is in a passage.
         </p>
         {notice ? <p className="anNote">{notice}</p> : null}
 

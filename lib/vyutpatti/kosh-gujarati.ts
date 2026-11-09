@@ -22,8 +22,12 @@ export function printsGujarati(granthKey: string | null | undefined) {
 
 let ready: Promise<unknown> | null = null;
 function ensureTable() {
-  ready ??= getTursoClient()
-    .execute(
+  // a read first: creating is a write, which waits behind any long write elsewhere
+  ready ??= (async () => {
+    const client = getTursoClient();
+    const found = await client.execute(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'kosh_page_gujarati'`);
+    if (found.rows.length) return;
+    await client.execute(
       `CREATE TABLE IF NOT EXISTS kosh_page_gujarati (
         granth_key TEXT NOT NULL,
         page_number INTEGER NOT NULL,
@@ -31,11 +35,11 @@ function ensureTable() {
         read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (granth_key, page_number)
       )`
-    )
-    .catch((error) => {
-      ready = null;
-      throw error;
-    });
+    );
+  })().catch((error) => {
+    ready = null;
+    throw error;
+  });
   return ready;
 }
 
