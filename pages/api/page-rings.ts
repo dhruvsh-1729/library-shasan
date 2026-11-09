@@ -3,7 +3,7 @@ import { setNoStore } from "@/lib/api-cache";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import { lineBoxRingsForPdf } from "@/lib/line-boxes";
-import { MAX_SEARCH_QUERIES, normalizeOCRSearchQueries, parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { MAX_SEARCH_QUERIES, normalizeOCRSearchQueries, parseOCRSearchModes, parseOCRSearchScripts } from "@/lib/ocr-search";
 
 // Where to ring the searched word on one page of a PDF, from our OCR's line
 // boxes (lib/line-boxes). Boxes are fractions of the page, lower-left origin.
@@ -27,7 +27,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const rings = await lineBoxRingsForPdf(pdfUrl, [{ page, width: 1, height: 1 }], {
       queries,
-      matchMode: parseOCRSearchMode(req.query.matchMode),
+      matchMode: parseOCRSearchModes(req.query.matchMode),
       scripts: parseOCRSearchScripts(req.query.scripts),
     });
     const boxes = rings.get(page);

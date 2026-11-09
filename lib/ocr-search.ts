@@ -9,6 +9,13 @@ import {
 
 export type OCRSearchMode = "sanskrit_forms" | "exact_word" | "contains" | "begins_with" | "ends_with";
 
+/**
+ * One Find option, or two ticked together ("sanskrit_forms,contains"): a page
+ * is found when either finds the word there, and its matches are the union of
+ * both (overlapping ones counted once). Written in the options' order.
+ */
+export type OCRSearchModes = OCRSearchMode | `${OCRSearchMode},${OCRSearchMode}`;
+
 export const OCR_SEARCH_MODE_OPTIONS: Array<{
   mode: OCRSearchMode;
   label: string;
@@ -50,9 +57,45 @@ export type SearchMatch = {
 
 const WORD_CHAR_PATTERN = /[\p{L}\p{N}\p{M}_]/u;
 
+function isSearchMode(raw: unknown): raw is OCRSearchMode {
+  return raw === "sanskrit_forms" || raw === "exact_word" || raw === "contains" || raw === "begins_with" || raw === "ends_with";
+}
+
+/** One Find option (the first, when the value names two). */
 export function parseOCRSearchMode(raw: unknown): OCRSearchMode {
-  if (raw === "sanskrit_forms" || raw === "contains" || raw === "begins_with" || raw === "ends_with") return raw;
-  return "exact_word";
+  return searchModeList(parseOCRSearchModes(raw))[0];
+}
+
+/** At most this many Find options at once. */
+export const MAX_SEARCH_MODES = 2;
+
+/** The Find options as one value, in the options' order: "sanskrit_forms,contains". */
+export function joinSearchModes(modes: Iterable<OCRSearchMode>): OCRSearchModes {
+  const chosen = new Set(modes);
+  const ordered = OCR_SEARCH_MODE_OPTIONS.map((option) => option.mode).filter((mode) => chosen.has(mode)).slice(0, MAX_SEARCH_MODES);
+  return (ordered.length ? ordered.join(",") : "exact_word") as OCRSearchModes;
+}
+
+/** Reads one or two Find options: "contains", "sanskrit_forms,contains" or an array. Unknown values fall back to exact word. */
+export function parseOCRSearchModes(raw: unknown): OCRSearchModes {
+  const values = (Array.isArray(raw) ? raw : raw == null ? [] : [raw]).flatMap((value) => String(value).split(/[,+\s]+/));
+  const modes = values.map((value) => value.trim()).filter(isSearchMode);
+  return joinSearchModes(modes.length ? modes : ["exact_word"]);
+}
+
+/** The Find options a value holds. */
+export function searchModeList(modes: OCRSearchModes): OCRSearchMode[] {
+  return String(modes).split(",").filter(isSearchMode);
+}
+
+/**
+ * The options a search really runs: anywhere-inside-a-word needs 3 letters
+ * after folding, so for a shorter word it is the word and all its forms.
+ */
+export function effectiveSearchModes(modes: OCRSearchModes, queries: string[]): OCRSearchModes {
+  const list = searchModeList(modes);
+  if (!list.includes("contains") || !queries.some(isTooShortForContains)) return modes;
+  return joinSearchModes(list.map((mode) => (mode === "contains" ? "sanskrit_forms" : mode)));
 }
 
 /**
@@ -91,8 +134,10 @@ function inScripts(text: string, scripts: OCRSearchScripts) {
   return !scripts || scripts.some((script) => SCRIPT_CHAR[script].test(text));
 }
 
-export function getOCRSearchModeLabel(mode: OCRSearchMode) {
-  return OCR_SEARCH_MODE_OPTIONS.find((option) => option.mode === mode)?.label ?? "Exact word";
+export function getOCRSearchModeLabel(modes: OCRSearchModes) {
+  return searchModeList(modes)
+    .map((mode) => OCR_SEARCH_MODE_OPTIONS.find((option) => option.mode === mode)?.label ?? "Exact word")
+    .join(" or ");
 }
 
 export function escapeRegExp(input: string) {
@@ -270,15 +315,19 @@ function mergeSearchMatches(matches: SearchMatch[]) {
 export function findOCRSearchMatchesForQueries(
   content: string,
   queries: string | string[],
-  mode: OCRSearchMode,
+  modes: OCRSearchModes,
   scripts: OCRSearchScripts = null
 ) {
   const normalizedQueries = normalizeOCRSearchQueries(queries);
   if (normalizedQueries.length === 0) return [];
 
   const folded = foldForMatching(content);
-  const matches = normalizedQueries.flatMap((query) => findInFolded(folded, query, mode));
-  matches.push(...matchesAcrossLineBreaks(content, normalizedQueries, mode));
+  const matches: SearchMatch[] = [];
+  // two Find options: every match either finds; overlapping ones are merged below
+  for (const mode of searchModeList(modes)) {
+    for (const query of normalizedQueries) matches.push(...findInFolded(folded, query, mode));
+    matches.push(...matchesAcrossLineBreaks(content, normalizedQueries, mode));
+  }
   return mergeSearchMatches(scripts ? matches.filter((match) => inScripts(match.text, scripts)) : matches);
 }
 
@@ -379,7 +428,7 @@ function snapToClusters(text: string, start: number, end: number) {
 export function buildOCRSearchOccurrences(
   content: string,
   queries: string | string[],
-  mode: OCRSearchMode,
+  mode: OCRSearchModes,
   maxChars = 240,
   scripts: OCRSearchScripts = null
 ): OCRSearchOccurrence[] {
@@ -420,7 +469,7 @@ export function buildOCRSearchExcerpt(content: string, query: string, mode: OCRS
 export function buildOCRSearchExcerptForQueries(
   content: string,
   queries: string | string[],
-  mode: OCRSearchMode,
+  mode: OCRSearchModes,
   maxChars = 180,
   scripts: OCRSearchScripts = null
 ) {

@@ -6,7 +6,7 @@ import path from "node:path";
 import { setNoStore } from "@/lib/api-cache";
 import { cleanFileName } from "@/lib/download-file";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
-import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { parseOCRSearchModes, parseOCRSearchScripts } from "@/lib/ocr-search";
 import { CsvFileWriter, bookNumber, granthPageLabel, parseSearchCsvColumns, searchCsvHeaders, type SearchCsvColumn } from "@/lib/search-csv";
 import {
   MAX_CSV_GRANTHS,
@@ -128,7 +128,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const body = (req.body || {}) as CsvBody;
     const delivery = body.delivery === "email" ? "email" : "download";
-    const matchMode = parseOCRSearchMode(body.matchMode);
+    const matchMode = parseOCRSearchModes(body.matchMode);
     const scripts = parseOCRSearchScripts(body.scripts);
     const queries = validateSearchDownloadQueries(String(body.q || "").trim(), parseQueryVariants(body.queryVariants), matchMode);
 

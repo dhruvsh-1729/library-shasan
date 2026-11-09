@@ -1,5 +1,5 @@
 import type { Client } from "@libsql/client";
-import { type OCRSearchMode, foldedNeedlesForQuery } from "./ocr-search";
+import { type OCRSearchModes, foldedNeedlesForQuery, searchModeList } from "./ocr-search";
 import { FOLDED_SCHEMA_STATEMENTS, FOLDED_TABLES, foldedUpsertStatements } from "./ocr-folded-index.mjs";
 import { reverseCodePoints as reverseFoldedCodePoints } from "./sanskrit-fold.mjs";
 
@@ -179,21 +179,82 @@ export async function upsertOCRPageSuffixIndex(
 }
 
 /**
- * The FTS table and single MATCH expression that prefilter pages for a set of
+ * The FTS table(s) and MATCH expression(s) that prefilter pages for a set of
  * queries. Everything runs on the folded index, so the MATCH terms are folded
  * with the same rules as the indexed text; findOCRSearchMatches then verifies
  * every candidate page against its real content.
+ *
+ * One Find option reads one table. Two may read two (anywhere-inside-a-word
+ * reads the letter-triple index, the word options the word index): `parts`
+ * holds one MATCH per table, and a page is a candidate when any part has it.
+ * `table`/`match` are the first part, for callers that only ever pass one option.
  */
-export function buildOCRPrefilter(queries: string[], mode: OCRSearchMode) {
-  const terms = new Set<string>();
-  for (const query of queries) {
-    for (const needle of foldedNeedlesForQuery(query, mode)) {
-      if (mode === "begins_with") terms.add(`${escapeFtsToken(needle)}*`);
-      else if (mode === "ends_with") terms.add(`${escapeFtsToken(reverseFoldedCodePoints(needle))}*`);
-      else terms.add(escapeFtsPhrase(needle));
+export function buildOCRPrefilter(queries: string[], modes: OCRSearchModes) {
+  const byTable = new Map<string, Set<string>>();
+  for (const mode of searchModeList(modes)) {
+    const table =
+      mode === "contains" ? FOLDED_TABLES.trigram : mode === "ends_with" ? FOLDED_TABLES.suffix : FOLDED_TABLES.words;
+    const terms = byTable.get(table) ?? new Set<string>();
+    byTable.set(table, terms);
+    for (const query of queries) {
+      for (const needle of foldedNeedlesForQuery(query, mode)) {
+        if (mode === "begins_with") terms.add(`${escapeFtsToken(needle)}*`);
+        else if (mode === "ends_with") terms.add(`${escapeFtsToken(reverseFoldedCodePoints(needle))}*`);
+        else terms.add(escapeFtsPhrase(needle));
+      }
     }
   }
-  const table =
-    mode === "contains" ? FOLDED_TABLES.trigram : mode === "ends_with" ? FOLDED_TABLES.suffix : FOLDED_TABLES.words;
-  return { table, match: [...terms].join(" OR "), termCount: terms.size };
+  const parts = [...byTable]
+    .filter(([, terms]) => terms.size > 0)
+    .map(([table, terms]) => ({ table, match: [...terms].join(" OR "), termCount: terms.size }));
+  if (!parts.length) parts.push({ table: FOLDED_TABLES.words, match: "", termCount: 0 });
+  return { ...parts[0], termCount: parts.reduce((n, part) => n + part.termCount, 0), parts };
+}
+
+type Prefilter = ReturnType<typeof buildOCRPrefilter>;
+
+/**
+ * The prefilter as the start of a page query: `from` joins the hit pages as
+ * `p` (ocr_pages), `where` is the index condition, `args` its values. One table
+ * keeps the plain FTS join; two read the union of both indexes' page ids.
+ */
+export function prefilterFrom(prefilter: Prefilter) {
+  if (prefilter.parts.length === 1) {
+    const { table, match } = prefilter.parts[0];
+    return { from: `FROM ${table} JOIN ocr_pages p ON p.id = ${table}.rowid`, where: `${table} MATCH ?`, args: [match] };
+  }
+  const ids = prefilterIds(prefilter);
+  return { from: `FROM (${ids.sql}) hit_ids JOIN ocr_pages p ON p.id = hit_ids.id`, where: "1 = 1", args: ids.args };
+}
+
+/** Page ids the prefilter offers (column `id`), every index read once; duplicates removed by UNION. */
+export function prefilterIds(prefilter: Prefilter) {
+  return {
+    sql: prefilter.parts.map(({ table }) => `SELECT rowid AS id FROM ${table} WHERE ${table} MATCH ?`).join(" UNION "),
+    args: prefilter.parts.map((part) => part.match),
+  };
+}
+
+/** Page ids after `after`, in order, `limit` at a time (a cursor over the hits). */
+export function prefilterIdsAfter(prefilter: Prefilter, after: number, limit: number) {
+  if (prefilter.parts.length === 1) {
+    const { table, match } = prefilter.parts[0];
+    return { sql: `SELECT rowid AS id FROM ${table} WHERE ${table} MATCH ? AND rowid > ? ORDER BY rowid LIMIT ?`, args: [match, after, limit] };
+  }
+  return {
+    sql: `SELECT id FROM (${prefilter.parts
+      .map(({ table }) => `SELECT rowid AS id FROM ${table} WHERE ${table} MATCH ? AND rowid > ?`)
+      .join(" UNION ")}) ORDER BY id LIMIT ?`,
+    args: [...prefilter.parts.flatMap((part) => [part.match, after]), limit],
+  };
+}
+
+/** How many pages the prefilter offers. */
+export function prefilterCount(prefilter: Prefilter) {
+  if (prefilter.parts.length === 1) {
+    const { table, match } = prefilter.parts[0];
+    return { sql: `SELECT count(*) AS n FROM ${table} WHERE ${table} MATCH ?`, args: [match] };
+  }
+  const ids = prefilterIds(prefilter);
+  return { sql: `SELECT count(*) AS n FROM (${ids.sql})`, args: ids.args };
 }

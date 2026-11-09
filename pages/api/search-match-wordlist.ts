@@ -5,7 +5,7 @@ import path from "node:path";
 import { setNoStore } from "@/lib/api-cache";
 import { cleanFileName } from "@/lib/download-file";
 import { DownloadEmailError, getDownloadRecipientClientKey, sendDownloadEmail } from "@/lib/download-email";
-import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { parseOCRSearchModes, parseOCRSearchScripts } from "@/lib/ocr-search";
 import {
   MAX_CSV_GRANTHS,
   MAX_CSV_ROWS,
@@ -122,7 +122,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const numbersOnly = String(req.query.layout || "") === "numbers";
     const body = (req.body || {}) as WordListBody;
     const delivery = body.delivery === "email" ? "email" : "download";
-    const matchMode = parseOCRSearchMode(body.matchMode);
+    const matchMode = parseOCRSearchModes(body.matchMode);
     const scripts = parseOCRSearchScripts(body.scripts);
     const queries = validateSearchDownloadQueries(String(body.q || "").trim(), parseQueryVariants(body.queryVariants), matchMode);
 

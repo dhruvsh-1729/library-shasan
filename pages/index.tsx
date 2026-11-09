@@ -18,11 +18,14 @@ import { parseGranthPageInput, pdfPagesForGranthPages } from "@/lib/granth-pages
 import {
   OCR_SEARCH_MODE_OPTIONS,
   type OCRSearchMode,
+  type OCRSearchModes,
   type OCRSearchScript,
   type OCRSearchScripts,
   findOCRSearchMatchesForQueries,
   normalizeOCRSearchQueries,
-  parseOCRSearchMode,
+  parseOCRSearchModes,
+  searchModeList,
+  joinSearchModes,
   parseOCRSearchScripts,
 } from "@/lib/ocr-search";
 import {
@@ -89,7 +92,7 @@ type SearchMatchPreview = {
   printed_pages?: Array<[number, string]>;
   truncated?: boolean;
   max_download_pages: number;
-  match_mode: OCRSearchMode;
+  match_mode: OCRSearchModes;
   queries?: string[];
 };
 
@@ -100,7 +103,7 @@ type DownloadPreviewState = {
   bookNo: string;
   query: string;
   queries: string[];
-  matchMode: OCRSearchMode;
+  matchMode: OCRSearchModes;
   scripts: OCRSearchScripts;
   loading: boolean;
   downloading: boolean;
@@ -150,7 +153,7 @@ type SearchSummary = {
   page: number;
   queries: string[];
   scripts: OCRSearchScripts;
-  matchMode: OCRSearchMode;
+  matchMode: OCRSearchModes;
   scopeLabel: string;
   granthIds: string[];
   missingGranths: string[];
@@ -173,6 +176,11 @@ const PLAIN_MODE_LABELS: Record<OCRSearchMode, string> = {
   ends_with: "Words ending with it",
   contains: "Anywhere inside a word",
 };
+
+/** The chosen Find option(s) in everyday words: "The word and all its forms + Anywhere inside a word". */
+function plainModeLabel(modes: OCRSearchModes) {
+  return searchModeList(modes).map((mode) => PLAIN_MODE_LABELS[mode]).join(" + ");
+}
 
 function isValidHttpUrl(value: string | null | undefined) {
   try {
@@ -230,7 +238,7 @@ function Ringed({ text, start, end }: { text: string; start: number; end: number
   );
 }
 
-function ringAll(text: string, queries: string[], mode: OCRSearchMode, scripts: OCRSearchScripts): ReactNode {
+function ringAll(text: string, queries: string[], mode: OCRSearchModes, scripts: OCRSearchScripts): ReactNode {
   const matches = findOCRSearchMatchesForQueries(text, queries, mode, scripts);
   if (!text || matches.length === 0) return text;
   const parts: ReactNode[] = [];
@@ -254,7 +262,20 @@ export default function SearchPage() {
 
   // ---------------------------------------------------------------- form
   const [q, setQ] = useState("");
-  const [searchMode, setSearchMode] = useState<OCRSearchMode>(DEFAULT_MATCH_MODE);
+  const [searchMode, setSearchMode] = useState<OCRSearchModes>(DEFAULT_MATCH_MODE);
+  // The option ticked last, so a third tick replaces the older of the two.
+  const lastTickedModeRef = useRef<OCRSearchMode | null>(null);
+  const toggleSearchMode = (mode: OCRSearchMode) => {
+    const on = searchModeList(searchMode);
+    if (on.includes(mode)) {
+      // the only one ticked stays: a search always has a Find option
+      if (on.length > 1) setSearchMode(joinSearchModes(on.filter((m) => m !== mode)));
+      return;
+    }
+    const kept = on.length < 2 ? on : on.filter((m) => m === lastTickedModeRef.current);
+    lastTickedModeRef.current = mode;
+    setSearchMode(joinSearchModes([...(kept.length ? kept : on.slice(-1)), mode]));
+  };
   const [scriptOn, setScriptOn] = useState<Record<OCRSearchScript, boolean>>({ devanagari: true, gujarati: false });
   const [scope, setScope] = useState<SearchScope>("all");
   // Kept while switching to "All granths" and back, so a selection is never lost.
@@ -724,7 +745,7 @@ export default function SearchPage() {
         page: Number(json.page ?? request.page),
         queries: json.queries?.length ? json.queries : queries,
         scripts: request.scripts,
-        matchMode: parseOCRSearchMode(json.match_mode ?? request.matchMode),
+        matchMode: parseOCRSearchModes(json.match_mode ?? request.matchMode),
         modeFellBack: Boolean(json.match_mode && json.match_mode !== request.matchMode),
         scopeLabel: request.scope === "all" ? "all granths" : plural(request.granthIds.length, "chosen granth"),
         granthIds: request.scope === "all" ? [] : request.granthIds,
@@ -734,7 +755,7 @@ export default function SearchPage() {
       setPhase("done");
       if (request.page === 1) {
         const label = [
-          PLAIN_MODE_LABELS[parseOCRSearchMode(request.matchMode)],
+          plainModeLabel(request.matchMode),
           request.scope === "all" ? "all granths" : plural(request.granthIds.length, "chosen granth"),
         ].join(" · ");
         void fetch("/api/search-history", {
@@ -1241,19 +1262,22 @@ export default function SearchPage() {
               </div>
               <div className="ltOption">
                 <span className="ltOptionLabel">Find</span>
-                <div className="ltChoices" role="radiogroup" aria-label="Find">
-                  {OCR_SEARCH_MODE_OPTIONS.map((option) => (
-                    <label key={option.mode} className={searchMode === option.mode ? "isOn" : ""}>
-                      <input
-                        type="radio"
-                        name="lt-mode"
-                        checked={searchMode === option.mode}
-                        onChange={() => setSearchMode(option.mode)}
-                      />
-                      {PLAIN_MODE_LABELS[option.mode]}
-                    </label>
-                  ))}
+                <div className="ltChoices" role="group" aria-label="Find" aria-describedby="lt-mode-hint">
+                  {OCR_SEARCH_MODE_OPTIONS.map((option) => {
+                    const on = searchModeList(searchMode).includes(option.mode);
+                    return (
+                      <label key={option.mode} className={on ? "isOn" : ""}>
+                        <input type="checkbox" checked={on} onChange={() => toggleSearchMode(option.mode)} />
+                        {PLAIN_MODE_LABELS[option.mode]}
+                      </label>
+                    );
+                  })}
                 </div>
+                <p id="lt-mode-hint" className="ltMuted ltModeHint">
+                  {searchModeList(searchMode).length > 1
+                    ? "Both ticked: you get every page either one finds."
+                    : "Tick a second one to see the pages either one finds."}
+                </p>
               </div>
 
               <div className="ltOption">
@@ -1301,7 +1325,7 @@ export default function SearchPage() {
           ) : (
             <p className="ltMuted ltOptionsNow">
               {[
-                PLAIN_MODE_LABELS[searchMode],
+                plainModeLabel(searchMode),
                 scripts ? `only ${scripts.map((s) => SCRIPT_LABELS[s]).join(" + ")}` : "Devanagari + Gujarati",
                 scope === "selected" ? `in ${plural(selectedIds.length, "chosen book")}` : "in all books",
               ]
@@ -1421,7 +1445,7 @@ export default function SearchPage() {
             </li>
             <li>
               <button type="button" onClick={() => { setSettingsOpen(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
-                {summary.scopeLabel} · {PLAIN_MODE_LABELS[summary.matchMode]}
+                {summary.scopeLabel} · {plainModeLabel(summary.matchMode)}
               </button>
             </li>
             <li className="exTrailEnd">
@@ -1493,7 +1517,7 @@ export default function SearchPage() {
                 </p>
               ) : null}
               {summary.modeFellBack ? (
-                <p className="ltWarn">“Anywhere inside a word” needs at least 3 letters, so this short word was searched as the word and all its forms.</p>
+                <p className="ltWarn">“Anywhere inside a word” needs at least 3 letters, so this short word was searched as the word and all its forms instead.</p>
               ) : null}
               {summary.missingGranths.length ? (
                 <p className="ltWarn">{plural(summary.missingGranths.length, "chosen book")} could not be found and were left out.</p>

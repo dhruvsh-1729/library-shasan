@@ -1,11 +1,11 @@
 import Head from "next/head";
 import OcrReplacePanel from "@/components/OcrReplacePanel";
 import {
-  type OCRSearchMode,
+  type OCRSearchModes,
   type OCRSearchScripts,
   findOCRSearchMatchesForQueries,
   getOCRSearchModeLabel,
-  parseOCRSearchMode,
+  parseOCRSearchModes,
   parseOCRSearchScripts,
 } from "@/lib/ocr-search";
 import Link from "next/link";
@@ -45,7 +45,7 @@ function readSingleQuery(value: string | string[] | undefined) {
 function buildOccurrenceSummary(
   content: string,
   queries: string[],
-  mode: OCRSearchMode,
+  mode: OCRSearchModes,
   scripts: OCRSearchScripts,
   maxChars = 120,
 ) {
@@ -94,7 +94,7 @@ export default function OCRTextViewerPage() {
   const pageRaw = readSingleQuery(router.query.page);
   const targetPage = pageRaw ? Number(pageRaw) : null;
   const q = readSingleQuery(router.query.q);
-  const matchMode = parseOCRSearchMode(readSingleQuery(router.query.matchMode));
+  const matchMode = parseOCRSearchModes(readSingleQuery(router.query.matchMode));
   // Every spelling the search used ("hinsa" alone matches nothing in Devanagari
   // text), and the scripts it kept, so this page shows the same hits.
   const variantsKey = [q, ...[router.query.queryVariant ?? []].flat()]

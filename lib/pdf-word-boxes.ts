@@ -10,7 +10,7 @@
 // Positions inside an item are estimated from the item's width shared out by
 // character; for a word that is enough to put a ring around it.
 
-import { type OCRSearchMode, type OCRSearchScripts, findOCRSearchMatchesForQueries } from "@/lib/ocr-search";
+import { type OCRSearchModes, type OCRSearchScripts, findOCRSearchMatchesForQueries } from "@/lib/ocr-search";
 
 /** The parts of a pdf.js TextItem this needs. */
 export type PdfTextItem = {
@@ -133,7 +133,7 @@ function boxInItem(piece: Piece, from: number, to: number): Omit<WordBox, "text"
 export function findWordBoxes(
   items: PdfTextItem[],
   queries: string[],
-  mode: OCRSearchMode,
+  mode: OCRSearchModes,
   scripts: OCRSearchScripts = null
 ): WordBox[] {
   if (!items.length || !queries.length) return [];

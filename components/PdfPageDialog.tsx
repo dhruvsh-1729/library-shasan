@@ -5,8 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   findOCRSearchMatchesForQueries,
   normalizeOCRSearchQueries,
-  parseOCRSearchMode,
-  type OCRSearchMode,
+  parseOCRSearchModes,
+  type OCRSearchModes,
   type OCRSearchScripts,
 } from "@/lib/ocr-search";
 import { openPdf } from "@/lib/pdf-range-source";
@@ -20,7 +20,7 @@ type RenderTask = import("pdfjs-dist").RenderTask;
 type TextLayer = import("pdfjs-dist").TextLayer;
 
 /** Ring boxes (page fractions, lower-left origin) from our OCR's line boxes, or null. */
-async function fetchLineRings(pdfUrl: string, page: number, terms: string[], mode: OCRSearchMode, scripts: OCRSearchScripts) {
+async function fetchLineRings(pdfUrl: string, page: number, terms: string[], mode: OCRSearchModes, scripts: OCRSearchScripts) {
   try {
     const params = new URLSearchParams({ pdfUrl, page: String(page), q: terms[0] ?? "", matchMode: mode });
     for (const term of terms.slice(1)) params.append("queryVariant", term);
@@ -41,7 +41,7 @@ export type PdfDialogTarget = {
   pageCount?: number | null;
   searchTerm?: string | null;
   searchTerms?: string[] | null;
-  searchMode?: OCRSearchMode | null;
+  searchMode?: OCRSearchModes | null;
   searchScripts?: OCRSearchScripts;
 };
 
@@ -90,7 +90,7 @@ function titleFromUrl(pdfUrl: string | null) {
 function applySearchHighlights(
   textDivs: HTMLElement[],
   queries: string[],
-  mode: OCRSearchMode,
+  mode: OCRSearchModes,
   scripts: OCRSearchScripts = null
 ) {
   if (queries.length === 0) return 0;
@@ -151,7 +151,7 @@ export function PdfPageDialog({ target, onClose }: PdfPageDialogProps) {
     () => normalizeOCRSearchQueries(target?.searchTerm || "", target?.searchTerms || []),
     [target?.searchTerm, target?.searchTerms]
   );
-  const highlightMode = useMemo(() => parseOCRSearchMode(target?.searchMode), [target?.searchMode]);
+  const highlightMode = useMemo(() => parseOCRSearchModes(target?.searchMode), [target?.searchMode]);
   const highlightScripts = target?.searchScripts ?? null;
 
   const [pdfModule, setPdfModule] = useState<PdfJsModule | null>(null);

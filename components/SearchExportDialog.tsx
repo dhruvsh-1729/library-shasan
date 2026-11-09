@@ -4,7 +4,7 @@ import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/Download
 import { LightTableIcon } from "@/components/LightTableIcon";
 import { ExportActions, Sheet, Stepper } from "@/components/Sheet";
 import { downloadBlob, filenameFromResponse } from "@/lib/download-file";
-import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
+import type { OCRSearchModes, OCRSearchScripts } from "@/lib/ocr-search";
 import { MAX_CONTEXT_PAGE_RADIUS, normalizeContextPageRadius } from "@/lib/page-context";
 
 /**
@@ -60,7 +60,7 @@ type ExportPreview = {
   exportable_granths: number;
   total_matched_pages: number;
   truncated: boolean;
-  match_mode: OCRSearchMode;
+  match_mode: OCRSearchModes;
   queries: string[];
   max_export_granth_preview: number;
   max_combined_pdf_granths: number;
@@ -72,7 +72,7 @@ type ExportPreview = {
 type SearchExportDialogProps = {
   open: boolean;
   queries: string[];
-  matchMode: OCRSearchMode;
+  matchMode: OCRSearchModes;
   scripts: OCRSearchScripts;
   granthIds: string[];
   scopeLabel: string;

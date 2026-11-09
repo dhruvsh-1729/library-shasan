@@ -371,6 +371,11 @@
   min-width: 0;
 }
 
+.ltModeHint {
+  margin: 0;
+  font-size: 12.5px;
+}
+
 .ltOptionLabel {
   color: var(--lt-ink-3);
   font-size: 12.5px;

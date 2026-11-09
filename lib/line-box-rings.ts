@@ -9,7 +9,7 @@
 // the stored text is placed on its line's box, and along the line by syllable
 // widths; the ring count is exactly the page's occurrence count.
 
-import { type OCRSearchMode, type OCRSearchScripts, findOCRSearchMatchesForQueries } from "@/lib/ocr-search";
+import { type OCRSearchModes, type OCRSearchScripts, findOCRSearchMatchesForQueries } from "@/lib/ocr-search";
 import { type WordBox, syllableWidth } from "@/lib/pdf-word-boxes";
 
 /** A printed line's box as fractions of the page: [left, top, right, bottom], top-left origin. */
@@ -117,7 +117,7 @@ export function lineBoxRings(
   boxes: LineBox[],
   page: { width: number; height: number },
   queries: string[],
-  mode: OCRSearchMode,
+  mode: OCRSearchModes,
   scripts: OCRSearchScripts = null,
   runs: Array<LineRuns | null> | null = null
 ): WordBox[] | null {

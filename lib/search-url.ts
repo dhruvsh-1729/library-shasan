@@ -1,4 +1,4 @@
-import { type OCRSearchMode, type OCRSearchScripts, parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { type OCRSearchModes, type OCRSearchScripts, parseOCRSearchModes, parseOCRSearchScripts, searchModeList } from "@/lib/ocr-search";
 
 // The search page (the home page, "/") keeps everything a search depends on in its URL, so a link,
 // a refresh or the Back button always shows the same search:
@@ -16,12 +16,12 @@ import { type OCRSearchMode, type OCRSearchScripts, parseOCRSearchMode, parseOCR
 export type SearchScope = "all" | "selected";
 
 /** What a search finds when the link does not say: the word anywhere inside a word. */
-export const DEFAULT_MATCH_MODE: OCRSearchMode = "contains";
+export const DEFAULT_MATCH_MODE: OCRSearchModes = "contains";
 /** Scripts a search counts when the link does not say: Sanskrit (Devanagari) only. */
 export const DEFAULT_SCRIPTS: OCRSearchScripts = ["devanagari"];
 
-/** Compound parts are searched only with "the word and all its forms"; other modes search exactly the word typed. */
-export const modeSearchesParts = (mode: OCRSearchMode) => mode === "sanskrit_forms";
+/** Compound parts are searched only with "the word and all its forms" (alone or with a second option); other modes search exactly the word typed. */
+export const modeSearchesParts = (modes: OCRSearchModes) => searchModeList(modes).includes("sanskrit_forms");
 
 export type SearchRequest = {
   q: string;
@@ -31,7 +31,8 @@ export type SearchRequest = {
   parts: string[] | null;
   /** Scripts whose hits count; null means both (written "scripts=devanagari,gujarati"; no "scripts" is Devanagari only). */
   scripts: OCRSearchScripts;
-  matchMode: OCRSearchMode;
+  /** One Find option, or two ("sanskrit_forms,contains": pages either finds). */
+  matchMode: OCRSearchModes;
   scope: SearchScope;
   granthIds: string[];
   page: number;
@@ -82,7 +83,7 @@ export function parseSearchUrl(query: Record<string, QueryValue>): ParsedSearchU
     parts: partsRaw === "none" ? [] : partsRaw ? splitList(partsRaw) : null,
     scripts: scriptsRaw ? parseOCRSearchScripts(scriptsRaw) : langsRaw ? scriptsFromLegacyLangs(splitList(langsRaw), q) : DEFAULT_SCRIPTS,
     // No match param means the default: anywhere inside a word.
-    matchMode: parseOCRSearchMode(first(query.match) || first(query.matchMode) || DEFAULT_MATCH_MODE),
+    matchMode: parseOCRSearchModes(first(query.match) || first(query.matchMode) || DEFAULT_MATCH_MODE),
     page: Number.isFinite(page) && page > 1 ? page : 1,
     granthValues: legacyCustomId ? [legacyCustomId] : inRaw ? splitList(inRaw) : [],
   };

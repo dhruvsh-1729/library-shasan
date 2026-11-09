@@ -4,10 +4,11 @@ import {
   findOCRSearchMatchesForQueries,
   isTooShortForContains,
   normalizeOCRSearchQueries,
-  type OCRSearchMode,
+  type OCRSearchModes,
+  searchModeList,
   type OCRSearchScripts,
 } from "@/lib/ocr-search";
-import { buildOCRPrefilter } from "@/lib/ocr-search-index";
+import { buildOCRPrefilter, prefilterFrom } from "@/lib/ocr-search-index";
 import {
   type LibraryFileMeta,
   type SourceMeta,
@@ -247,18 +248,18 @@ export async function resolveSearchPdfSource(
   return result.source;
 }
 
-export function validateSearchDownloadQuery(query: string, matchMode: OCRSearchMode) {
+export function validateSearchDownloadQuery(query: string, matchMode: OCRSearchModes) {
   return validateSearchDownloadQueries(query, [], matchMode)[0];
 }
 
 export function validateSearchDownloadQueries(
   query: string | string[],
   variants: string | string[] | null | undefined,
-  matchMode: OCRSearchMode
+  matchMode: OCRSearchModes
 ) {
   const queries = normalizeOCRSearchQueries(query, variants).filter((value) => Array.from(value).length >= 2);
   if (queries.length === 0) throw new SearchMatchError(400, "Enter at least 2 characters before building a PDF.");
-  if (matchMode === "contains" && queries.some(isTooShortForContains)) {
+  if (searchModeList(matchMode).includes("contains") && queries.some(isTooShortForContains)) {
     throw new SearchMatchError(400, "Contains search needs at least 3 letters once conjuncts are folded (न्द counts as 2).");
   }
   return queries;
@@ -268,20 +269,19 @@ export function validateSearchDownloadQueries(
  * Builds the FTS hit sub-query. `relPaths` scopes it to specific granths;
  * `null` searches every indexed granth (the "All granths" filter mode).
  */
-async function buildHitQuery(queries: string[], matchMode: OCRSearchMode, relPaths: string[] | null) {
+async function buildHitQuery(queries: string[], matchMode: OCRSearchModes, relPaths: string[] | null) {
   const scopedPaths = relPaths ?? [];
   const relFilterSql = scopedPaths.length
     ? ` AND g.source_rel_path IN (${scopedPaths.map(() => "?").join(",")})`
     : "";
-  const { table, match } = buildOCRPrefilter(queries, matchMode);
+  const hitFrom = prefilterFrom(buildOCRPrefilter(queries, matchMode));
   const dup = excludeDuplicatesSql(await getGranthCatalog(), "p.granth_key");
   const sql = `SELECT p.id AS page_id
-             FROM ${table}
-             JOIN ocr_pages p ON p.id = ${table}.rowid
+             ${hitFrom.from}
              JOIN ocr_granths g ON g.granth_key = p.granth_key
-             WHERE ${table} MATCH ?${relFilterSql}${dup.sql}`;
+             WHERE ${hitFrom.where}${relFilterSql}${dup.sql}`;
 
-  return { sql, args: [match, ...scopedPaths, ...dup.args] };
+  return { sql, args: [...hitFrom.args, ...scopedPaths, ...dup.args] };
 }
 
 function normalizeLineBreaks(value: string) {
@@ -301,7 +301,7 @@ function collapseLineText(value: string, maxChars = MAX_CSV_LINE_TEXT_CHARS) {
 export function findMatchLinesInPageContent(
   content: string,
   queries: string[],
-  matchMode: OCRSearchMode,
+  matchMode: OCRSearchModes,
   scripts: OCRSearchScripts = null,
   maxLineChars = MAX_CSV_LINE_TEXT_CHARS
 ): Array<Omit<SearchMatchLine, "page_number" | "printed_page">> {
@@ -362,7 +362,7 @@ export const PASSAGE_CONTEXT_LINES = 2;
 export function findMatchPassagesInPageContent(
   content: string,
   queries: string[],
-  matchMode: OCRSearchMode,
+  matchMode: OCRSearchModes,
   scripts: OCRSearchScripts = null,
   context = PASSAGE_CONTEXT_LINES,
   /** 0-based lines of the page's header (lib/page-lines): never quoted as context. */
@@ -452,7 +452,7 @@ export function findMatchPassagesInPageContent(
 export async function loadSearchMatchGranths(
   relPaths: string[] | null,
   query: string | string[],
-  matchMode: OCRSearchMode,
+  matchMode: OCRSearchModes,
   limit = MAX_EXPORT_GRANTH_PREVIEW,
   queryVariants?: string | string[] | null,
   scripts: OCRSearchScripts = null
@@ -479,7 +479,7 @@ const VERIFY_PARALLEL = 6;
 async function loadVerifiedGranths(
   hits: Awaited<ReturnType<typeof buildHitQuery>>,
   queries: string[],
-  matchMode: OCRSearchMode,
+  matchMode: OCRSearchModes,
   scripts: OCRSearchScripts,
   limit: number
 ) {
@@ -543,7 +543,7 @@ async function loadVerifiedGranths(
  * Page-and-line level matches for one granth, used by the CSV export.
  */
 /** The text and printed page number of every page of one granth the index lists for the search, in page order. */
-async function loadHitPageContents(sourceRelPath: string, queries: string[], matchMode: OCRSearchMode) {
+async function loadHitPageContents(sourceRelPath: string, queries: string[], matchMode: OCRSearchModes) {
   const hits = await buildHitQuery(queries, matchMode, [sourceRelPath]);
   return getTursoClient().execute({
     sql: `WITH hits AS (${hits.sql}),
@@ -571,7 +571,7 @@ async function loadHitPageContents(sourceRelPath: string, queries: string[], mat
 export async function loadSearchMatchLines(
   sourceRelPath: string,
   query: string | string[],
-  matchMode: OCRSearchMode,
+  matchMode: OCRSearchModes,
   options: {
     pages?: number[] | null;
     maxRows?: number;
@@ -624,7 +624,7 @@ export async function loadSearchMatchLines(
 export async function loadSearchMatchPassages(
   sourceRelPath: string,
   query: string | string[],
-  matchMode: OCRSearchMode,
+  matchMode: OCRSearchModes,
   options: {
     pages?: number[] | null;
     maxRows?: number;
@@ -711,7 +711,7 @@ function wholeWordPieces(text: string, start: number, end: number) {
 export async function loadSearchMatchOccurrences(
   sourceRelPath: string,
   query: string | string[],
-  matchMode: OCRSearchMode,
+  matchMode: OCRSearchModes,
   options: {
     pages?: number[] | null;
     maxRows?: number;
@@ -756,7 +756,7 @@ export async function loadSearchMatchOccurrences(
 export async function loadSearchMatchPages(
   sourceRelPath: string,
   query: string | string[],
-  matchMode: OCRSearchMode,
+  matchMode: OCRSearchModes,
   limit = MAX_MATCH_PAGE_PREVIEW,
   queryVariants?: string | string[] | null,
   scripts: OCRSearchScripts = null

@@ -10,8 +10,8 @@
 
 import { foldSanskrit } from "@/lib/sanskrit-fold.mjs";
 import { excludeDuplicatesSql, getGranthCatalog } from "@/lib/granth-catalog";
-import { type OCRSearchMode, type OCRSearchScripts, findOCRSearchMatchesForQueries, joinedMatchText } from "@/lib/ocr-search";
-import { buildOCRPrefilter } from "@/lib/ocr-search-index";
+import { type OCRSearchModes, type OCRSearchScripts, findOCRSearchMatchesForQueries, joinedMatchText } from "@/lib/ocr-search";
+import { buildOCRPrefilter, prefilterFrom, prefilterIds } from "@/lib/ocr-search-index";
 import { getTursoClient } from "@/lib/turso";
 
 export type SearchCount = {
@@ -35,7 +35,7 @@ const PARALLEL = 6;
 const TTL_MS = 60 * 60 * 1000;
 const cache = new Map<string, { at: number; value: Promise<SearchCount> }>();
 
-export function countSearch(opts: { queries: string[]; matchMode: OCRSearchMode; scripts: OCRSearchScripts; relPaths: string[] }) {
+export function countSearch(opts: { queries: string[]; matchMode: OCRSearchModes; scripts: OCRSearchScripts; relPaths: string[] }) {
   const key = JSON.stringify([opts.queries, opts.matchMode, opts.scripts, [...opts.relPaths].sort()]);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
@@ -48,12 +48,12 @@ export function countSearch(opts: { queries: string[]; matchMode: OCRSearchMode;
   return value;
 }
 
-async function runCount({ queries, matchMode, scripts, relPaths }: { queries: string[]; matchMode: OCRSearchMode; scripts: OCRSearchScripts; relPaths: string[] }): Promise<SearchCount> {
+async function runCount({ queries, matchMode, scripts, relPaths }: { queries: string[]; matchMode: OCRSearchModes; scripts: OCRSearchScripts; relPaths: string[] }): Promise<SearchCount> {
   const started = Date.now();
   const client = getTursoClient();
   const catalog = await getGranthCatalog();
   const prefilter = buildOCRPrefilter(queries, matchMode);
-  const table = prefilter.table;
+  const hitFrom = prefilterFrom(prefilter);
   const dup = excludeDuplicatesSql(catalog, "p.granth_key");
   const relSql = relPaths.length ? ` AND g.source_rel_path IN (${relPaths.map(() => "?").join(",")})` : "";
   // Across the whole library the ids come straight from the index (fast);
@@ -62,14 +62,13 @@ async function runCount({ queries, matchMode, scripts, relPaths }: { queries: st
     relPaths.length
       ? await client.execute({
           sql: `SELECT DISTINCT p.id AS id
-                FROM ${table}
-                JOIN ocr_pages p ON p.id = ${table}.rowid
+                ${hitFrom.from}
                 JOIN ocr_granths g ON g.granth_key = p.granth_key
-                WHERE ${table} MATCH ?${relSql}${dup.sql}
+                WHERE ${hitFrom.where}${relSql}${dup.sql}
                 ORDER BY p.id`,
-          args: [prefilter.match, ...relPaths, ...dup.args],
+          args: [...hitFrom.args, ...relPaths, ...dup.args],
         })
-      : await client.execute({ sql: `SELECT rowid AS id FROM ${table} WHERE ${table} MATCH ? ORDER BY rowid`, args: [prefilter.match] })
+      : await client.execute({ sql: `SELECT id FROM (${prefilterIds(prefilter).sql}) ORDER BY id`, args: prefilterIds(prefilter).args })
   ).rows.map((row) => Number(row.id));
   if (ids.length > MAX_COUNTED_PAGES) {
     throw new SearchTooBroadError(`${ids.length} pages are too many to count exactly; the total shown is the index's.`);

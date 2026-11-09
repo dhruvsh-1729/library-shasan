@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildCacheKey, getCachedJson, setNoStore, setPublicCacheHeaders } from "@/lib/api-cache";
-import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { parseOCRSearchModes, parseOCRSearchScripts } from "@/lib/ocr-search";
 import { koshRank } from "@/lib/koshes.mjs";
 import { warmPdfIndex } from "@/lib/pdf-highlight-builder";
 import {
@@ -37,7 +37,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const q = String(firstQueryValue(req.query.q) || "").trim();
     const queryVariants = req.query.queryVariant ?? req.query.queryVariants;
-    const matchMode = parseOCRSearchMode(firstQueryValue(req.query.matchMode));
+    const matchMode = parseOCRSearchModes(firstQueryValue(req.query.matchMode));
     const scripts = parseOCRSearchScripts(req.query.scripts);
     const queries = validateSearchDownloadQueries(q, queryVariants, matchMode);
     const selectedGranths = parseGranthIds(req.query.granths).slice(0, 500);

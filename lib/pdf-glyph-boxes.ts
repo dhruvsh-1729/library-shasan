@@ -12,7 +12,7 @@
 // null when the page cannot be replayed, and callers fall back to the
 // text-content estimate in lib/pdf-word-boxes.
 
-import { type OCRSearchMode, type OCRSearchScripts, findOCRSearchMatchesForQueries } from "@/lib/ocr-search";
+import { type OCRSearchModes, type OCRSearchScripts, findOCRSearchMatchesForQueries } from "@/lib/ocr-search";
 import { type WordBox, readingOrders } from "@/lib/pdf-word-boxes";
 
 type Matrix = [number, number, number, number, number, number];
@@ -195,7 +195,7 @@ export async function findGlyphWordBoxes(
   page: GlyphPage,
   OPS: PdfOps,
   queries: string[],
-  mode: OCRSearchMode,
+  mode: OCRSearchModes,
   scripts: OCRSearchScripts = null
 ): Promise<WordBox[] | null> {
   if (!queries.length) return [];

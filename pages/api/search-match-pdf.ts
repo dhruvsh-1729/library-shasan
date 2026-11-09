@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createReadStream } from "node:fs";
 import { rm } from "node:fs/promises";
-import { parseOCRSearchMode, parseOCRSearchScripts } from "@/lib/ocr-search";
+import { parseOCRSearchModes, parseOCRSearchScripts } from "@/lib/ocr-search";
 import {
   type CombinedPdfSource,
   buildCombinedSearchPdf,
@@ -132,7 +132,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const body = (req.body || {}) as DownloadBody;
     const delivery = body.delivery === "email" ? "email" : "download";
-    const matchMode = parseOCRSearchMode(body.matchMode);
+    const matchMode = parseOCRSearchModes(body.matchMode);
     const scripts = parseOCRSearchScripts(body.scripts);
     const queries = validateSearchDownloadQueries(String(body.q || "").trim(), parseQueryVariants(body.queryVariants), matchMode);
     const contextPages = normalizeContextPageRadius(body.contextPages);

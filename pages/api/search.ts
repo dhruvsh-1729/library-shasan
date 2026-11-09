@@ -4,14 +4,14 @@ import {
   buildOCRSearchOccurrences,
   buildOCRSearchExcerptForQueries,
   findOCRSearchMatchesForQueries,
-  isTooShortForContains,
+  effectiveSearchModes,
   joinedMatchText,
   MAX_SEARCH_QUERIES,
   normalizeOCRSearchQueries,
-  parseOCRSearchMode,
+  parseOCRSearchModes,
   parseOCRSearchScripts,
 } from "@/lib/ocr-search";
-import { buildOCRPrefilter } from "@/lib/ocr-search-index";
+import { buildOCRPrefilter, prefilterCount, prefilterFrom, prefilterIdsAfter } from "@/lib/ocr-search-index";
 import { foldSanskrit } from "@/lib/sanskrit-fold.mjs";
 import { excludeDuplicatesSql, getGranthCatalog, relPathsForIds } from "@/lib/granth-catalog";
 import { resolveGranthPdfTargets } from "@/lib/search-pdf-resolver";
@@ -88,7 +88,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const page = parsePage(req.query.page);
     const offset = Math.max(0, (page - 1) * limit);
     const selectedGranths = parseGranthIds(req.query.granths).slice(0, 250);
-    let matchMode = parseOCRSearchMode(req.query.matchMode);
+    let matchMode = parseOCRSearchModes(req.query.matchMode);
     const scripts = parseOCRSearchScripts(req.query.scripts);
     const queries = normalizeOCRSearchQueries(q, parseQueryVariants(req.query.queryVariant ?? req.query.queryVariants))
       .filter((query) => Array.from(query).length >= 2)
@@ -111,7 +111,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     // Anywhere-inside-a-word needs 3 letters after folding (its index is of
     // letter triples); a shorter word, like नय, is searched as the word and
     // all its forms instead, and the answer says so (match_mode).
-    if (matchMode === "contains" && queries.some(isTooShortForContains)) matchMode = "sanskrit_forms";
+    matchMode = effectiveSearchModes(matchMode, queries);
 
     const cacheKey = buildCacheKey(req, "pdf-search-turso");
     // Where a search's time goes, as a Server-Timing header (DevTools shows it per request).
@@ -148,14 +148,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         ? ` AND g.source_rel_path IN (${selectedRelPaths.map(() => "?").join(",")})`
         : "";
       const prefilter = buildOCRPrefilter(queries, matchMode);
-      const ftsTable = prefilter.table;
+      const ftsTable = prefilter.parts.map((part) => part.table).join("+");
       const dup = excludeDuplicatesSql(catalog, "p.granth_key");
+      const hitFrom = prefilterFrom(prefilter);
       const hitSql = `SELECT p.id AS page_id
-                FROM ${ftsTable}
-                JOIN ocr_pages p ON p.id = ${ftsTable}.rowid
+                ${hitFrom.from}
                 JOIN ocr_granths g ON g.granth_key = p.granth_key
-                WHERE ${ftsTable} MATCH ?${relFilterSql}${dup.sql}`;
-      const hitArgs = [prefilter.match, ...selectedRelPaths, ...dup.args];
+                WHERE ${hitFrom.where}${relFilterSql}${dup.sql}`;
+      const hitArgs = [...hitFrom.args, ...selectedRelPaths, ...dup.args];
 
       // The FTS tables are only a prefilter; the boundary rules for each match
       // mode (and the script filter) live in findOCRSearchMatches, so every
@@ -194,18 +194,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         indexTotal = ids.length;
         idsDone = true;
       } else {
-        const counted = await client.execute({ sql: `SELECT count(*) AS n FROM ${ftsTable} WHERE ${ftsTable} MATCH ?`, args: [prefilter.match] });
+        const counted = await client.execute(prefilterCount(prefilter));
         indexTotal = toInt(counted.rows[0]?.n);
       }
       const moreIds = async () => {
         if (idsDone) return;
         const after = ids.length ? ids[ids.length - 1] : 0;
-        const rows = (
-          await client.execute({
-            sql: `SELECT rowid AS id FROM ${ftsTable} WHERE ${ftsTable} MATCH ? AND rowid > ? ORDER BY rowid LIMIT ?`,
-            args: [prefilter.match, after, ID_CHUNK],
-          })
-        ).rows;
+        const rows = (await client.execute(prefilterIdsAfter(prefilter, after, ID_CHUNK))).rows;
         for (const row of rows) ids.push(Number(row.id));
         if (rows.length < ID_CHUNK) idsDone = true;
       };

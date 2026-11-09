@@ -11,7 +11,7 @@ import { lineBoxRingsForPdf, onPage } from "@/lib/line-boxes";
 import { extractPdfPagesByRange } from "@/lib/pdf-range-subset.mjs";
 import { findGlyphWordBoxes } from "@/lib/pdf-glyph-boxes";
 import { type PdfTextItem, type WordBox, findWordBoxes } from "@/lib/pdf-word-boxes";
-import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
+import type { OCRSearchModes, OCRSearchScripts } from "@/lib/ocr-search";
 import { availableMemoryMB } from "@/lib/available-memory";
 
 type HighlightBuildOptions = {
@@ -19,7 +19,7 @@ type HighlightBuildOptions = {
   pages: number[];
   query?: string;
   queries?: string[];
-  matchMode?: OCRSearchMode;
+  matchMode?: OCRSearchModes;
   scripts?: OCRSearchScripts;
 };
 
@@ -146,7 +146,7 @@ export async function sourcePagesPdf(pdfUrl: string, pages: number[]) {
   }
 }
 
-type MarkOptions = { queries: string[]; matchMode: OCRSearchMode; scripts?: OCRSearchScripts };
+type MarkOptions = { queries: string[]; matchMode: OCRSearchModes; scripts?: OCRSearchScripts };
 
 /**
  * The same pages without their images. Finding words only needs the text
@@ -274,7 +274,7 @@ export async function buildHighlightedSearchPdf(options: HighlightBuildOptions) 
 export async function buildCombinedSearchPdf(options: {
   sources: CombinedPdfSource[];
   queries?: string[];
-  matchMode?: OCRSearchMode;
+  matchMode?: OCRSearchModes;
   scripts?: OCRSearchScripts;
 }) {
   await ensureFreeMemory("start combined granth PDF build");

@@ -6,7 +6,7 @@
 
 import { describeGranth, getGranthCatalog, type GranthCatalog } from "@/lib/granth-catalog";
 import { type LineBox, type LineRuns, lineBoxRings } from "@/lib/line-box-rings";
-import type { OCRSearchMode, OCRSearchScripts } from "@/lib/ocr-search";
+import type { OCRSearchModes, OCRSearchScripts } from "@/lib/ocr-search";
 import type { WordBox } from "@/lib/pdf-word-boxes";
 import { getTursoClient } from "@/lib/turso";
 
@@ -27,7 +27,7 @@ export async function granthKeyForPdf(pdfUrl: string) {
   return map.get(pdfUrl) ?? map.get(pdfUrl.split("?")[0]) ?? null;
 }
 
-type Mark = { queries: string[]; matchMode: OCRSearchMode; scripts?: OCRSearchScripts };
+type Mark = { queries: string[]; matchMode: OCRSearchModes; scripts?: OCRSearchScripts };
 
 /**
  * Rings for each asked page of a PDF, in PDF user space (lower-left origin),
