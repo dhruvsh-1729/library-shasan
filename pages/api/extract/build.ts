@@ -12,7 +12,7 @@ import {
   sendDownloadEmail,
 } from "@/lib/download-email";
 import { libraryPdfUrls } from "@/lib/extract-data";
-import { ExtractBuildError, MAX_EXTRACT_PAGES, buildExtractPdf, ensureFreeMemory, type ExtractPart } from "@/lib/pdf-extract-build";
+import { ExtractBuildError, MAX_EXTRACT_PAGES, buildExtractPdf, type ExtractPart } from "@/lib/pdf-extract-build";
 
 export const config = { api: { responseLimit: false } };
 
@@ -66,7 +66,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (!total) throw new ExtractBuildError(400, "Choose at least one page.");
     if (total > MAX_EXTRACT_PAGES) throw new ExtractBuildError(413, `That is ${total} pages; the limit is ${MAX_EXTRACT_PAGES}. Choose fewer gathas or pages.`);
 
-    await ensureFreeMemory("building the PDF");
     workDir = await mkdtemp(path.join(tmpdir(), "ndms-extract-"));
     const filename = `${safeName(String(body.title ?? ""))}.pdf`;
     const built = await buildExtractPdf(parts, path.join(workDir, "out.pdf"));

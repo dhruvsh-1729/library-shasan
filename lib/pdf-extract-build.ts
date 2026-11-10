@@ -11,6 +11,7 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import { PDFDocument } from "pdf-lib";
 import { availableMemoryMB } from "@/lib/available-memory";
+import { appendRemotePages } from "@/lib/pdf-remote-pages";
 
 export const MAX_EXTRACT_PAGES = 900;
 const MIN_AVAILABLE_MEMORY_MB = 768;
@@ -53,12 +54,27 @@ export async function sourcePdf(pdfUrl: string) {
   return cachePath;
 }
 
-/** Copies the pages, part after part, in the order given; returns the file path and page count. */
+/**
+ * Copies the pages, part after part, in the order given; returns the file path and page count.
+ * Each part is read from the file host as byte ranges, only what its pages need.
+ * A PDF that reader cannot follow is downloaded whole, as before.
+ */
 export async function buildExtractPdf(parts: ExtractPart[], outPath: string) {
   const out = await PDFDocument.create();
   let copied = 0;
   for (const part of parts) {
     if (!part.pages.length) continue;
+    const started = Date.now();
+    try {
+      const got = await appendRemotePages(out, part.pdfUrl, part.pages);
+      copied += got.pages;
+      console.log(
+        `[extract] ${got.pages} pages by range: ${(got.fetchedBytes / 1048576).toFixed(1)} MB of ${(got.fileBytes / 1048576).toFixed(0)} MB in ${got.requests} requests, ${Date.now() - started} ms`
+      );
+      continue;
+    } catch (error) {
+      console.warn(`[extract] whole-file download instead: ${error instanceof Error ? error.message : String(error)}`);
+    }
     await ensureFreeMemory("building the PDF");
     const source = await PDFDocument.load(await readFile(await sourcePdf(part.pdfUrl)), { ignoreEncryption: true });
     const last = source.getPageCount();
@@ -66,9 +82,9 @@ export async function buildExtractPdf(parts: ExtractPart[], outPath: string) {
     if (!pages.length) continue;
     for (const page of await out.copyPages(source, pages.map((p) => p - 1))) out.addPage(page);
     copied += pages.length;
+    console.log(`[extract] ${pages.length} pages from the whole file, ${Date.now() - started} ms`);
   }
   if (!copied) throw new ExtractBuildError(400, "None of the chosen pages exist in these PDFs.");
-  await ensureFreeMemory("saving the PDF");
   await writeFile(outPath, await out.save());
   return { path: outPath, pages: copied, sizeBytes: (await stat(outPath)).size };
 }
