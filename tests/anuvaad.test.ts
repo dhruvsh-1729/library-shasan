@@ -149,3 +149,15 @@ test("the check keeps a page that really lists the fourteen dreams", async () =>
   const kept = dropBorrowed(parseAnuvaad(`માતાએ ચૌદ સ્વપ્નો જોયાં — ${list}.`), `માતાએ ચૌદ સ્વપ્નો જોયાં: ${list}`);
   assert.equal(kept.length, 1);
 });
+
+test("box passage lookup: words, Gujarati pages and quoted words", async () => {
+  const { passageWords, isGujaratiPage, quotedShare, toGujaratiScript } = await import("../lib/anuvaad/locate");
+  const words = passageWords("हेतुतः, स्वरूपतोऽनुबन्धतश्च अहिंसा निखिलकुशललोकाभिनन्दनीया वर्त्तते। च इति");
+  assert.equal(words[0], "निखिलकुशललोकाभिनंदनीया");
+  assert.ok(!words.includes("च") && !words.includes("इति"));
+  assert.equal(toGujaratiScript("अहिंसा"), "અહિંસા");
+  const gujarati = "હેતુથી, સ્વરૂપથી અને અનુબંધથી અહિંસા સર્વ કુશળ લોકોને માન્ય છે. ".repeat(10);
+  assert.ok(isGujaratiPage(gujarati));
+  assert.ok(!isGujaratiPage("अहिंसा परमो धर्मः ".repeat(30)));
+  assert.ok(quotedShare(["अहिंसा", "हेतुतः"], gujarati) >= 0.5);
+});

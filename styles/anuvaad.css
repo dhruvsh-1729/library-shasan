@@ -498,3 +498,37 @@
 .vySavedWords li + li {
   margin-top: 4px;
 }
+
+/* Where a box passage is in our library (13 Nov 2026) */
+.anPlace {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--lt-cobalt-wash);
+  display: grid;
+  gap: 6px;
+}
+.anPlace p {
+  margin: 0;
+}
+.anPlaceLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.anSource {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.anSource legend {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.anSource label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
