@@ -37,6 +37,7 @@ type Item = {
 };
 
 const PARALLEL_PAGES = 2;
+const PARALLEL_READS = 3;
 const IMAGE_TYPES = ["image/jpeg", "image/png"];
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -184,17 +185,25 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
     }
   }
 
+  /** The text of the page next to this one in the list (n ± 1), if it has been read. */
+  const neighbourText = (item: Item, step: -1 | 1) =>
+    itemsRef.current.find((i) => i.n === item.n + step && (i.photoId === undefined) === (item.photoId === undefined))?.text ?? "";
+
   async function processOne(key: string) {
     const item = itemsRef.current.find((i) => i.key === key);
     if (!item) return;
     const text = item.text?.trim() ? item.text : await readPage(item);
     if (!text) return;
     updateItem(key, { status: "translating", error: undefined });
+    // A discussion can run over several pages (Maharaj Saheb, 14 Nov 2026):
+    // the end of the page before and the start of the page after go with it.
+    const before = neighbourText(item, -1);
+    const after = neighbourText(item, 1);
     try {
       const res = await fetch("/api/anuvaad/page", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, source: sourceName.replace(/\.[a-z0-9]+$/i, "") }),
+        body: JSON.stringify({ text, before, after, source: sourceName.replace(/\.[a-z0-9]+$/i, "") }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "The Gujarati could not be prepared. Please try again.");
@@ -207,7 +216,17 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
   async function run(keys: string[]) {
     if (!keys.length) return;
     for (const key of keys) updateItem(key, { status: "waiting", error: undefined });
-    const queue = [...keys];
+    // First every page is read, so each page's neighbours are there when it is translated.
+    const unread = keys.filter((key) => !itemsRef.current.find((i) => i.key === key)?.text?.trim());
+    await Promise.all(
+      Array.from({ length: Math.min(PARALLEL_READS, unread.length) }, async () => {
+        for (let key = unread.shift(); key; key = unread.shift()) {
+          const item = itemsRef.current.find((i) => i.key === key);
+          if (item && (await readPage(item)) !== null) updateItem(key, { status: "waiting" });
+        }
+      })
+    );
+    const queue = keys.filter((key) => itemsRef.current.find((i) => i.key === key)?.status !== "error");
     await Promise.all(
       Array.from({ length: Math.min(PARALLEL_PAGES, queue.length) }, async () => {
         for (let key = queue.shift(); key; key = queue.shift()) await processOne(key);
@@ -434,9 +453,9 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
           <p className="vyHint">
             Use the page number your PDF viewer shows, not the number printed on the page. A dash gives a run of pages: <strong>12-15 20</strong> is pages 12, 13, 14, 15 and 20. At most {MAX_PAGES_PER_RUN} at a time.
           </p>
-          {source.total <= MAX_PAGES_PER_RUN && source.total > 1 ? (
-            <button type="button" className="exChip anChip" onClick={() => setSpec(`1-${source.total}`)}>
-              All {source.total} pages
+          {source.total > 1 ? (
+            <button type="button" className="exChip anChip" onClick={() => setSpec(`1-${Math.min(source.total, MAX_PAGES_PER_RUN)}`)}>
+              {source.total <= MAX_PAGES_PER_RUN ? `The whole PDF (all ${source.total} pages)` : `Pages 1-${MAX_PAGES_PER_RUN}`}
             </button>
           ) : null}
           {choice.problem ? (
@@ -526,7 +545,7 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
               {saved}
             </p>
           ) : null}
-          <p className="anNote">Each page takes from a few seconds to a minute. The Gujarati is a first draft: read it through and correct it (“Edit the Gujarati”) before printing.</p>
+          <p className="anNote">All the pages are read first, then each is put into Gujarati with the pages on either side in view, so a discussion running over several pages stays one account. Each page takes from a few seconds to a minute; keep this page open until all are done. The Gujarati is a first draft: read it through and correct it (“Edit the Gujarati”) before printing.</p>
 
           {items.map((item) => (
             <article key={item.key} className={`vyCard anResult is-${item.status}`}>

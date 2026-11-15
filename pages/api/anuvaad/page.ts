@@ -9,7 +9,7 @@ import { AnuvaadError, translatePage } from "@/lib/anuvaad/translate";
 // each page finishes well inside the time a request may run; nothing is
 // stored.
 
-export const config = { api: { bodyParser: { sizeLimit: "200kb" } }, maxDuration: 300 };
+export const config = { api: { bodyParser: { sizeLimit: "300kb" } }, maxDuration: 300 };
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoStore(res);
@@ -22,6 +22,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const result = await translatePage({
       text: String(body.text ?? "").normalize("NFC").slice(0, 20_000),
       source: String(body.source ?? "").normalize("NFC").slice(0, 200),
+      before: String(body.before ?? "").normalize("NFC").slice(-2_000),
+      after: String(body.after ?? "").normalize("NFC").slice(0, 2_000),
     });
     return res.status(200).json({ markup: result.markup, literal: result.literal });
   } catch (error) {

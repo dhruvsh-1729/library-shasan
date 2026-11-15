@@ -3,7 +3,7 @@
 // server code: the browser page and the API both use them.
 
 /** At most this many pages in one go: each page is read and translated on its own. */
-export const MAX_PAGES_PER_RUN = 30;
+export const MAX_PAGES_PER_RUN = 200;
 
 export type PageChoice = { pages: number[]; problem: string };
 

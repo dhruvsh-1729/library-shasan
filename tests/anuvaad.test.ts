@@ -127,3 +127,25 @@ test("words ending in द्र. are not taken for a cross-reference", async () 
   const { entryForTranslation } = await import("@/lib/anuvaad/vyutpatti");
   assert.ok(entryForTranslation({ head: "इन्द्र", body: "पुं. (इन्दतीति इन्द्रः) - इन्द्र. देवराज" }).body.includes("इन्द्र. देवराज"));
 });
+
+test("the check takes out a glossary line and the style example's list (13 Nov 2026 page)", async () => {
+  const { dropBorrowed } = await import("../lib/anuvaad/translate");
+  const blocks = parseAnuvaad(
+    [
+      "તેથી આ પ્રમાણે હિંસાનું લક્ષણ કહ્યું છે, અને તે પ્રમત્તયોગથી થતો પ્રાણનો નાશ છે.",
+      "## શંકા / સમાધાન",
+      "નનુ = (શંકા નીચે મુજબ છે) શંકા; ઉચ્યતે = (જવાબ નીચે મુજબ છે) સમાધાન",
+      "(૧) હાથી, (૨) વૃષભ, (૩) કેશરી સિંહ, (૪) લક્ષ્મીદેવી, (૫) ફૂલોની માળા, (૬) સૂર્ય, (૭) ચંદ્ર, (૮) ધજા-પતાકા, (૯) કળશ, (૧૦) પદ્મ સરોવર, (૧૧) સમુદ્ર, (૧૨) દેવ વિમાન, (૧૩) રત્નરાશિ, (૧૪) અગ્નિશિખા.",
+    ].join("\n")
+  );
+  const kept = dropBorrowed(blocks, "તેથી આ પ્રમાણે હિંસાનું લક્ષણ કહ્યું છે, પ્રમત્તયોગથી પ્રાણનો નાશ");
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].kind, "para");
+});
+
+test("the check keeps a page that really lists the fourteen dreams", async () => {
+  const { dropBorrowed } = await import("../lib/anuvaad/translate");
+  const list = "(૧) હાથી, (૨) વૃષભ, (૩) કેશરી સિંહ, (૪) લક્ષ્મીદેવી, (૫) ફૂલોની માળા, (૬) સૂર્ય, (૭) ચંદ્ર";
+  const kept = dropBorrowed(parseAnuvaad(`માતાએ ચૌદ સ્વપ્નો જોયાં — ${list}.`), `માતાએ ચૌદ સ્વપ્નો જોયાં: ${list}`);
+  assert.equal(kept.length, 1);
+});

@@ -20,6 +20,7 @@
 import { savedWordsInText } from "@/lib/anuvaad/saved-words";
 import { CHAT_MODELS, SarvamChatError, chat } from "@/lib/sarvam-chat";
 import { type AnuvaadBlock, parseAnuvaad, toMarkup } from "@/lib/anuvaad/markup";
+import { META_MODEL, MetaError, metaChat, metaReady } from "@/lib/anuvaad/meta";
 
 export { type AnuvaadBlock, parseAnuvaad, toMarkup };
 
@@ -340,7 +341,7 @@ export async function translatePassage(input: PassageInput): Promise<Anuvaad> {
         ],
       });
       const markup = stopRepeats(content.replace(/<think>[\s\S]*?<\/think>/g, "").trim(), true);
-      const blocks = parseAnuvaad(markup);
+      const blocks = dropBorrowed(parseAnuvaad(markup), literalText, EXAMPLE_ANUVAAD);
       if (blocks.length && looksGujarati(markup)) return { blocks, markup: toMarkup(blocks), literal: literalText };
       lastError = new AnuvaadError("The anuvaad came back incomplete.");
     } catch (error) {
@@ -387,22 +388,126 @@ FORM (exactly this markup, nothing before or after it)
 - Connected paragraphs of plain text: a new paragraph (a new line) wherever the page starts a new verse, the ṭīkā on it, or a new topic. Never one block for the whole page.
 - "## <heading>" only where the page itself begins a new chapter or section with a heading (give that heading in Gujarati).
 - A short list the page gives (names, kinds) stays inside the sentence, numbered (૧), (૨) … or set after an em-dash (—), as in the model prose below.
-- "- **<label>:** <text>" only where the page itself sets out longer distinct items (શંકા / સમાધાન, examples explained one by one).
+- "- **<label>:** <text>" only where the page itself sets out longer distinct items (a question and its answer, examples explained one by one).
+- Never copy a glossary line ("word = meaning") or anything from the model prose into the answer.
 - No title line, no "વિષય:" line, no numbering of your own.
-
-You are given a literal Gujarati translation of the page, made sentence by sentence; it is your only source for the meaning. Keep its sentences and their meaning in order: join and smooth the Gujarati into connected prose. Do not add any fact, example, reason or speaker that is not in it, and keep who asks and who answers exactly as it has them. Use the glossary for the Gujarati of Jain terms.
 
 ${GLOSSARY}
 
 Maharaj Saheb's own Gujarati prose — the model for tone, connectives, dashes and how a list is numbered inside a paragraph (another subject; never copy its content):
 ${HOUSE_PROSE}`;
 
+// The Sarvam pass writes from a literal translation made first.
+const FROM_LITERAL = `
+
+You are given a literal Gujarati translation of the page, made sentence by sentence; it is your only source for the meaning. Keep its sentences and their meaning in order: join and smooth the Gujarati into connected prose. Do not add any fact, example, reason or speaker that is not in it, and keep who asks and who answers exactly as it has them. Use the glossary for the Gujarati of Jain terms.`;
+
+// Meta reads the page itself (Maharaj Saheb, 14 Nov 2026), with the pages on
+// either side so a discussion that runs over several pages stays one account.
+const CONTINUITY = `
+
+THE PAGES AROUND IT
+You may be shown the end of the page before and the start of the page after, for context only. Translate only THIS PAGE. If this page begins in the middle of a sentence or argument, translate it as the continuation of what the previous page was saying (without repeating the previous page). If it ends mid-sentence, end your Gujarati at the same point.`;
+
 export type PageInput = {
   /** The page's text as read (lib/anuvaad/pages pageText). */
   text: string;
   /** The granth or file name, if known: context only. */
   source?: string;
+  /** The end of the page before, and the start of the page after: context only. */
+  before?: string;
+  after?: string;
 };
+
+// ------------------------------------------------------------ the check
+//
+// Maharaj Saheb, 13 Nov 2026: a page anuvaad carried a "શંકા / સમાધાન" heading,
+// a glossary line ("નનુ = (શંકા નીચે મુજબ છે) શંકા; ઉચ્યતે = …") and the
+// fourteen dreams from the style example, none of it on the page. Every
+// anuvaad is now checked: a glossary line, and a paragraph that is mostly the
+// style example's text and not the page's, are taken out, with any heading
+// left with nothing under it.
+
+function grams(text: string) {
+  const letters = text.replace(/[^઀-૿ऀ-ॿ]+/g, " ").replace(/\s+/g, " ");
+  const out = new Set<string>();
+  for (let i = 0; i + 4 <= letters.length; i += 1) out.add(letters.slice(i, i + 4));
+  return out;
+}
+
+const share = (part: Set<string>, whole: Set<string>) => {
+  if (!part.size) return 0;
+  let n = 0;
+  for (const g of part) if (whole.has(g)) n += 1;
+  return n / part.size;
+};
+
+const GLOSS_LINE = /\S\s*=\s*\(|(?:\s=\s.*){2,}/;
+
+/** The blocks with lines borrowed from the prompt (not from the page) taken out. */
+export function dropBorrowed(blocks: AnuvaadBlock[], pageGujarati: string, examples = HOUSE_PROSE): AnuvaadBlock[] {
+  const example = grams(examples);
+  const own = grams(pageGujarati);
+  const kept = blocks.filter((b) => {
+    if (b.kind === "title" || b.kind === "section") return true;
+    const text = b.kind === "point" ? `${b.label} ${b.text}` : b.text;
+    if (GLOSS_LINE.test(text)) return false;
+    const g = grams(text);
+    if (g.size < 12) return true;
+    return !(share(g, example) > 0.5 && share(g, own) < 0.5);
+  });
+  // a heading with nothing under it any more goes too
+  return kept.filter((b, i) => {
+    if (b.kind !== "section" && b.kind !== "title") return true;
+    const next = kept[i + 1];
+    return Boolean(next) && next.kind !== "section" && next.kind !== "title";
+  });
+}
+
+function contextLines(input: PageInput) {
+  const clip = (t: string | undefined, end: boolean) => {
+    const text = String(t ?? "").replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    return end ? text.slice(-700) : text.slice(0, 500);
+  };
+  const before = clip(input.before, true);
+  const after = clip(input.after, false);
+  return [
+    before ? `End of the page before (context only, do not translate):\n${before}\n` : "",
+    after ? `Start of the page after (context only, do not translate):\n${after}\n` : "",
+  ].filter(Boolean);
+}
+
+async function translatePageWithMeta(input: PageInput, text: string, saved: string): Promise<Anuvaad | null> {
+  const user = [
+    input.source ? `Book: ${input.source}` : "",
+    ...contextLines(input),
+    "THIS PAGE (translate all of it):",
+    text,
+    "",
+    "Write the Gujarati anuvaad of this page in the form given.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const content = await metaChat({ system: PAGE_RULES + CONTINUITY + saved, user, maxTokens: 8000 });
+      const markup = stopRepeats(content.replace(/<think>[\s\S]*?<\/think>/g, "").trim(), true);
+      const blocks = dropBorrowed(
+        parseAnuvaad(markup).filter((b) => b.kind !== "title" && b.kind !== "vishay"),
+        ""
+      );
+      const out = toMarkup(blocks);
+      // the page's Sanskrit runs about as long as its Gujarati; far shorter has dropped part of it
+      const whole = gujaratiLetters(out) >= (text.match(/[ऀ-ॿ]/g)?.length ?? 0) * 0.45;
+      if (blocks.length && looksGujarati(out) && whole) return { blocks, markup: out, literal: "" };
+    } catch (error) {
+      if (error instanceof MetaError && error.status >= 400 && error.status < 500 && error.status !== 429) break;
+      console.warn(`page anuvaad (${META_MODEL}) failed:`, error instanceof Error ? error.message : error);
+    }
+  }
+  return null;
+}
 
 const MAX_PAGE_TEXT = 9_000;
 
@@ -441,6 +546,11 @@ export async function translatePage(input: PageInput): Promise<Anuvaad> {
   if (text.length > MAX_PAGE_TEXT) throw new AnuvaadError("This page has too much text to translate at once.", 400);
   const saved = await savedGlossary(text);
 
+  if (metaReady()) {
+    const meta = await translatePageWithMeta(input, text, saved);
+    if (meta) return meta;
+  }
+
   let lastError: unknown = null;
   let literals: string[] | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -449,6 +559,7 @@ export async function translatePage(input: PageInput): Promise<Anuvaad> {
       const literalText = literals.join("\n");
       const user = [
         input.source ? `Book: ${input.source}` : "",
+        ...contextLines(input),
         "Literal Gujarati translation of the page:",
         literalText,
         "",
@@ -456,19 +567,22 @@ export async function translatePage(input: PageInput): Promise<Anuvaad> {
       ]
         .filter((line, i) => line || i > 0)
         .join("\n");
-      const room = 31_000 - tokensFor(PAGE_RULES.length + saved.length + user.length);
+      const room = 31_000 - tokensFor(PAGE_RULES.length + FROM_LITERAL.length + CONTINUITY.length + saved.length + user.length);
       const { content } = await chat({
         model: CHAT_MODELS.fast,
         temperature: 0,
         maxTokens: Math.max(1500, Math.min(8000, room)),
         messages: [
-          { role: "system", content: PAGE_RULES + saved },
+          { role: "system", content: PAGE_RULES + FROM_LITERAL + CONTINUITY + saved },
           { role: "user", content: user },
         ],
       });
       const markup = stopRepeats(content.replace(/<think>[\s\S]*?<\/think>/g, "").trim(), true);
       // a heading or વિષય line copied from the model page is not part of this form
-      const blocks = parseAnuvaad(markup).filter((b) => b.kind !== "title" && b.kind !== "vishay");
+      const blocks = dropBorrowed(
+        parseAnuvaad(markup).filter((b) => b.kind !== "title" && b.kind !== "vishay"),
+        literalText
+      );
       // A page is translated whole: an anuvaad far shorter than the literal has dropped part of it.
       const whole = gujaratiLetters(markup) >= gujaratiLetters(literalText) * 0.5;
       if (blocks.length && looksGujarati(markup) && whole) return { blocks, markup: toMarkup(blocks), literal: literalText };
