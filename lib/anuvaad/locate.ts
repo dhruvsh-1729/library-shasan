@@ -124,7 +124,9 @@ export async function locatePassage(passage: string, limit = 3): Promise<Located
   // one place per granth: its best page
   const best = new Map<string, (typeof scored)[number]>();
   for (const c of scored) if (!best.has(c.granthKey) && isSearchable(catalog, catalog.byGranthKey.get(c.granthKey))) best.set(c.granthKey, c);
-  const top = [...best.values()].filter((c) => c.score >= 0.35).slice(0, limit);
+  // a short passage (a kosh line, a phrase) shares a few words with many pages: it needs a closer match
+  const needed = words.length < 8 ? 0.75 : 0.35;
+  const top = [...best.values()].filter((c) => c.score >= needed).slice(0, limit);
 
   const out: LocatedPassage[] = [];
   for (const c of top) {
