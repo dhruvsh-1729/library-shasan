@@ -56,6 +56,7 @@ import {
   sameIds,
 } from "@/lib/search-url";
 import { AppNav } from "@/components/AppNav";
+import { PhotoTextButton, photoWords } from "@/components/PhotoText";
 
 type SearchOccurrence = { snippet: string; matchStart: number; matchEnd: number; text: string };
 
@@ -262,6 +263,8 @@ export default function SearchPage() {
 
   // ---------------------------------------------------------------- form
   const [q, setQ] = useState("");
+  // Words read from a photo, to tap the one to search (15 Nov 2026).
+  const [photoPicks, setPhotoPicks] = useState<string[]>([]);
   const [searchMode, setSearchMode] = useState<OCRSearchModes>(DEFAULT_MATCH_MODE);
   // The option ticked last, so a third tick replaces the older of the two.
   const lastTickedModeRef = useRef<OCRSearchMode | null>(null);
@@ -869,7 +872,12 @@ export default function SearchPage() {
     return option?.display_name ?? result.pdf_name;
   }
 
-  async function openDownloadPreview(result: SearchResult) {
+  /**
+   * The download sheet for a result's granth. With `onlyPage`, just that page
+   * is chosen (13 Nov 2026: "I found it in the search; now I want this page —
+   * do I have to go to the Library?"), with no nearby pages.
+   */
+  async function openDownloadPreview(result: SearchResult, onlyPage?: number) {
     if (!summary) return;
     const queries = result.matched_queries?.length ? result.matched_queries : summary.queries;
     const cacheKey = [result.custom_id, result.source_rel_path, queries.join("|"), summary.matchMode, summary.scripts ?? ""].join("\n");
@@ -887,9 +895,9 @@ export default function SearchPage() {
       notice: null,
       preview: null,
       selectedPages: [],
-      contextPages: DEFAULT_CONTEXT_PAGE_RADIUS,
+      contextPages: onlyPage ? 0 : DEFAULT_CONTEXT_PAGE_RADIUS,
       granthPagesInput: "",
-      granthPagesNote: null,
+      granthPagesNote: onlyPage ? `Only page ${result.printed_page ?? onlyPage} is chosen. Press “Full PDF” below to download it.` : null,
     });
     try {
       let preview = previewCacheRef.current.get(cacheKey);
@@ -915,7 +923,7 @@ export default function SearchPage() {
               loading: false,
               preview: loaded,
               queries: loaded.queries?.length ? loaded.queries : prev.queries,
-              selectedPages: loaded.pages.map((page) => page.page_number),
+              selectedPages: onlyPage ? [onlyPage] : loaded.pages.map((page) => page.page_number),
             }
           : prev
       );
@@ -951,7 +959,9 @@ export default function SearchPage() {
       const withoutWord = pdfPages.filter((page) => !matched.has(page)).length;
       const found = `Chose ${plural(pdfPages.length, "page")}${withoutWord ? `, ${withoutWord} without the word` : ""}.`;
       const notFound = missing.length ? ` Not found in this book: ${missing.join(", ")}.` : "";
-      return { ...prev, selectedPages: pdfPages, granthPagesNote: found + notFound };
+      // what to do next (13 Nov 2026: "I typed the page number but did not know what to do next")
+      const next = pdfPages.length ? " They are ticked in the list below. Now press “Full PDF” (or “Line list”) at the bottom to download them." : "";
+      return { ...prev, selectedPages: pdfPages, granthPagesNote: found + notFound + next };
     });
   }
 
@@ -1109,6 +1119,11 @@ export default function SearchPage() {
             </button>
           ) : null}
           {canOpenPdf ? (
+            <button type="button" className="ltLink" onClick={() => void openDownloadPreview(result, result.page_number)}>
+              Download this page
+            </button>
+          ) : null}
+          {canOpenPdf ? (
             <button type="button" className="ltLink" onClick={() => void openDownloadPreview(result)}>
               Download pages
             </button>
@@ -1158,6 +1173,43 @@ export default function SearchPage() {
               {loading ? "Searching…" : "Search"}
             </button>
           </div>
+          <div className="ltPhoto">
+            <PhotoTextButton
+              label="Word from a photo"
+              disabled={loading}
+              onText={(text) => {
+                const words = photoWords(text);
+                if (words.length === 1) {
+                  setQ(words[0]);
+                  setPhotoPicks([]);
+                } else setPhotoPicks(words.slice(0, 80));
+              }}
+            />
+          </div>
+          {photoPicks.length ? (
+            <div className="ltPhotoPicks" aria-label="Words in the photo">
+              <p className="ltMuted">Tap the word to search:</p>
+              <div className="ltPhotoChips">
+                {photoPicks.map((word) => (
+                  <button
+                    key={word}
+                    type="button"
+                    className="ltSpelling indic"
+                    onClick={() => {
+                      setQ(word);
+                      setPhotoPicks([]);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    {word}
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="exGhost" onClick={() => setPhotoPicks([])}>
+                Close
+              </button>
+            </div>
+          ) : null}
 
           {roman ? (
             <div className="ltSpellings" aria-live="polite">
@@ -1692,7 +1744,7 @@ export default function SearchPage() {
                       </div>
                       <p className="sheetSmall">
                         {downloadPreview.granthPagesNote ??
-                          "Any page numbers printed in the book, with or without the word, e.g. 86 88 89 301-303. Only these pages are kept."}
+                          "Type the page numbers printed in the book (with or without the word), e.g. 86 88 301-303, and press Choose. Only those pages stay ticked; then press “Full PDF” at the bottom to download them."}
                       </p>
                     </form>
 

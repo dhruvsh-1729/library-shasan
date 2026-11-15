@@ -12,7 +12,7 @@ import { VishayInputError, buildVyutpatti, cleanVishay } from "@/lib/vyutpatti/p
 
 export const config = { maxDuration: 300 };
 
-type Body = { vishay?: unknown; number?: unknown; box?: unknown; engine?: unknown };
+type Body = { vishay?: unknown; number?: unknown; box?: unknown; engine?: unknown; parts?: unknown };
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoStore(res);
@@ -30,6 +30,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   const number = String(body.number ?? "").trim().slice(0, 24);
   const box = String(body.box ?? "").trim().slice(0, 12);
   const engine = parseEngine(body.engine);
+  // the reader's own split, if they changed it
+  const parts = Array.isArray(body.parts) ? body.parts.slice(0, 12).map((p) => String(p ?? "").slice(0, 40)) : undefined;
 
   res.writeHead(200, {
     "Content-Type": "application/x-ndjson; charset=utf-8",
@@ -42,7 +44,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (!res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
   };
   try {
-    const result = await buildVyutpatti({ number, vishay, box }, engine, (message) => emit({ type: "progress", message }));
+    const result = await buildVyutpatti({ number, vishay, box }, engine, (message) => emit({ type: "progress", message }), { parts });
     emit({ type: "done", result });
   } catch (error) {
     const message =

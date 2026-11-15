@@ -1248,3 +1248,23 @@
 .lt .ltTrail {
   margin: 4px 0 10px;
 }
+
+/* Word from a photo (15 Nov 2026) */
+.ltPhoto {
+  margin-top: 8px;
+}
+.ltPhotoPicks {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--lt-rule);
+  border-radius: 12px;
+  background: var(--lt-glass);
+}
+.ltPhotoChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+  max-height: 260px;
+  overflow-y: auto;
+}

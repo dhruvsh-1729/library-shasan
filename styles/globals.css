@@ -2825,3 +2825,20 @@ button {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+
+/* "Words from a photo" button (Search, Vyutpatti) */
+.photoText {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.photoText > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.photoTextError {
+  color: #b42318;
+  font-size: 0.9rem;
+}

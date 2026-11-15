@@ -10,6 +10,7 @@ import { type ReaderLine, type TableRow, rowEntry, splitShastraPath } from "@/li
 import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
 import { needsDevanagari, toDevanagari } from "@/lib/to-devanagari";
 import { AppNav } from "@/components/AppNav";
+import { PhotoTextButton } from "@/components/PhotoText";
 import { AI_ENABLED } from "@/lib/vyutpatti/llm";
 
 // Vyutpatti: the reader types each vishay (in Devanagari) and gets its
@@ -33,6 +34,8 @@ type Item = {
   progress: string;
   error?: string;
   result?: VyutpattiResult;
+  /** The reader's own split ("महा + व्रत"), when they changed it. */
+  parts?: string[];
   lines: ReaderLine[];
   rows: TableRow[];
   /** The anuvaad run; each entry's Gujarati is kept on its row (rows[i].anuvaad). */
@@ -179,6 +182,65 @@ function AutoGrow({ value, onChange, className, label }: { value: string; onChan
   );
 }
 
+/**
+ * How the vishay was split, shown so it can be changed (13 Nov 2026: "show
+ * the word break so we can change it if needed; optional, not compulsory").
+ * "महा + व्रत"; a prefix is written with a dash, "अ- + कथा".
+ */
+function SplitLine({ parts, changed, disabled, onChange }: { parts: string[]; changed: boolean; disabled: boolean; onChange: (parts: string[]) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const shown = parts.join(" + ");
+  if (!parts.length) return null;
+  if (!editing) {
+    return (
+      <p className="vyParts indic">
+        <span>{shown}</span>
+        {changed ? <small className="vySplitNote"> (your split)</small> : null}{" "}
+        <button
+          type="button"
+          className="vyLink"
+          disabled={disabled}
+          onClick={() => {
+            setValue(shown);
+            setEditing(true);
+          }}
+        >
+          Change the split
+        </button>
+      </p>
+    );
+  }
+  const next = value
+    .split(/\s*\+\s*/)
+    .map((p) => toDevanagari(p.trim()))
+    .filter(Boolean);
+  return (
+    <form
+      className="vySplitEdit"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!next.length) return;
+        setEditing(false);
+        onChange(next);
+      }}
+    >
+      <label className="vyHint vyHintPlain" htmlFor="vy-split">
+        Write the parts with + between them (a prefix with a dash: अ- + कथा).
+      </label>
+      <input id="vy-split" className="exInput indic" value={value} onChange={(e) => setValue(e.target.value)} autoFocus autoComplete="off" spellCheck={false} />
+      <span className="vySplitActions">
+        <button type="submit" className="vyGo" disabled={disabled || !next.length}>
+          Look up with this split
+        </button>
+        <button type="button" className="exGhost" onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </span>
+    </form>
+  );
+}
+
 export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
   const [input, setInput] = useState("");
   // The sheet no longer prints a box number (Sahebji, 9 Oct 2026); "1" is still sent with each run.
@@ -281,7 +343,7 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
       const res = await fetch("/api/vyutpatti/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vishay: item.vishay, number: item.number, box, engine }),
+        body: JSON.stringify({ vishay: item.vishay, number: item.number, box, engine, parts: item.parts }),
       });
       let finished = false;
       await readStream(res, (event) => {
@@ -469,7 +531,6 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
               value={input}
               autoFocus
               rows={Math.min(8, Math.max(2, input.split("\n").length + 1))}
-              placeholder={"1.1 अचौर्य\n10.6.6 कायिकहिंसा"}
               lang="hi"
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -480,6 +541,18 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
               spellCheck={false}
               autoComplete="off"
               autoCapitalize="off"
+            />
+            <PhotoTextButton
+              label="Or take a photo of the vishay list"
+              disabled={running}
+              onText={(text) => {
+                // one vishay per line, as typed; table borders and bullets dropped
+                const lines = text
+                  .split("\n")
+                  .map((line) => line.replace(/^[\s•*·-]+/, "").replace(/\s+/g, " ").trim())
+                  .filter((line) => /[ऀ-ॿ઀-૿A-Za-z]/.test(line));
+                setInput((value) => [value.trim(), ...lines].filter(Boolean).join("\n"));
+              }}
             />
             {problem ? (
               <p className="vyProblem" id="vy-problem" role="alert">
@@ -615,14 +688,16 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
 
                 {item.result ? (
                   <>
-                    {item.result.parts.length > 1 ? (
-                      <p className="vyParts indic">
-                        {item.result.parts
-                          .filter((p) => !p.skip)
-                          .map((p) => (p.prefix ? `${p.word}-` : p.word))
-                          .join(" + ")}
-                      </p>
-                    ) : null}
+                    <SplitLine
+                      parts={item.result.parts.filter((p) => !p.skip).map((p) => (p.prefix ? `${p.word}-` : p.word))}
+                      changed={Boolean(item.parts?.length)}
+                      disabled={running}
+                      onChange={(parts) => {
+                        const next = { ...item, parts };
+                        setItems((list) => list.map((i) => (i.key === item.key ? next : i)));
+                        void retry(next);
+                      }}
+                    />
 
                     {/* One kosh entry after another, as plain lines; the Gujarati anuvaad of each right under it. */}
                     {item.rows.length ? (

@@ -434,6 +434,7 @@ export async function buildWordListPdf(options: { word: string; sections: WordLi
     }
   }
 
+  numberPages(text, doc);
   embedder.finish();
   return doc.save({ useObjectStreams: false });
 }
@@ -470,6 +471,21 @@ const UNDERLINE = 0.6;
 export const NOTES_TABLE_RIGHT = A4[0] * 0.6;
 /** Room kept at the bottom of each page for the footer. */
 export const FOOTER_ROOM = 22;
+
+/**
+ * The page number at the foot of every page, right-aligned, "१ / ३"
+ * (Maharaj Saheb, 10 Nov 2026: "why are there no page numbers at the bottom?
+ * only the book number is written; the page number is needed too").
+ */
+export function numberPages(text: TextDrawer, doc: PDFDocument) {
+  const pages = doc.getPages();
+  const total = toDevanagariDigits(pages.length);
+  pages.forEach((page, i) => {
+    const runs = text.layout(`${toDevanagariDigits(i + 1)} / ${total}`, "regular");
+    const width = text.width(runs, LINE_TEXT_SIZE);
+    text.draw(page, runs, page.getWidth() - MARGIN - width, MARGIN - 6, LINE_TEXT_SIZE);
+  });
+}
 
 /** The book number centred at the foot of the page. */
 export function drawFooter(text: TextDrawer, page: PDFPage, value: string, left = MARGIN, right = NOTES_TABLE_RIGHT) {
@@ -630,6 +646,7 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
     });
   }
 
+  numberPages(text, doc);
   embedder.finish();
   return doc.save({ useObjectStreams: false });
 }

@@ -772,7 +772,27 @@ export type Progress = (message: string) => void;
 export type BuildOptions = {
   /** Read every kosh entry again instead of using the kept readings, and keep the new ones. */
   fresh?: boolean;
+  /**
+   * The reader's own split of the vishay ("महा", "व्रत"; "अ-" for a prefix),
+   * used instead of the automatic one (13 Nov 2026: the split is shown so it
+   * can be changed; changing it is optional).
+   */
+  parts?: string[];
 };
+
+/** The reader's split as a plan: "अ-" is a prefix, the rest are looked up. */
+export function planFromParts(parts: string[]): Plan | null {
+  const out: PlanPart[] = parts
+    .map((raw) => raw.normalize("NFC").replace(/\s+/g, "").trim())
+    .filter(Boolean)
+    .map((raw) => {
+      const prefix = raw.endsWith("-");
+      const word = raw.replace(/-+$/, "");
+      return { word, text: word, prefix };
+    })
+    .filter((p) => /^[\u0900-\u097f]+$/u.test(p.word));
+  return out.length ? { parts: out, vigraha: "", samasa: "" } : null;
+}
 
 export async function buildVyutpatti(
   input: VishayInput,
@@ -787,7 +807,7 @@ export async function buildVyutpatti(
   else if (engine === "sarvam") notes.push("Read with Sarvam: Shabda Ratna Mahodadhi's Gujarati meanings come from OCR text, not the scan. Check them against the page.");
 
   progress("Splitting");
-  const plan = await planVishay(engine, vishay, usage);
+  const plan = (options.parts?.length ? planFromParts(options.parts) : null) ?? (await planVishay(engine, vishay, usage));
   const { main } = splitContext(vishay);
   // The whole is looked up as one word only when it is one word (not a phrase or a maxim).
   const whole = /^[ऀ-ॿ]+$/u.test(main) ? main : "";

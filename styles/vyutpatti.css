@@ -901,3 +901,19 @@
 .vyChoice:focus-visible {
   border-color: var(--lt-cobalt);
 }
+
+/* Change the split (13 Nov 2026) */
+.vySplitNote {
+  color: var(--lt-pencil);
+}
+.vySplitEdit {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 12px;
+}
+.vySplitActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
