@@ -10,7 +10,8 @@ import { AnuvaadWords } from "@/components/AnuvaadWords";
 import { AnuvaadPages } from "@/components/AnuvaadPages";
 import { type BoxRow, parseBoxPages } from "@/lib/anuvaad/box";
 import { addImagePage, fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
-import type { LocatedPage, LocatedPassage } from "@/lib/anuvaad/locate";
+import type { LocatedPassage } from "@/lib/anuvaad/locate";
+import { type BookText, bookGujaratiText, passageWords } from "@/lib/anuvaad/book-text";
 import { gujaratiNumber, pageText } from "@/lib/anuvaad/pages";
 
 // Anuvaad, two ways, chosen first: "Pages of a PDF" (components/AnuvaadPages:
@@ -54,6 +55,8 @@ type Row = BoxRow & {
    * null when it was looked for and not found, undefined while not yet looked for.
    */
   place?: LocatedPassage | null;
+  /** The book's own Gujarati for the passage, cut from the pages around `place` (lib/anuvaad/book-text). */
+  book?: BookText | null;
   finding?: boolean;
   /** What the anuvaad is made from; chosen by default as book → page → box. */
   source?: Source;
@@ -66,28 +69,38 @@ type Row = BoxRow & {
  */
 type Source = "book" | "page" | "box";
 
-/**
- * The book's Gujarati page for the passage: the one quoting most of its words;
- * on a tie the nearest, after it first (a translation follows its text).
- */
-function bookGujarati(place: LocatedPassage | null | undefined): LocatedPage | null {
-  if (!place) return null;
-  const distance = (p: LocatedPage) => Math.abs(p.page - place.page) * 2 - (p.page > place.page ? 1 : 0);
-  const gu = place.pages.filter((p) => p.gujarati).sort((a, b) => (b.quotes ?? 0) - (a.quotes ?? 0) || distance(a) - distance(b));
-  return gu[0] ?? null;
-}
-
-const defaultSource = (row: Row): Source => (bookGujarati(row.place) ? "book" : row.place ? "page" : "box");
+const defaultSource = (row: Row): Source => (row.book ? "book" : row.place ? "page" : "box");
 const sourceOf = (row: Row): Source => row.source ?? defaultSource(row);
 
-/** A page's OCR text as anuvaad paragraphs (the book's own Gujarati), with where it is from. */
-function bookMarkup(place: LocatedPassage, page: LocatedPage) {
-  const where = `(પુસ્તકમાંથી: ${place.granthName}, પાનું ${gujaratiNumber(Number(page.printedPage) || page.page)})`;
-  const paras = pageText(page.text)
-    .split(/\n\s*\n/)
-    .map((p) => p.replace(/\s*\n\s*/g, " ").trim())
-    .filter(Boolean);
-  return [where, ...paras].join("\n");
+/** "પાનું ૧૮૦–૧૮૧" from the printed page numbers (PDF numbers when a page has none). */
+function gujaratiPages(place: LocatedPassage, pdfPages: number[]) {
+  const printed = pdfPages.map((n) => Number(place.pages.find((p) => p.page === n)?.printedPage) || n);
+  const a = printed[0];
+  const b = printed[printed.length - 1];
+  return a === b ? `પાનું ${gujaratiNumber(a)}` : `પાનાં ${gujaratiNumber(a)}–${gujaratiNumber(b)}`;
+}
+
+/** Book name, number and pages, as the anuvaad's first line: every printed passage says where it is from. */
+function whereFrom(place: LocatedPassage, pdfPages: number[]) {
+  return `${place.granthName}${place.bookNumber ? ` (ગ્રંથ નં. ${place.bookNumber})` : ""}, ${gujaratiPages(place, pdfPages)}`;
+}
+
+/** The book's own Gujarati, the passage's part in bold, with where it is from. */
+function bookMarkup(place: LocatedPassage, book: BookText) {
+  return [`(પુસ્તકમાંથી: ${whereFrom(place, book.pages)})`, book.markup].join("\n");
+}
+
+/**
+ * Of the places found, the one to use: the first whose pages hold the book's
+ * own Gujarati for the passage, as long as the box does not name another
+ * book found; else the first.
+ */
+function choosePlace(places: LocatedPassage[], row: Pick<Row, "granth" | "shastraPath">) {
+  const words = passageWords(row.shastraPath);
+  const withBook = places.map((place) => ({ place, book: bookGujaratiText(place.pages, place.page, row.granth, words) }));
+  const named = places.some((p) => p.named);
+  const pick = withBook.find((x) => x.book && (x.place.named || !named)) ?? withBook[0];
+  return pick ? { place: pick.place, book: pick.book } : { place: null, book: null };
 }
 
 const ACCEPT = "application/pdf,image/jpeg,image/png";
@@ -112,10 +125,36 @@ async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer) {
 }
 
 const SOURCE_LABEL: Record<Source, string> = {
-  book: "the book's own Gujarati",
-  page: "translated from our library page",
-  box: "translated from the box text",
+  book: "the book's own Gujarati (no AI); the passage's part is in bold",
+  page: "AI anuvaad of our library page (the book has no Gujarati there)",
+  box: "AI anuvaad of the box text (the passage was not found in our library)",
 };
+
+/** "Download it with 4 pages before and after": fetched here, so the phone shows that it is coming and when it is saved. */
+function NearbyPages({ place, first, last }: { place: LocatedPassage; first: number; last: number }) {
+  const [state, setState] = useState<"" | "busy" | "done" | "error">("");
+  async function get() {
+    if (state === "busy") return;
+    setState("busy");
+    try {
+      const res = await fetch(`/api/anuvaad/located-pdf?granth=${encodeURIComponent(place.granthKey)}&from=${first}&to=${last}`);
+      if (!res.ok) throw new Error();
+      saveBlob(await res.blob(), `${place.granthName} p${first}-${last}.pdf`.replace(/[\\/:*?"<>|]+/g, " "));
+      setState("done");
+    } catch {
+      setState("error");
+    }
+  }
+  return (
+    <>
+      <button type="button" className="vyLink" onClick={() => void get()} disabled={state === "busy"}>
+        {state === "busy" ? "Getting the pages…" : `Download it with 4 pages before and after (PDF ${first}-${last})`}
+      </button>
+      {state === "done" ? <span className="vyHint"> Saved to your downloads.</span> : null}
+      {state === "error" ? <span className="vyProblem"> The pages could not be fetched. Try again.</span> : null}
+    </>
+  );
+}
 
 /** Where a passage is in the library, its ±4 pages, and what the anuvaad is made from. */
 function PlaceBox({ row, onFind, onSource }: { row: Row; onFind: () => void; onSource: (source: Source) => void }) {
@@ -136,7 +175,7 @@ function PlaceBox({ row, onFind, onSource }: { row: Row; onFind: () => void; onS
       </div>
     );
   }
-  const book = bookGujarati(place);
+  const book = row.book;
   const first = place.pages[0]?.page ?? place.page;
   const last = place.pages[place.pages.length - 1]?.page ?? place.page;
   const source = sourceOf(row);
@@ -149,29 +188,33 @@ function PlaceBox({ row, onFind, onSource }: { row: Row; onFind: () => void; onS
       </p>
       <p className="anPlaceLinks">
         {place.pdfUrl ? (
-          <a className="vyLink" href={`${place.pdfUrl}#page=${place.page}`} target="_blank" rel="noreferrer">
+          // only this page, cut from the book (16-17 Nov 2026: the whole book's PDF did not open on the phone)
+          <a className="vyLink" href={`/api/anuvaad/located-pdf?granth=${encodeURIComponent(place.granthKey)}&from=${place.page}&to=${place.page}&inline=1`} target="_blank" rel="noreferrer">
             Open this page
           </a>
         ) : null}
-        {place.pdfUrl ? (
-          <a className="vyLink" href={`/api/anuvaad/located-pdf?granth=${encodeURIComponent(place.granthKey)}&from=${first}&to=${last}`}>
-            Download it with 4 pages before and after (PDF {first}-{last})
-          </a>
-        ) : null}
+        {place.pdfUrl ? <NearbyPages place={place} first={first} last={last} /> : null}
       </p>
-      {book ? <p className="vyHint">The book has its own Gujarati on {pageName(book)}.</p> : null}
+      {book ? (
+        <p className="vyHint">
+          The book has its own Gujarati for it on {book.pages.length > 1 ? `PDF pages ${book.pages[0]}-${book.pages[book.pages.length - 1]}` : `PDF page ${book.pages[0]}`}
+          {book.by === "gatha" ? " (found by the gatha number)" : ""}.
+        </p>
+      ) : (
+        <p className="vyHint">The book has no Gujarati of its own for this passage in our library.</p>
+      )}
       <fieldset className="anSource">
         <legend>Make the anuvaad from</legend>
         {book ? (
           <label>
-            <input type="radio" checked={source === "book"} onChange={() => onSource("book")} /> The book&apos;s own Gujarati ({pageName(book)})
+            <input type="radio" checked={source === "book"} onChange={() => onSource("book")} /> The book&apos;s own Gujarati (no AI)
           </label>
         ) : null}
         <label>
-          <input type="radio" checked={source === "page"} onChange={() => onSource("page")} /> Our library page, translated
+          <input type="radio" checked={source === "page"} onChange={() => onSource("page")} /> AI anuvaad of our library page
         </label>
         <label>
-          <input type="radio" checked={source === "box"} onChange={() => onSource("box")} /> The box text, translated
+          <input type="radio" checked={source === "box"} onChange={() => onSource("box")} /> AI anuvaad of the box text
         </label>
       </fieldset>
     </div>
@@ -196,6 +239,10 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
   const nextBatch = useRef(1);
   const nextRow = useRef(1);
   const picker = useRef<HTMLInputElement | null>(null);
+  // the rows as they are now: a lookup finishing after "Make the anuvaad" was pressed must still count
+  const rowsRef = useRef<Row[]>([]);
+  rowsRef.current = rows;
+  const lookups = useRef(new Map<number, Promise<{ place: LocatedPassage | null; book: BookText | null }>>());
 
   const waiting = uploads.filter((u) => u.status === "waiting");
   const translated = rows.filter((r) => r.status === "done" && r.markup);
@@ -280,12 +327,20 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     if (fresh.length) setView("rows");
   }
 
-  async function translateOne(row: Row) {
-    updateRow(row.key, { status: "running", error: undefined });
+  async function translateOne(given: Row) {
+    updateRow(given.key, { status: "running", error: undefined });
+    // Maharaj Saheb, 20 Nov 2026: "only 5% was taken from the books, the rest went straight to AI". The
+    // anuvaad was started before each passage had been looked up in the library, and a passage not yet
+    // looked up went to the AI with the box text. Now each one waits for its lookup.
+    let row = rowsRef.current.find((r) => r.key === given.key) ?? given;
+    if (row.shastraPath.trim() && (row.place === undefined || row.finding)) {
+      const found = await findOne(row);
+      row = { ...row, ...found };
+    }
     const source = sourceOf(row);
     try {
       const place = row.place;
-      const book = bookGujarati(place);
+      const book = row.book;
       if (source === "book" && place && book) {
         updateRow(row.key, { status: "done", markup: bookMarkup(place, book), literal: "" });
         return;
@@ -305,7 +360,8 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(json.error || "The anuvaad could not be prepared.");
-        updateRow(row.key, { status: "done", markup: String(json.markup ?? ""), literal: String(json.literal ?? "") });
+        const head = `(અમારી લાઇબ્રેરીના પાનાનો AI અનુવાદ: ${whereFrom(place, [place.page])})`;
+        updateRow(row.key, { status: "done", markup: `${head}\n${String(json.markup ?? "")}`, literal: String(json.literal ?? "") });
         return;
       }
       const res = await fetch("/api/anuvaad/translate", {
@@ -315,7 +371,8 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "The anuvaad could not be prepared.");
-      updateRow(row.key, { status: "done", markup: String(json.markup ?? ""), literal: String(json.literal ?? "") });
+      const head = `(બોક્સના પાઠનો AI અનુવાદ${row.granth ? `: ${row.granth}` : ""})`;
+      updateRow(row.key, { status: "done", markup: `${head}\n${String(json.markup ?? "")}`, literal: String(json.literal ?? "") });
     } catch (error) {
       updateRow(row.key, { status: "error", error: error instanceof Error ? error.message : "The anuvaad could not be prepared." });
     }
@@ -329,20 +386,31 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     }
   }
 
-  async function findOne(row: Row) {
+  /** Looks the passage up (once at a time per row) and keeps where it is and the book's Gujarati for it. */
+  function findOne(row: Row) {
+    const running = lookups.current.get(row.key);
+    if (running) return running;
     updateRow(row.key, { finding: true });
-    try {
-      const res = await fetch("/api/anuvaad/locate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passage: row.shastraPath }),
-      });
-      const json = await res.json().catch(() => ({}));
-      const place = res.ok && Array.isArray(json.places) && json.places.length ? (json.places[0] as LocatedPassage) : null;
-      updateRow(row.key, { finding: false, place });
-    } catch {
-      updateRow(row.key, { finding: false, place: null });
-    }
+    const job = (async () => {
+      try {
+        const res = await fetch("/api/anuvaad/locate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ passage: row.shastraPath, granth: row.granth }),
+        });
+        const json = await res.json().catch(() => ({}));
+        const places = res.ok && Array.isArray(json.places) ? (json.places as LocatedPassage[]) : [];
+        return places.length ? choosePlace(places, row) : { place: null, book: null };
+      } catch {
+        return { place: null, book: null };
+      }
+    })();
+    lookups.current.set(row.key, job);
+    void job.then((found) => {
+      lookups.current.delete(row.key);
+      updateRow(row.key, { finding: false, ...found });
+    });
+    return job;
   }
 
   async function translate(list: Row[]) {
@@ -372,7 +440,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sections: done.map((r) => ({ caption: [r.sr, r.vishay].filter(Boolean).join(" · "), markup: r.markup })),
+          sections: done.map((r) => ({ caption: [r.sr ? `Sr. ${r.sr}` : "", r.vishay, r.granth].filter(Boolean).join(" · "), markup: r.markup })),
         }),
       });
       if (!res.ok) {
@@ -470,7 +538,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
         <section className="vyForm exStep">
           <h1 className="exQuestion">Which box files?</h1>
           <p className="vyLabel">
-            <span>The printed box tables (Sr · V.T · Granth · ShastraPath), as PDF scans or photos of the pages. Several files are read as one box, in the order added.</span>
+            <span>The printed box tables, as PDF scans or photos of the pages. Only three columns are read: Sr. No., Granth and ShastraPath. Several files are read as one box, in the order added.</span>
           </p>
           <div
             className={`anDrop${dragging ? " isOver" : ""}`}
@@ -589,8 +657,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
               <header className="vyCardHead">
                 <label className="anPick">
                   <input type="checkbox" checked={row.include} onChange={(e) => updateRow(row.key, { include: e.target.checked })} />
-                  <span>{row.sr ? `Sr. ${row.sr}` : "Sr. —"}</span>
-                  {row.vt ? <span className="vyTag indic">{row.vt}</span> : null}
+                  <span>{row.sr ? `Sr. ${row.sr}` : "Sr. (not on the scan)"}</span>
                   {row.status === "done" ? <span className="vyTag isDone">translated</span> : null}
                 </label>
                 <button type="button" className="vyClose" aria-label="Remove this passage" onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}>
@@ -612,7 +679,6 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
               </label>
               <div className="anRowFoot">
                 <span className="vyHint">
-                  {row.inRem ? <>In.Rem {row.inRem} · </> : null}
                   {row.where.join(" · ")}
                 </span>
                 {row.files[0] ? (
@@ -652,9 +718,8 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
             .map((row) => (
               <article key={row.key} className={`vyCard anResult is-${row.status}`}>
                 <p className="anCardTag">
-                  {row.sr ? `Sr. ${row.sr}` : "Sr. —"}
-                  {row.vt ? <span className="indic"> · {row.vt}</span> : null}
-                  {row.status !== "done" ? <span className="indic"> · {row.granth}</span> : null}
+                  {row.sr ? `Sr. ${row.sr}` : "Sr. (not on the scan)"}
+                  {row.granth ? <span className="indic"> · {row.granth}</span> : null}
                   <span> · {SOURCE_LABEL[sourceOf(row)]}</span>
                 </p>
                 {row.status === "waiting" || row.status === "running" ? (
@@ -679,8 +744,8 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
                   <>
                     <AnuvaadView markup={row.markup} literal={row.literal} onChange={(markup) => updateRow(row.key, { markup })} />
                     <div className="anRowFoot">
-                      <button type="button" className="exGhost" onClick={() => translate([row])} disabled={translating}>
-                        Translate again
+                      <button type="button" className="exGhost" onClick={() => translate([row])} disabled={translating} title="Makes this passage's anuvaad again from the start; your corrections to it are replaced">
+                        Make this anuvaad again
                       </button>
                     </div>
                   </>
@@ -743,7 +808,7 @@ export default function AnuvaadPage() {
                 </button>
                 <button type="button" className="exChoice" onClick={() => choose("box")}>
                   <strong>Box files</strong>
-                  <span>The printed box tables (Sr · V.T · Granth · ShastraPath). Each passage is translated.</span>
+                  <span>The printed box tables (Sr. No. · Granth · ShastraPath). Each passage is found in our books; the book&apos;s own Gujarati is used where it has one.</span>
                 </button>
                 <button type="button" className="exChoice" onClick={() => choose("words")}>
                   <strong>Saved words</strong>

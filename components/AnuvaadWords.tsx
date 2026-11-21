@@ -160,7 +160,10 @@ export function AnuvaadWords({ onBack }: { onBack: () => void }) {
               multiple
               hidden
               onChange={(e) => {
-                setFiles((list) => [...list, ...Array.from(e.target.files ?? [])]);
+                // read the list now: the updater runs after the input is cleared below, and then it is empty
+                // (Diksha, 17 Nov 2026: "choose file — nothing gets selected")
+                const picked = Array.from(e.target.files ?? []);
+                setFiles((list) => [...list, ...picked]);
                 e.target.value = "";
               }}
             />

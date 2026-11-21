@@ -5,6 +5,7 @@ import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import { describeGranth, getGranthCatalog } from "@/lib/granth-catalog";
 import { appendRemotePages } from "@/lib/pdf-remote-pages";
+import { stampLabels, stampPages } from "@/lib/pdf-stamp";
 
 // The pages a box passage was found on, with its neighbours, as one PDF cut
 // from the library's own file: ?granth=<granth key>&from=<page>&to=<page>
@@ -24,10 +25,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const out = await PDFDocument.create();
     const pages = Array.from({ length: to - from + 1 }, (_, i) => from + i);
     await appendRemotePages(out, described.pdfUrl, pages);
+    const labels = await stampLabels(granth, pages).catch(() => new Map<number, string>());
+    await stampPages(out, out.getPages().map((page, i) => ({ page, label: labels.get(pages[i]) ?? "" })));
     const bytes = await out.save();
     const name = `${described.displayName} p${from}-${to}.pdf`.replace(/[\\/:*?"<>|]+/g, " ");
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
+    // ?inline=1 opens in the browser ("Open this page"); otherwise it is saved
+    const how = req.query.inline === "1" ? "inline" : "attachment";
+    res.setHeader("Content-Disposition", `${how}; filename*=UTF-8''${encodeURIComponent(name)}`);
     return res.status(200).send(Buffer.from(bytes));
   } catch (error) {
     console.error("located pdf failed:", error instanceof Error ? error.message : error);

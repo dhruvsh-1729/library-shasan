@@ -13,6 +13,9 @@
 import { getTursoClient } from "@/lib/turso";
 import { describeGranth, getGranthCatalog, isSearchable } from "@/lib/granth-catalog";
 import { WORD_TOKEN_PATTERN, foldSanskrit } from "@/lib/sanskrit-fold.mjs";
+import { bookNumbers, foldName } from "@/lib/granth-name-search";
+import type { GranthCatalog } from "@/lib/granth-catalog";
+import { gathaMarks, gathaRange, passageWords } from "@/lib/anuvaad/book-text";
 
 export type LocatedPage = {
   page: number;
@@ -33,19 +36,17 @@ export type LocatedPassage = {
   printedPage: string | null;
   /** Share of the passage's words found on that page (0-1). */
   score: number;
+  /** The box's Granth column names this book. */
+  named?: boolean;
+  /** The library's book number ("196"), for the printed anuvaad. */
+  bookNumber?: string;
   /** The page and its neighbours, in order. */
   pages: LocatedPage[];
 };
 
 export const NEARBY_PAGES = 4;
 
-const MIN_WORD = 4;
-
-/** The passage's distinct folded words of 4+ letters, longest first. */
-export function passageWords(passage: string) {
-  const words = (foldSanskrit(passage).match(WORD_TOKEN_PATTERN) ?? []).filter((w) => /[ऀ-ॿ]/.test(w) && [...w].length >= MIN_WORD);
-  return [...new Set(words)].sort((a, b) => [...b].length - [...a].length);
-}
+export { passageWords } from "@/lib/anuvaad/book-text";
 
 const ftsWord = (w: string) => `"${w.replace(/"/g, '""')}"`;
 
@@ -67,6 +68,103 @@ export function isGujaratiPage(text: string) {
 }
 
 type Candidate = { id: number; granthKey: string; page: number };
+
+// ---------------------------------------------------------------- the box's Granth column
+// Maharaj Saheb, 18 Nov 2026: the box named Panchashak and the anuvaad came
+// from another book. The Granth column ("पंचाशक अभयदेवसूरि टीका, 04 - पूजाविधि,
+// गाथा 42") names the book; a granth of ours with that name is searched first.
+
+/** Consonants only, m and n alike: "पंचाशक" and "Panchashak" both give "pncsk". */
+const skeleton = (text: string) =>
+  foldName(text)
+    .replace(/[aeiouh\s]/g, "")
+    .replace(/m/g, "n")
+    .replace(/([a-z])\1+/g, "$1");
+
+/** Words of the Granth column that are not names: commentary, part, gatha… */
+const NOT_A_NAME = /^(?:मूल|टीका|स्वोपज्ञ|भाग|गाथा|श्लोक|सूत्र|अध्ययन|उद्देशक|प्रकाश|ढाळ|अधिकार|प्रकरण|प्रकरणम्|उपरि|वृत्ति|भाष्य|निर्युक्ति|चूर्णि|उ|श्रुतस्कंध|शतक|प्रस्ताव|महाग्रन्थ|ग्रंथ|ग्रन्थ)$/;
+
+/** Name skeletons the Granth column gives: the first word of each part, and the first two together. */
+export function granthHints(granth: string) {
+  const out = new Set<string>();
+  for (const part of granth.split(/[;,>]/)) {
+    const words = part
+      .replace(/[0-9०-९]+/g, " ")
+      .replace(/[()\-–—.:]/g, " ")
+      .split(/\s+/)
+      .filter((w) => /[ऀ-ॿ઀-૿]/.test(w) && !NOT_A_NAME.test(w));
+    if (!words.length) continue;
+    for (const k of [skeleton(words[0]), words[1] ? skeleton(words[0] + words[1]) : ""]) if (k.length >= 4) out.add(k);
+  }
+  return [...out];
+}
+
+/** Our granths the Granth column names. */
+export function hintedGranths(catalog: GranthCatalog, granth: string) {
+  const hints = granthHints(granth);
+  if (!hints.length) return [];
+  const keys: string[] = [];
+  for (const [key, entry] of catalog.byGranthKey) {
+    if (!isSearchable(catalog, entry)) continue;
+    const name = (describeGranth(catalog, key)?.displayName ?? "").replace(/·.*$/, "");
+    const words = name.split(/\s+/).filter(Boolean);
+    // the name from each of its words on ("Agam 42 Dashvaikalik Sutra …" → "Dashvaikalik Sutra …")
+    const tails = words.map((_, i) => skeleton(words.slice(i).join(" "))).filter((t) => t.length >= 5);
+    const named = hints.some((h) => tails.some((t) => t.startsWith(h) || (h.startsWith(t) && t.length >= h.length * 0.6)));
+    if (named) keys.push(key);
+  }
+  return keys;
+}
+
+/**
+ * Pages of the named granths that print the box's first gatha number as a
+ * verse ends it ("॥२९॥"), when the words cannot find it: a box may hold only
+ * the Sanskrit tika ("यतना … धर्मसारो") of a book that prints the Prakrit mula
+ * ("जयणा उ धम्मसारो ॥२९॥"). A book restarts its numbers in each chapter, so
+ * the page whose Gujarati quotes the passage, or whose heads name the box's
+ * chapter ("07 – जिनभवन विधिप्रकरण"), is taken.
+ */
+async function byGathaNumber(granth: string, words: string[], keys: string[]): Promise<Candidate & { score: number } | null> {
+  const range = gathaRange(granth);
+  if (!range || !keys.length) return null;
+  const [first] = range;
+  const digits = [String(first), String(first).replace(/\d/g, (d) => "०१२३४५६७८९"[Number(d)]), String(first).replace(/\d/g, (d) => "૦૧૨૩૪૫૬૭૮૯"[Number(d)])];
+  const client = getTursoClient();
+  const r = await client.execute({
+    sql: `SELECT id, granth_key, page_number, content FROM ocr_pages
+          WHERE granth_key IN (${keys.map(() => "?").join(",")}) AND (${digits.map(() => "content LIKE ?").join(" OR ")})`,
+    args: [...keys, ...digits.map((d) => `%${d}%`)],
+  });
+  const pages = r.rows.map((row) => ({ id: Number(row.id), granthKey: String(row.granth_key), page: Number(row.page_number), text: String(row.content ?? "") }));
+  const verse = pages.filter((p) => p.text.split("\n").some((line) => /[ऀ-ॿ]{3}/.test(line) && gathaMarks(line).some((k) => k.style === "close" && k.from <= first && first <= k.to)));
+  if (!verse.length) return null;
+  // the chapter the box names, beyond the book's own name
+  const chapter = granthHints(granth);
+  const scored = verse.map((p) => {
+    const quoted = quotedShare(words, p.text);
+    const skel = skeleton(p.text.slice(0, 400));
+    const named = chapter.some((h) => h.length >= 4 && skel.includes(h)) ? 0.3 : 0;
+    return { ...p, score: quoted + named };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0];
+  // one candidate and no evidence is still the only such verse; several need something to choose by
+  if (scored.length > 1 && best.score === scored[1].score) return null;
+  return { id: best.id, granthKey: best.granthKey, page: best.page, score: 0 };
+}
+
+/** Pages of the named granths that print any of the passage's words, best first. */
+async function hintedCandidates(words: string[], keys: string[]): Promise<Candidate[]> {
+  if (!keys.length) return [];
+  const client = getTursoClient();
+  const r = await client.execute({
+    sql: `SELECT s.page_id AS id, s.granth_key AS granth_key, s.page_number AS page
+          FROM ocr_pages_folded_fts f JOIN ocr_pages_folded_state s ON s.page_id = f.rowid
+          WHERE ocr_pages_folded_fts MATCH ? AND s.granth_key IN (${keys.map(() => "?").join(",")}) LIMIT 400`,
+    args: [words.slice(0, 40).map(ftsWord).join(" OR "), ...keys],
+  });
+  return r.rows.map((row) => ({ id: Number(row.id), granthKey: String(row.granth_key), page: Number(row.page) }));
+}
 
 async function candidates(words: string[], excluded: Set<string>): Promise<Candidate[]> {
   const client = getTursoClient();
@@ -98,13 +196,18 @@ async function candidates(words: string[], excluded: Set<string>): Promise<Candi
   return [];
 }
 
-/** Where the passage is printed in the library, best first (at most `limit` granths). */
-export async function locatePassage(passage: string, limit = 3): Promise<LocatedPassage[]> {
+/**
+ * Where the passage is printed in the library, best first (at most `limit`
+ * granths). `granth`, the box's Granth column, puts the books it names first.
+ */
+export async function locatePassage(passage: string, limit = 3, granth = ""): Promise<LocatedPassage[]> {
   const words = passageWords(passage);
   if (words.length < 3) return [];
   const catalog = await getGranthCatalog();
   const excluded = new Set(catalog.excludedKeys);
-  const found = await candidates(words, excluded);
+  const hinted = new Set(granth ? hintedGranths(catalog, granth).filter((k) => !excluded.has(k)) : []);
+  const [general, named] = await Promise.all([candidates(words, excluded), hintedCandidates(words, [...hinted])]);
+  const found = [...new Map([...general, ...named].map((c) => [c.id, c])).values()];
   if (!found.length) return [];
 
   const client = getTursoClient();
@@ -126,7 +229,17 @@ export async function locatePassage(passage: string, limit = 3): Promise<Located
   for (const c of scored) if (!best.has(c.granthKey) && isSearchable(catalog, catalog.byGranthKey.get(c.granthKey))) best.set(c.granthKey, c);
   // a short passage (a kosh line, a phrase) shares a few words with many pages: it needs a closer match
   const needed = words.length < 8 ? 0.75 : 0.35;
-  const top = [...best.values()].filter((c) => c.score >= needed).slice(0, limit);
+  // in a book the box names, a few words are enough: its Gujarati edition may print only the mula, or the tika in pieces
+  const namedWords = Math.min(6, Math.max(3, Math.round(words.length * 0.05)));
+  const ranked = [...best.values()]
+    .filter((c) => (hinted.has(c.granthKey) ? Math.round(c.score * words.length) >= namedWords || c.score >= needed : c.score >= needed))
+    .sort((a, b) => Number(hinted.has(b.granthKey)) - Number(hinted.has(a.granthKey)) || b.score - a.score);
+  // nothing in the named books by words: by the gatha number the box gives
+  if (hinted.size && !ranked.some((c) => hinted.has(c.granthKey))) {
+    const byNumber = await byGathaNumber(granth, words, [...hinted]);
+    if (byNumber) ranked.unshift(byNumber);
+  }
+  const top = ranked.slice(0, limit);
 
   const out: LocatedPassage[] = [];
   for (const c of top) {
@@ -149,6 +262,8 @@ export async function locatePassage(passage: string, limit = 3): Promise<Located
       page: c.page,
       printedPage: pages.find((p) => p.page === c.page)?.printedPage ?? null,
       score: Math.round(c.score * 100) / 100,
+      named: hinted.has(c.granthKey),
+      bookNumber: described?.entry.book_number || String(bookNumbers(described?.entry.source_rel_path ?? "")[0] ?? ""),
       pages,
     });
   }

@@ -132,6 +132,9 @@ export function drawAnuvaadPages(
               ]
             : [{ text: block.text, weight: "regular" }];
           break;
+        case "main":
+          pieces = [{ text: block.text, weight: "bold" }];
+          break;
         default:
           pieces = [{ text: block.text, weight: "regular" }];
       }

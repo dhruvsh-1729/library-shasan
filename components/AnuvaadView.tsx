@@ -63,6 +63,12 @@ export function AnuvaadView({
                     {b.text}
                   </p>
                 );
+              case "main":
+                return (
+                  <p key={i} className="anPara isMain">
+                    <strong>{b.text}</strong>
+                  </p>
+                );
               default:
                 return <p key={i} className="anPara">{b.text}</p>;
             }
@@ -75,11 +81,11 @@ export function AnuvaadView({
             {editing ? "Done editing" : "Edit the Gujarati"}
           </button>
         ) : null}
-        {editing ? <span className="vyHint"># heading · વિષય: … · ## part · - **label:** text · two spaces before “-” for a sub-point</span> : null}
+        {editing ? <span className="vyHint"># heading · વિષય: … · ## part · - **label:** text · two spaces before “-” for a sub-point · “&gt; ” before a line makes it bold (the passage&apos;s own part)</span> : null}
       </div>
       {literal ? (
         <details className="vyDetails anLiteral">
-          <summary>Word-for-word translation (for checking)</summary>
+          <summary>Word-by-word meaning the AI worked from (only to check its anuvaad)</summary>
           <p className="indic" lang="gu">{literal}</p>
         </details>
       ) : null}

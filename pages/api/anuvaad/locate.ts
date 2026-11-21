@@ -17,9 +17,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
   const passage = String((req.body ?? {}).passage ?? "").normalize("NFC").slice(0, 20_000);
+  // the box's Granth column: the book it names is looked in first
+  const granth = String((req.body ?? {}).granth ?? "").normalize("NFC").slice(0, 1_000);
   if ((passage.match(/[ऀ-ॿ]/g)?.length ?? 0) < 20) return res.status(400).json({ error: "The passage is too short to find." });
   try {
-    return res.status(200).json({ places: await locatePassage(passage) });
+    return res.status(200).json({ places: await locatePassage(passage, 3, granth) });
   } catch (error) {
     console.error("anuvaad locate failed:", error instanceof Error ? error.message : error);
     return res.status(502).json({ error: "The library could not be searched just now. Please try again." });

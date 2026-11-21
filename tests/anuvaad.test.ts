@@ -161,3 +161,114 @@ test("box passage lookup: words, Gujarati pages and quoted words", async () => {
   assert.ok(!isGujaratiPage("अहिंसा परमो धर्मः ".repeat(30)));
   assert.ok(quotedShare(["अहिंसा", "हेतुतः"], gujarati) >= 0.5);
 });
+
+// ---------------------------------------------------------------- the book's own Gujarati (20 Nov 2026)
+// Maharaj Saheb: the anuvaad from our book started 3-4 lines late, came with
+// pages around it, and carried the ભાવાર્થ of Pravinbhai Mota's books.
+import { bookGujaratiText, gathaMarks, gathaRange } from "@/lib/anuvaad/book-text";
+import { granthHints } from "@/lib/anuvaad/locate";
+
+test("the Granth column's gatha numbers", () => {
+  assert.deepEqual(gathaRange("पंचाशक मूल, 04 - पूजाविधिप्रकरण पंचाश क, गाथा 42 ; पंचाशक अभयदेवसूरि टीका, गाथा 42"), [42, 42]);
+  assert.deepEqual(gathaRange("दशवैकालिक हरिभद्रसूरि सूत्र टीका, अध्ययन - 04 (षड्जीवनिकाय), गाथा 1-6"), [1, 6]);
+  // the chapter number after a comma is not a gatha
+  assert.deepEqual(gathaRange("संबोधप्रकरणम्, 01 – देवस्वरूप अधिकार, गाथा 290-291, 01 – देवस्वरूप अधिकार, गाथा 298-303"), [290, 303]);
+  assert.deepEqual(gathaRange("द्वात्रिंशद् द्वात्रिंशिका, 08 - वाद बत्रीसी, श्लोक 28"), [28, 28]);
+  assert.equal(gathaRange("अभिधानव्युत्पत्तिप्रक्रियाकोश भाग-2"), null);
+});
+
+test("gatha marks: a verse's end, a Gujarati part's end, a numbered opening", () => {
+  assert.deepEqual(gathaMarks("तहवि तई परिसुद्धा, गिहीण कूवाहरणजोगा ॥४२॥").map((k) => [k.from, k.style]), [[42, "close"]]);
+  assert.deepEqual(gathaMarks("સંબંધથી પૂજા નિર્દોષ છે. (૪૧-૪૨)").map((k) => [k.from, k.to, k.style]), [[41, 42, "close"]]);
+  assert.deepEqual(gathaMarks("(૮) ગાથાર્થ: યતનાથી ચરે, યતનાથી ઊભો રહે").map((k) => [k.from, k.style]), [[8, "open"]]);
+  // a number alone on its line ends the part before it
+  assert.deepEqual(gathaMarks("(૧૯૯).").map((k) => [k.from, k.style]), [[199, "close"]]);
+  assert.deepEqual(gathaMarks("નિર્દોષ એવી પૂજા કરવી જોઈએ એમ (૪૦મી ગાથામાં) કહ્યું છે."), []);
+});
+
+const page = (n: number, text: string) => ({ page: n, printedPage: String(n - 15), text, gujarati: true });
+
+test("book Gujarati: starts right after the verse, ends before the next gatha, the passage in bold", () => {
+  const pages = [
+    page(195, [
+      "૪. પૂજાવિધિ પંચાશક",
+      "ગાથા-૪૦-૪૨",
+      "ટીકાર્થ-અહીં મનુષ્યો વિશેષથી ઉપદેશને યોગ્ય છે, અને ઉપદેશ પ્રમાણે કરનારા",
+      "હોવાથી મનુષ્યભવને પામીને એમ કહ્યું છે. (૪૦)",
+      "पूजाए कायवहो, पडिकुट्ठो सो य णेव पुज्जाणं ।",
+      "उवगारिणित्ति तो सा, परिसुद्धा कह णु होइत्ति ? ॥४१॥",
+      "भण्णइ जिणपूयाए, कायवहो जतिवि होइ उ कहिंचि ।",
+      "तहवि तई परिसुद्धा, गिहीण कूवाहरणजोगा ॥४२॥",
+      "નિર્દોષ એવી પૂજા કરવી જોઈએ એમ (૪૦મી ગાથામાં) કહ્યું છે. તેમાં પૂજાની નિર્દોષતાને",
+      "નહિ માનનાર બીજાના મતને બતાવતા ગ્રંથકાર કહે છે–",
+    ].join("\n")),
+    page(196, [
+      "ગાથા-૪૩",
+      "૪. પૂજાવિધિ પંચાશક",
+      "ઉત્તર–જો કે પૂજામાં કથંચિત્ જીવહિંસા થાય છે, તો પણ ગૃહસ્થોને કૂપઉદાહરણ",
+      "સંબંધથી પૂજા નિર્દોષ છે. (૪૧-૪૨)",
+      "ગુણોથી યુક્ત છે. જિનપૂજા કર્મક્ષય વગેરે ગુણોને પમાડે છે. (૪૨)",
+      "असदारंभपवत्ता, जं च गिही तेण तेसि विन्नेया ।",
+      "तन्निव्वित्तिफलच्चिय, एसा परिभावणीयमिणं ॥४३॥",
+      "બીજા સમાધાનને કહે છે–",
+      "ગાથાર્થ-ગૃહસ્થો આરંભમાં પ્રવર્તેલા છે. તેથી તેમને જિનપૂજા અશુભ આરંભની",
+    ].join("\n")),
+  ];
+  const book = bookGujaratiText(pages, 195, "पंचाशक मूल, 04 - पूजाविधिप्रकरण, गाथा 42", []);
+  assert.ok(book);
+  assert.equal(book.by, "gatha");
+  const main = book.markup.split("\n").filter((l) => l.startsWith("> ")).join(" ");
+  assert.match(main, /^> નિર્દોષ એવી પૂજા/);
+  assert.match(main, /પમાડે છે\. \(૪૨\)$/);
+  // the gatha before and the one after are there, not bold; running heads are not
+  assert.match(book.markup, /^ટીકાર્થ-અહીં મનુષ્યો/m);
+  assert.doesNotMatch(main, /ગૃહસ્થો આરંભમાં/);
+  assert.doesNotMatch(book.markup, /પૂજાવિધિ પંચાશક|ગાથા-૪૩/);
+});
+
+test("book Gujarati: numbered Gujarati after a Sanskrit block starts at its own number", () => {
+  const pages = [
+    page(311, ["पापकर्मबन्धो न भवतीत्यर्थः ॥९॥", "तस्य पापकर्मबन्धो न भवति ॥८॥", "હવે ઉપદેશ નામનો પાંચમો અર્થાધિકાર કહેવાય છે.", "(૧) ગાથાર્થ: અયત ચરતો પ્રાણભૂતોને હિંસે છે. પાપકર્મ બાંધે છે."].join("\n")),
+    page(312, ["(૭) ગાથાર્થ: કેવી રીતે ચાલવું, કેવી રીતે ઊભા રહેવું, કેવી રીતે બેસવું, કેવી રીતે", "ઊંઘવું, કેવી રીતે ખાતો અને બોલતો સાધુ પાપ કર્મ ન બાંધે?", "આચાર્ય કહે છે કે", "(૮) ગાથાર્થ: યતનાથી ચરે, યતનાથી ઊભો રહે, યતનાથી બેસે, યતનાથી ઊંઘે,", "યતનાથી વાપરતો અને બોલતો પાપકર્મ ન બાંધે.", "(૯) ગાથાર્થ: સર્વભૂતાત્મભૂત, સમ્યક્ રીતે ભૂતોને જોતાં, પિહિતાશ્રવવાળા, દાન્ત", "જીવને પાપકર્મ ન બંધાય.", "(૧૦) ગાથાર્થ: પહેલા જ્ઞાન અને પછી દયા છે."].join("\n")),
+  ];
+  const book = bookGujaratiText(pages, 311, "दशवैकालिक सूत्र मूल, अध्ययन - 04, गाथा 8-9", []);
+  assert.ok(book);
+  const main = book.markup.split("\n").filter((l) => l.startsWith("> "));
+  assert.equal(main[0], "> આચાર્ય કહે છે કે");
+  assert.match(main.join(" "), /\(૮\) ગાથાર્થ: યતનાથી ચરે/);
+  assert.match(main[main.length - 1], /જીવને પાપકર્મ ન બંધાય\.$/);
+  assert.doesNotMatch(main.join(" "), /\(૭\)|\(૧૦\)/);
+});
+
+test("book Gujarati: the ભાવાર્થ of Pravinbhai Mota's books is left out", () => {
+  const pages = [
+    page(69, [
+      "हिंसकत्वं न तेनेदं वैद्यस्य स्याद्रिपोरिव ।।२८।।",
+      "શ્લોકાર્થ :-",
+      "જે કારણથી હિંસ્ય પ્રાણીનો કર્મનો વિપાક હોતે છતે દુષ્ટાશયની નિમિત્તતા હિંસકપણું છે.",
+      "ટીકાર્થ :-",
+      "હિંસકનું વૈયાવચ્ચ કરનારપણાનો વ્યપદેશ નથી. એ પ્રમાણે જાણવું. ।।૨૮।।",
+      "ભાવાર્થ :-",
+      "પૂર્વપક્ષી કહે છે કે હિંસ્ય જીવના કર્મથી જ તેની હિંસા થાય છે, માટે હિંસકને દોષ નથી.",
+      "અવતરણિકા :-",
+      "હવે બીજી રીતે હિંસાના અસંભવને કહે છે ।।૨૯।।",
+    ].join("\n")),
+  ];
+  const book = bookGujaratiText(pages, 69, "द्वात्रिंशद् द्वात्रिंशिका, 08 - वाद बत्रीसी, श्लोक 28", []);
+  assert.ok(book);
+  assert.match(book.markup, /^> .*શ્લોકાર્થ/m);
+  assert.doesNotMatch(book.markup, /ભાવાર્થ|પૂર્વપક્ષી કહે છે/);
+});
+
+test("the Granth column's book names, as consonants", () => {
+  assert.ok(granthHints("पंचाशक अभयदेवसूरि टीका, 07 – जिनभवन विधिप्रकरण, गाथा 29- 30").includes("pncsk"));
+  assert.ok(granthHints("संबोधप्रकरणम्, 01 – देवस्वरूप अधिकार, गाथा 200-201").includes("snbdprkrn"));
+  assert.ok(granthHints("द्वात्रिंशद् द्वात्रिंशिका प्रकरण, 08 - वाद बत्रीसी, श्लोक 28").includes("vdbtrs"));
+});
+
+test("a sideways photo: the reading made of kosh words is kept (18 Nov 2026)", async () => {
+  const { bestReading } = await import("../lib/photo-reading");
+  // the photo as taken, turned clockwise, turned back: what the OCR gave for each
+  const readings = ["अकात्तरअहिंसा लौकिकअहिंसा अकोत्तरहिंसा लौकिकहिंसा", "लोकोत्तरहिंसा लोकोत्तरहिंसा लोकोत्तरहिंसा", "लोकोत्तरअहिंसा लौकिकअहिंसा लोकोत्तरहिंसा लौकिकहिंसा"];
+  assert.equal(bestReading(readings), 2);
+});
