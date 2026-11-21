@@ -432,7 +432,7 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
       const res = await fetch("/api/vyutpatti/pages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pages: pages.map((p) => ({ granthKey: p.granthKey, page: p.page })), name }),
+        body: JSON.stringify({ pages: pages.map((p) => ({ granthKey: p.granthKey, page: p.page, words: p.words })), name }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));

@@ -370,7 +370,7 @@ export function strokeRect(page: PDFPage, x: number, y: number, width: number, h
  * is printed in the footer of every page. Short lines are set in as many
  * columns as fit across the page, read down each column.
  */
-export async function buildWordListPdf(options: { word: string; sections: WordListSection[]; numbersOnly?: boolean }) {
+export async function buildWordListPdf(options: { word: string; sections: WordListSection[]; numbersOnly?: boolean; bookInRefs?: boolean }) {
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
   doc.setTitle(`${options.word} - ${options.numbersOnly ? "page and line numbers" : "word list"}`);
@@ -389,50 +389,66 @@ export async function buildWordListPdf(options: { word: string; sections: WordLi
   const bottom = MARGIN + FOOTER_ROOM;
   const rowsPerColumn = Math.max(1, Math.floor((top - bottom) / lineHeight));
 
-  for (const section of options.sections) {
-    const rows = section.rows.map((row, index) => {
+  // Diksha, 16 Nov 2026: "can't all the pages be merged?" The books follow one
+  // another on the same page, not each on a new one; a thin gap marks where the
+  // next book starts (its numbering starts again at १.) and the foot of the
+  // page gives the book numbers on it, in order.
+  const all = options.sections.flatMap((section, s) =>
+    section.rows.map((row, index) => {
       const pieces: Piece[] = [{ text: `${toDevanagariDigits(index + 1)}.\u00a0`, weight: "regular" }];
       if (!options.numbersOnly) pieces.push({ text: `${row.word} `, weight: "bold" });
-      pieces.push(...lineReference([row.line], row.printedPage, row.pdfPage, section.heading));
+      pieces.push(...lineReference([row.line], row.printedPage, row.pdfPage, options.bookInRefs ? section.heading : null));
       // a row wider than the page wraps, so it may take more than one line
-      return wrapPieces(text, pieces, size, room);
-    });
-    const widest = Math.max(1, ...rows.flatMap((lines) => lines.map((words) => words.reduce((w, word, k) => w + word.width + (k ? word.space : 0), 0))));
-    const columns = Math.max(1, Math.min(4, Math.floor((room + columnGap) / (widest + columnGap))));
-    const columnWidth = (room - (columns - 1) * columnGap) / columns;
+      return { section: s, lines: wrapPieces(text, pieces, size, room) };
+    })
+  );
+  const widest = Math.max(1, ...all.flatMap((r) => r.lines.map((words) => words.reduce((w, word, k) => w + word.width + (k ? word.space : 0), 0))));
+  const columns = Math.max(1, Math.min(4, Math.floor((room + columnGap) / (widest + columnGap))));
+  const columnWidth = (room - (columns - 1) * columnGap) / columns;
+  const footers = new Map<PDFPage, string[]>();
 
-    let page: PDFPage | null = null;
-    let column = 0;
-    let used = rowsPerColumn; // forces a new page for the first row
-    for (const lines of rows) {
-      if (used + lines.length > rowsPerColumn) {
-        column += 1;
-        used = 0;
-        if (!page || column >= columns) {
-          page = doc.addPage(A4);
-          drawFooter(text, page, section.heading, MARGIN, pageWidth - MARGIN);
-          column = 0;
-        }
+  let page: PDFPage | null = null;
+  let column = 0;
+  let used = rowsPerColumn; // forces a new page for the first row
+  let last = -1;
+  for (const { section, lines } of all) {
+    const gap = last >= 0 && section !== last && used > 0 ? 1 : 0;
+    if (used + gap + lines.length > rowsPerColumn) {
+      column += 1;
+      used = 0;
+      if (!page || column >= columns) {
+        page = doc.addPage(A4);
+        footers.set(page, []);
+        column = 0;
       }
-      const x = MARGIN + column * (columnWidth + columnGap);
-      lines.forEach((words, i) => {
-        const baseline = top - ascent - (used + i) * lineHeight;
-        let at = x;
-        words.forEach((word, k) => {
-          if (k) at += word.space;
-          for (const part of word.parts) {
-            const start = at;
-            at = text.draw(page as PDFPage, part.runs, at, baseline, size);
-            if (part.underline) {
-              const y = baseline - descent * 0.45;
-              (page as PDFPage).drawLine({ start: { x: start, y }, end: { x: at, y }, thickness: UNDERLINE, color: rgb(0, 0, 0) });
-            }
-          }
-        });
-      });
-      used += lines.length;
+    } else used += gap;
+    const x = MARGIN + column * (columnWidth + columnGap);
+    if (gap && page) {
+      const y = top - (used - 0.5) * lineHeight;
+      page.drawLine({ start: { x, y }, end: { x: x + columnWidth * 0.4, y }, thickness: LINE_RULE, color: LINE_RULE_COLOR });
     }
+    const heading = options.sections[section].heading;
+    const onPage = footers.get(page as PDFPage)!;
+    if (onPage[onPage.length - 1] !== heading) onPage.push(heading);
+    lines.forEach((words, i) => {
+      const baseline = top - ascent - (used + i) * lineHeight;
+      let at = x;
+      words.forEach((word, k) => {
+        if (k) at += word.space;
+        for (const part of word.parts) {
+          const start = at;
+          at = text.draw(page as PDFPage, part.runs, at, baseline, size);
+          if (part.underline) {
+            const y = baseline - descent * 0.45;
+            (page as PDFPage).drawLine({ start: { x: start, y }, end: { x: at, y }, thickness: UNDERLINE, color: rgb(0, 0, 0) });
+          }
+        }
+      });
+    });
+    used += lines.length;
+    last = section;
   }
+  for (const [p, headings] of footers) drawFooter(text, p, headings.filter(Boolean).join(" · "), MARGIN, pageWidth - MARGIN);
 
   numberPages(text, doc);
   embedder.finish();
@@ -562,14 +578,16 @@ export function wrapPieces(text: TextDrawer, pieces: Piece[], size: number, room
 }
 
 /**
- * "[५, 300/२८४]": the line, then the book number and the page, the page
- * underlined (Sahebji, 9 Oct 2026; the book number with the page on 5 Nov
- * 2026). A page with no printed number says so in full: "[५, 300/PDF page
- * number १२]". No-break spaces keep a reference on one line.
+ * "[५, २८४]": the line, then the page, underlined (Sahebji, 9 Oct 2026). The
+ * book number is printed once, at the foot of the page (16 Nov 2026: "book
+ * no. only at the bottom, not by the words"; "keep the facility but not
+ * now": `book` puts it back, "[५, 300/२८४]"). A page with no printed number
+ * gives its PDF page number, with no label (16 Nov: the words "PDF page
+ * number" struck out). No-break spaces keep a reference on one line.
  */
 function lineReference(lines: number[], printedPage: string | null, pdfPage: number, book: string | null): Piece[] {
   const page = printedPage ? toDevanagariDigits(printedPage) : toDevanagariDigits(pdfPage);
-  const pageLabel = printedPage ? "" : "PDF\u00a0page\u00a0number\u00a0";
+  const pageLabel = "";
   return lines.flatMap((line, i): Piece[] => [
     { text: `${i ? " " : "\u00a0"}[${toDevanagariDigits(line)},\u00a0${book ? `${book}/` : ""}${pageLabel}`, weight: "regular" },
     { text: page, weight: "regular", underline: true },
@@ -588,7 +606,7 @@ function lineReference(lines: number[], printedPage: string | null, pdfPage: num
  * printed in the footer of each page and in every reference. No table and no serial numbers: a thin rule across the page
  * separates one record from the next.
  */
-export async function buildLineListPdf(options: { word: string; sections: LineListSection[] }) {
+export async function buildLineListPdf(options: { word: string; sections: LineListSection[]; bookInRefs?: boolean }) {
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
   doc.setTitle(`${options.word} - line list`);
@@ -622,29 +640,36 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
   const rule = (page: PDFPage, y: number) =>
     page.drawLine({ start: { x: MARGIN, y }, end: { x: pageWidth - MARGIN, y }, thickness: LINE_RULE, color: LINE_RULE_COLOR });
 
+  // the books follow one another (Diksha, 16 Nov 2026: "merge all the pages");
+  // the foot of each page gives the book numbers on it, in order
+  const footers = new Map<PDFPage, string[]>();
+  let page: PDFPage | null = null;
+  let y = 0;
+  const newPage = () => {
+    page = doc.addPage(A4);
+    footers.set(page, []);
+    y = pageHeight - MARGIN;
+    return page;
+  };
   for (const section of options.sections) {
-    let page = doc.addPage(A4);
-    drawFooter(text, page, section.heading, MARGIN, pageWidth - MARGIN);
-    let y = pageHeight - MARGIN;
-
-    section.rows.forEach((row, index) => {
+    section.rows.forEach((row) => {
       const pieces: Piece[] = [
         ...row.pieces.map((piece): Piece => ({ text: piece.text, weight: piece.hit ? "bold" : "regular" })),
-        ...lineReference(row.hitLines, row.printedPage, row.pdfPage, section.heading),
+        ...lineReference(row.hitLines, row.printedPage, row.pdfPage, options.bookInRefs ? section.heading : null),
       ];
       const wrapped = wrapPieces(text, pieces, LINE_TEXT_SIZE, room);
       const height = wrapped.length * lineHeight + 2 * LINE_RECORD_PAD;
-      if (y - height < bottom) {
-        page = doc.addPage(A4);
-        drawFooter(text, page, section.heading, MARGIN, pageWidth - MARGIN);
-        y = pageHeight - MARGIN;
-      }
+      let current: PDFPage = page ?? newPage();
+      if (y - height < bottom) current = newPage();
       // a thin rule between two records, none above the first on a page
-      if (index > 0 && y < pageHeight - MARGIN) rule(page, y);
-      drawLines(page, wrapped, MARGIN, y - LINE_RECORD_PAD);
+      if (y < pageHeight - MARGIN) rule(current, y);
+      const onPage = footers.get(current)!;
+      if (onPage[onPage.length - 1] !== section.heading) onPage.push(section.heading);
+      drawLines(current, wrapped, MARGIN, y - LINE_RECORD_PAD);
       y -= height;
     });
   }
+  for (const [p, headings] of footers) drawFooter(text, p, headings.filter(Boolean).join(" · "), MARGIN, pageWidth - MARGIN);
 
   numberPages(text, doc);
   embedder.finish();

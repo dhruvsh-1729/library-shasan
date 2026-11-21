@@ -1,6 +1,8 @@
 import { PDFDocument } from "pdf-lib";
 import { describeGranth, getGranthCatalog } from "@/lib/granth-catalog";
-import { sourcePagesPdf } from "@/lib/pdf-highlight-builder";
+import { drawRings, sourcePagesPdf } from "@/lib/pdf-highlight-builder";
+import { lineBoxRingsForPdf, onPage } from "@/lib/line-boxes";
+import { stampLabels, stampPages } from "@/lib/pdf-stamp";
 import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
 
 // The kosh pages a vyutpatti was read from, as they are printed: the scanned
@@ -8,7 +10,8 @@ import type { VyutpattiResult } from "@/lib/vyutpatti/pipeline";
 // fetched from each kosh PDF (HTTP ranges); the PDF's address comes from the
 // catalog.
 
-export type KoshPageRef = { granthKey: string; page: number };
+/** `words`: the vishay's words looked up on this page, ringed on it (Diksha, 16 Nov 2026: "round the target word"). */
+export type KoshPageRef = { granthKey: string; page: number; words?: string[] };
 
 /** The kosh pages a result was read from, each page once, in the order the words came (as on /vyutpatti). */
 export function koshPagesOfResult(result: Pick<VyutpattiResult, "words">): KoshPageRef[] {
@@ -39,6 +42,21 @@ export async function buildKoshPagesPdf(wanted: KoshPageRef[]) {
       const subset = await sourcePagesPdf(pdfUrl, pages);
       const doc = await PDFDocument.load(subset.bytes, { ignoreEncryption: true, updateMetadata: false });
       loaded.set(granthKey, { doc, index: new Map(subset.pages.map((page, i) => [page, i])) });
+      const labels = await stampLabels(granthKey, subset.pages).catch(() => new Map<number, string>());
+      await stampPages(doc, doc.getPages().map((page, i) => ({ page, label: labels.get(subset.pages[i]) ?? "" })));
+      // the looked-up word ringed in red where our OCR places it, as on the search pages
+      const docPages = doc.getPages();
+      for (const [i, page] of subset.pages.entries()) {
+        const words = [...new Set(wanted.filter((w) => w.granthKey === granthKey && w.page === page).flatMap((w) => w.words ?? []))].filter((w) => /[ऀ-ॿ]/.test(w));
+        if (!words.length) continue;
+        try {
+          const size = docPages[i].getSize();
+          const rings = await lineBoxRingsForPdf(pdfUrl, [{ page, ...size }], { queries: words, matchMode: "exact_word" });
+          drawRings(docPages[i], onPage(rings.get(page) ?? [], size));
+        } catch (error) {
+          console.warn("kosh page rings skipped", error instanceof Error ? error.message : error);
+        }
+      }
     })
   );
 

@@ -24,7 +24,8 @@ function readPages(raw: unknown): KoshPageRef[] | null {
     const id = `${granthKey}:${page}`;
     if (seen.has(id)) continue;
     seen.add(id);
-    out.push({ granthKey, page });
+    const words = Array.isArray(value.words) ? value.words.map((w) => String(w).normalize("NFC").trim().slice(0, 60)).filter(Boolean).slice(0, 8) : [];
+    out.push({ granthKey, page, words });
   }
   return out.length ? out : null;
 }

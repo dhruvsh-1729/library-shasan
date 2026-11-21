@@ -219,7 +219,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     }
 
     const word = headingWord(queries);
-    const bytes = lineLayout ? await buildLineListPdf({ word, sections: lineSections }) : await buildWordListPdf({ word, sections, numbersOnly });
+    // the book number by every reference only when asked for (16 Nov 2026: "only at the bottom, for now")
+    const bookInRefs = (body as { bookInRefs?: unknown }).bookInRefs === true;
+    const bytes = lineLayout ? await buildLineListPdf({ word, sections: lineSections, bookInRefs }) : await buildWordListPdf({ word, sections, numbersOnly, bookInRefs });
 
     const named = (lineLayout ? lineSections : sections).map((section) => section.heading);
     const queryLabel = safeFileName(word, "search");

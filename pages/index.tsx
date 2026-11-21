@@ -957,10 +957,18 @@ export default function SearchPage() {
       );
       const matched = new Set(prev.preview.pages.map((page) => page.page_number));
       const withoutWord = pdfPages.filter((page) => !matched.has(page)).length;
-      const found = `Chose ${plural(pdfPages.length, "page")}${withoutWord ? `, ${withoutWord} without the word` : ""}.`;
-      const notFound = missing.length ? ` Not found in this book: ${missing.join(", ")}.` : "";
+      // in plain words (Diksha, 17 Nov 2026: "Chose 3 pages, 3 without the word — what is this?")
+      const found = pdfPages.length
+        ? `Page${pdfPages.length === 1 ? "" : "s"} ${wanted.filter((w) => !missing.includes(w)).join(", ")} ticked below.` +
+          (withoutWord === pdfPages.length
+            ? ` The searched word is not on ${pdfPages.length === 1 ? "this page" : "these pages"}, but ${pdfPages.length === 1 ? "it" : "they"} will be downloaded as asked.`
+            : withoutWord
+              ? ` ${withoutWord} of them do not have the searched word, but all will be downloaded as asked.`
+              : "")
+        : "";
+      const notFound = missing.length ? ` This book has no page ${missing.join(", ")}.` : "";
       // what to do next (13 Nov 2026: "I typed the page number but did not know what to do next")
-      const next = pdfPages.length ? " They are ticked in the list below. Now press “Full PDF” (or “Line list”) at the bottom to download them." : "";
+      const next = pdfPages.length ? " Now press “Full PDF” at the bottom." : "";
       return { ...prev, selectedPages: pdfPages, granthPagesNote: found + notFound + next };
     });
   }
@@ -1127,7 +1135,10 @@ export default function SearchPage() {
             <button type="button" className="ltLink" onClick={() => void openDownloadPreview(result)}>
               Download pages
             </button>
-          ) : null}
+          ) : (
+            // Diksha, 16 Nov 2026: "one card has only Read this page, another three options — why?"
+            <span className="ltCardNote">This book&apos;s PDF is not in the library yet: its text can be read, its pages not downloaded.</span>
+          )}
         </footer>
       </article>
     );

@@ -9,27 +9,34 @@ import { pageText } from "@/lib/anuvaad/pages";
 
 const MAX_SIDE = 2400;
 
-/** Any photo the phone gives (HEIC included, where the browser can draw it) → a JPEG of at most 2400 px. */
-async function toJpeg(file: File): Promise<Blob> {
+/**
+ * Any photo the phone gives (HEIC included, where the browser can draw it) →
+ * a JPEG of at most 2400 px, turned a quarter `turns` times clockwise.
+ */
+async function toJpeg(file: File, turns = 0): Promise<Blob> {
   try {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const side = turns % 2 === 1;
+    canvas.width = side ? h : w;
+    canvas.height = side ? w : h;
+    const ctx = canvas.getContext("2d")!;
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((turns * Math.PI) / 2);
+    ctx.drawImage(bitmap, -w / 2, -h / 2, w, h);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
     if (blob) return blob;
   } catch {
     // fall through: send the file as it is
   }
-  if (/image\/(jpeg|png)/.test(file.type)) return file;
+  if (turns === 0 && /image\/(jpeg|png)/.test(file.type)) return file;
   throw new Error("This photo could not be opened. Take it again as a JPG or PNG.");
 }
 
-/** The text of a photo, read as Sanskrit/Hindi (or Gujarati). */
-export async function readPhoto(file: File, language: "hi-IN" | "gu-IN" = "hi-IN") {
-  const body = await toJpeg(file);
+async function readOnce(body: Blob, language: "hi-IN" | "gu-IN") {
   const res = await fetch(`/api/anuvaad/ocr${language === "gu-IN" ? "?language=gu-IN" : ""}`, {
     method: "POST",
     headers: { "Content-Type": body.type || "image/jpeg" },
@@ -43,6 +50,26 @@ export async function readPhoto(file: File, language: "hi-IN" | "gu-IN" = "hi-IN
   });
   if (pages === null) throw new Error(problem || "The photo could not be read. Please try again.");
   return pageText((pages as string[]).join("\n\n"));
+}
+
+/**
+ * The text of a photo, read as Sanskrit/Hindi (or Gujarati). A Devanagari
+ * photo is read as taken and turned a quarter either way, at the same time,
+ * and the reading made of kosh words is kept (Diksha, 18 Nov 2026: a list
+ * photographed sideways read "लोकोत्तर" as "अकोत्तर").
+ */
+export async function readPhoto(file: File, language: "hi-IN" | "gu-IN" = "hi-IN") {
+  if (language === "gu-IN") return readOnce(await toJpeg(file), language);
+  const readings = await Promise.all([0, 1, 3].map(async (turns) => readOnce(await toJpeg(file, turns), language).catch(() => "")));
+  if (!readings.some(Boolean)) return readOnce(await toJpeg(file), language);
+  try {
+    const res = await fetch("/api/photo-best", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texts: readings }) });
+    const json = await res.json();
+    if (res.ok && Number.isInteger(json.best) && readings[json.best]) return readings[json.best];
+  } catch {
+    // the photo as taken, if the choice cannot be made
+  }
+  return readings.find(Boolean)!;
 }
 
 /** The distinct Indic words of a text, in order: what the reader picks from. */

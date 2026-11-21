@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_SEARCH_CSV_COLUMNS, SEARCH_CSV_COLUMNS, type SearchCsvColumn } from "@/lib/search-csv-columns";
 
-const STORAGE_KEY = "library.csvColumns";
+const STORAGE_KEY = "library.csvColumns.v2"; // v2 (21 Nov 2026): a choice saved before the defaults left out Granth name, PDF file and Matched words is dropped once
 /** Tells every open download screen that the columns changed. */
 const CHANGED = "library:csv-columns";
 

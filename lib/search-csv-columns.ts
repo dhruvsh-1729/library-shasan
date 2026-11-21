@@ -12,7 +12,7 @@ export const SEARCH_CSV_COLUMNS = [
   { id: "granth", label: "Granth name", default: false },
   { id: "page", label: "Granth page number", default: true },
   { id: "line", label: "Line number on page", default: true },
-  { id: "count", label: "Matches on line", default: true },
+  { id: "count", label: "Times the word is on this line", default: true },
   { id: "words", label: "Matched words", default: false },
   { id: "text", label: "Line text", default: true },
   { id: "pdfPage", label: "PDF page number", default: true },

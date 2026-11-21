@@ -7,7 +7,8 @@ import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import { PDFDict, PDFDocument, PDFName, type PDFPage, PDFRawStream, PDFStream, degrees, rgb } from "pdf-lib";
-import { lineBoxRingsForPdf, onPage } from "@/lib/line-boxes";
+import { granthKeyForPdf, lineBoxRingsForPdf, onPage } from "@/lib/line-boxes";
+import { stampLabels, stampPages } from "@/lib/pdf-stamp";
 import { extractPdfPagesByRange } from "@/lib/pdf-range-subset.mjs";
 import { findGlyphWordBoxes } from "@/lib/pdf-glyph-boxes";
 import { type PdfTextItem, type WordBox, findWordBoxes } from "@/lib/pdf-word-boxes";
@@ -199,7 +200,7 @@ async function wordBoxesPerPage(bytes: Uint8Array, mark: MarkOptions): Promise<W
 }
 
 /** Draws a red ellipse around each box; the ring becomes part of the page. */
-function drawRings(page: PDFPage, boxes: WordBox[]) {
+export function drawRings(page: PDFPage, boxes: WordBox[]) {
   for (const box of boxes) {
     page.drawEllipse({
       x: box.x + box.width / 2,
@@ -237,6 +238,13 @@ async function markedSource(source: CombinedPdfSource, mark: MarkOptions | null)
       // A page that cannot be read for positions still exports, unmarked.
       console.warn("word rings skipped", error instanceof Error ? error.message : error);
     }
+  }
+  try {
+    // which book and page, at the foot of each page (20 Nov 2026)
+    const labels = await stampLabels((await granthKeyForPdf(source.pdfUrl)) ?? "", pages);
+    await stampPages(doc, doc.getPages().map((page, i) => ({ page, label: labels.get(pages[i]) ?? "" })));
+  } catch (error) {
+    console.warn("page stamp skipped", error instanceof Error ? error.message : error);
   }
   return { doc, pages, rings };
 }

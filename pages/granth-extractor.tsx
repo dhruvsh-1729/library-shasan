@@ -147,6 +147,14 @@ export default function GranthExtractor() {
     const allowed = new Set(pool.map(({ i }) => i));
     return order.filter((i) => allowed.has(i)).map((i) => works![i]);
   }, [works, prepared, query, mode]);
+  // Diksha, 17 Nov 2026: "book 020 is in the Library but Gatha says no matches": it has no gatha numbers yet
+  const withoutGathas = useMemo(() => {
+    if (mode !== "gathas" || !query.trim() || listed.length) return [];
+    return rankRows(prepared, query.trim())
+      .map((i) => works![i])
+      .filter((w) => w.gathas === 0)
+      .slice(0, 5);
+  }, [works, prepared, query, mode, listed.length]);
 
   function chooseWork(next: ExtractWork, forMode: Mode | null = mode, volume: string | null = null) {
     setWork(next);
@@ -504,7 +512,21 @@ export default function GranthExtractor() {
                       </button>
                     </li>
                   ))}
-                  {!listed.length ? <li className="exQuiet">No granth matches “{query}”.</li> : null}
+                  {!listed.length && withoutGathas.length ? (
+                    <li className="exQuiet">
+                      {withoutGathas.map((w) => (
+                        <span key={w.id}>
+                          {w.title}
+                          {w.bookNumbers.length ? ` (No. ${w.bookNumbers.join(", ")})` : ""} is in the library, but its gatha numbers are not mapped yet.{" "}
+                          <button type="button" className="vyLink" onClick={() => { setMode("pages"); chooseWork(w, "pages"); }}>
+                            Open it by page number
+                          </button>
+                          <br />
+                        </span>
+                      ))}
+                    </li>
+                  ) : null}
+                  {!listed.length && !withoutGathas.length ? <li className="exQuiet">No granth matches “{query}”.</li> : null}
                 </ul>
               ) : null}
             </section>
