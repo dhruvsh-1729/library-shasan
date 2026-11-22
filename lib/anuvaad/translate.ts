@@ -21,6 +21,7 @@ import { savedWordsInText } from "@/lib/anuvaad/saved-words";
 import { CHAT_MODELS, SarvamChatError, chat } from "@/lib/sarvam-chat";
 import { type AnuvaadBlock, parseAnuvaad, toMarkup } from "@/lib/anuvaad/markup";
 import { META_MODEL, MetaError, metaChat, metaReady } from "@/lib/anuvaad/meta";
+import { gathaMarks } from "@/lib/anuvaad/book-text";
 
 export { type AnuvaadBlock, parseAnuvaad, toMarkup };
 
@@ -485,35 +486,103 @@ function contextLines(input: PageInput) {
   ].filter(Boolean);
 }
 
-async function translatePageWithMeta(input: PageInput, text: string, saved: string): Promise<Anuvaad | null> {
-  const user = [
-    input.source ? `Book: ${input.source}` : "",
-    ...contextLines(input),
-    "THIS PAGE (translate all of it):",
-    text,
-    "",
-    "Write the Gujarati anuvaad of this page in the form given.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+/** One call: the anuvaad of `text` (a page, or one part of it), or null when it came back short or not Gujarati. */
+async function metaPart(user: string, text: string, saved: string, extra = ""): Promise<AnuvaadBlock[] | null> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const content = await metaChat({ system: PAGE_RULES + CONTINUITY + saved, user, maxTokens: 8000 });
+      const content = await metaChat({ system: PAGE_RULES + CONTINUITY + extra + saved, user, maxTokens: 8000 });
       const markup = stopRepeats(content.replace(/<think>[\s\S]*?<\/think>/g, "").trim(), true);
       const blocks = dropBorrowed(
         parseAnuvaad(markup).filter((b) => b.kind !== "title" && b.kind !== "vishay"),
         ""
       );
       const out = toMarkup(blocks);
-      // the page's Sanskrit runs about as long as its Gujarati; far shorter has dropped part of it
+      // the Sanskrit runs about as long as its Gujarati; far shorter has dropped part of it
       const whole = gujaratiLetters(out) >= (text.match(/[ऀ-ॿ]/g)?.length ?? 0) * 0.45;
-      if (blocks.length && looksGujarati(out) && whole) return { blocks, markup: out, literal: "" };
+      if (blocks.length && looksGujarati(out) && whole) return blocks;
     } catch (error) {
       if (error instanceof MetaError && error.status >= 400 && error.status < 500 && error.status !== 429) break;
       console.warn(`page anuvaad (${META_MODEL}) failed:`, error instanceof Error ? error.message : error);
     }
   }
   return null;
+}
+
+/**
+ * Maharaj Saheb, 22 Nov 2026: "have the AI translate in small batches, slowly,
+ * so the original's translation really comes out; small pieces it translates
+ * well; and have it cross-check that every gatha and sutra is covered" and
+ * "batch by the token limits: the AI sometimes hurries the report out with
+ * lower quality". A page is translated part by part (about PART_CHARS letters,
+ * cut at its own paragraphs), each part with the text around it in view; a
+ * part that comes back short is asked again; then every gatha / sutra number
+ * the page prints (॥४२॥, (૪૨)) must be in the Gujarati, and a part that lost
+ * one is translated again with that number named.
+ */
+const PART_CHARS = 900;
+const PART_NOTE = `
+
+THIS IS ONE PART OF A PAGE
+The page is translated part by part, so that nothing is hurried or left out. Translate only THIS PART, all of it, sentence by sentence; the text before and after it is shown only for context. Do not summarise and do not stop early.`;
+
+/** The gatha / sutra numbers a text prints as marks (॥४२॥, ।।૨૭।।, "(૪૨)"), as plain digits. */
+function markNumbers(text: string) {
+  const out = new Set<number>();
+  for (const line of text.split("\n")) for (const k of gathaMarks(line)) for (let n = k.from; n <= k.to && n - k.from < 10; n += 1) out.add(n);
+  return out;
+}
+const DIGIT_MAP: Record<string, string> = {};
+"०१२३४५६७८९".split("").forEach((d, i) => (DIGIT_MAP[d] = String(i)));
+"૦૧૨૩૪૫૬૭૮૯".split("").forEach((d, i) => (DIGIT_MAP[d] = String(i)));
+const plainDigits = (text: string) => text.replace(/[०-९૦-૯]/g, (d) => DIGIT_MAP[d] ?? d);
+/** The numbers of `want` the anuvaad does not show anywhere. */
+const missingNumbers = (want: Set<number>, gujarati: string) => {
+  const have = new Set((plainDigits(gujarati).match(/\d+/g) ?? []).map(Number));
+  return [...want].filter((n) => !have.has(n));
+};
+
+async function translatePageWithMeta(input: PageInput, text: string, saved: string): Promise<Anuvaad | null> {
+  const head = input.source ? `Book: ${input.source}` : "";
+  const parts = text.length > PART_CHARS * 1.4 ? pagePieces(text, PART_CHARS) : [text];
+  if (parts.length === 1) {
+    const user = [head, ...contextLines(input), "THIS PAGE (translate all of it):", text, "", "Write the Gujarati anuvaad of this page in the form given."].filter(Boolean).join("\n");
+    const blocks = await metaPart(user, text, saved);
+    if (!blocks) return null;
+    // the cross-check: a gatha or sutra the page prints and the anuvaad does not mention is asked for again
+    const lost = missingNumbers(markNumbers(text), toMarkup(blocks));
+    if (lost.length) {
+      const again = await metaPart(user, text, saved, `\n\nThe text prints the verses / sutras numbered ${lost.join(", ")}; translate each of them, keeping its number.`);
+      if (again && missingNumbers(markNumbers(text), toMarkup(again)).length < lost.length) return { blocks: again, markup: toMarkup(again), literal: "" };
+    }
+    return { blocks, markup: toMarkup(blocks), literal: "" };
+  }
+
+  const userFor = (i: number, extra = "") =>
+    [
+      head,
+      ...contextLines({ ...input, before: i ? parts[i - 1] : input.before, after: i < parts.length - 1 ? parts[i + 1] : input.after }),
+      `THIS PART (part ${i + 1} of ${parts.length} of the page; translate all of it):`,
+      parts[i],
+      "",
+      `Write the Gujarati anuvaad of this part in the form given.${extra}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  // two parts at a time: slowly enough for the service, the page still in about a minute
+  const results = new Array<AnuvaadBlock[] | null>(parts.length).fill(null);
+  await mapLimit(parts, 2, async (part, i) => {
+    results[i] = await metaPart(userFor(i), part, saved, PART_NOTE);
+  });
+  if (results.some((r) => !r)) return null;
+  // the cross-check, part by part
+  for (let i = 0; i < parts.length; i += 1) {
+    const lost = missingNumbers(markNumbers(parts[i]), toMarkup(results[i]!));
+    if (!lost.length) continue;
+    const again = await metaPart(userFor(i, ` The part prints the verses / sutras numbered ${lost.join(", ")}: translate each of them, keeping its number.`), parts[i], saved, PART_NOTE);
+    if (again && missingNumbers(markNumbers(parts[i]), toMarkup(again)).length < lost.length) results[i] = again;
+  }
+  const blocks = results.flatMap((r) => r!);
+  return { blocks, markup: toMarkup(blocks), literal: "" };
 }
 
 const MAX_PAGE_TEXT = 9_000;

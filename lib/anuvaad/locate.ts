@@ -149,7 +149,8 @@ async function byGathaNumber(granth: string, words: string[], keys: string[]): P
     args: [...keys, ...digits.map((d) => `%${d}%`)],
   });
   const pages = r.rows.map((row) => ({ id: Number(row.id), granthKey: String(row.granth_key), page: Number(row.page_number), text: String(row.content ?? "") }));
-  const verse = pages.filter((p) => p.text.split("\n").some((line) => /[ऀ-ॿ]{3}/.test(line) && gathaMarks(line).some((k) => k.style === "close" && k.from <= first && first <= k.to)));
+  // the verse may be printed in Gujarati letters in a Gujarati edition
+  const verse = pages.filter((p) => p.text.split("\n").some((line) => /[ऀ-ॿ઀-૿]{3}/.test(line) && gathaMarks(line).some((k) => k.style === "close" && k.from <= first && first <= k.to)));
   if (!verse.length) return null;
   // the chapter the box names, beyond the book's own name
   const chapter = granthHints(granth);
@@ -247,6 +248,21 @@ export async function locatePassage(passage: string, limit = 3, granth = ""): Pr
   const ranked = [...best.values()]
     .filter((c) => (hinted.has(c.granthKey) ? Math.round(c.score * words.length) >= namedWords || c.score >= needed : c.score >= needed))
     .sort((a, b) => Number(hinted.has(b.granthKey)) - Number(hinted.has(a.granthKey)) || b.score - a.score);
+  // the named books not found by words, by the gatha number the box gives: a Gujarati edition
+  // prints the Prakrit mula and its Gujarati, not the Sanskrit tika the box holds (Sutrakritang, 22 Nov 2026)
+  const unranked = [...hinted].filter((k) => !ranked.some((c) => c.granthKey === k));
+  if (unranked.length && ranked.some((c) => hinted.has(c.granthKey))) {
+    const parts = granth.split(";").map((p) => p.trim()).filter(Boolean);
+    for (const part of parts.length > 1 ? parts : [granth]) {
+      const keys = (parts.length > 1 ? hintedGranths(catalog, part) : unranked).filter((k) => unranked.includes(k));
+      const byNumber = await byGathaNumber(part, words, keys);
+      if (byNumber) {
+        // after the books found by words; the page picks the first whose pages hold the book's own Gujarati
+        ranked.splice(Math.min(ranked.length, Math.max(1, limit - 1)), 0, byNumber);
+        break;
+      }
+    }
+  }
   // nothing in the named books by words: by the gatha number the box gives
   if (hinted.size && !ranked.some((c) => hinted.has(c.granthKey))) {
     // each part of the column with the books it names: "सूत्र 16" of one book is not "श्लोक 36" of another

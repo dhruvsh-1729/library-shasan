@@ -469,6 +469,44 @@
     "unnum_18f6a1643350": {
       "pdf_blank": true,
       "_why_pdf_blank": "its PDF lost its printed text in the 2026-10-01 text-layer rebuild (a typeset PDF, not a scan) and shows blank pages; until the original is restored from the Kingston SSD, readers get the OCR text instead (2026-11-08)"
+    },
+    "x3bf0c178a4": {
+      "_why": "read with Sarvam 2026-11-22 (was one of the 'needs OCR' books); name from its title page: आचार्य हरिभद्र सूरि विरचित समराइच्चकहा [प्राकृत मूल, संस्कृत छाया एवं हिन्दी अनुवाद सहित] पूर्वार्ध, ज्ञानपीठ मूर्तिदेवी जैन ग्रन्थमाला प्राकृत ग्रन्थ-२१",
+      "title": "Samaraichchakaha",
+      "native_title": "समराइच्चकहा",
+      "part": "1",
+      "author": "आचार्य हरिभद्र सूरि"
+    },
+    "x063d1873cb": {
+      "_why": "read with Sarvam 2026-11-22 (was one of the 'needs OCR' books); name from its title page: समराइच्चकहा (समरादित्य-कथा) उत्तरार्ध, प्राकृत ग्रन्थांक-२२",
+      "title": "Samaraichchakaha",
+      "native_title": "समराइच्चकहा",
+      "part": "2",
+      "author": "आचार्य हरिभद्र सूरि"
+    },
+    "xf68e9c8f12": {
+      "_why": "read with Sarvam 2026-11-22 (was one of the 'needs OCR' books); name from its title page: આગમ ગ્રંથ ભાષાંતર સૂત્રકૃતાંગ સૂત્ર ભાગ-૧ (અહો! શ્રુતજ્ઞાનમ્ ગ્રંથ જીર્ણોદ્ધાર ૨૦૭)",
+      "title": "Sutrakritang Sutra Bhashantar",
+      "native_title": "સૂત્રકૃતાંગ સૂત્ર ભાષાંતર",
+      "part": "1"
+    },
+    "xa438dc8a8b": {
+      "_why": "read with Sarvam 2026-11-22 (was one of the 'needs OCR' books); name from its title page: સૂત્રકૃતાંગ સૂત્ર ભાગ-૩ (જીર્ણોદ્ધાર ૨૦૯)",
+      "title": "Sutrakritang Sutra Bhashantar",
+      "native_title": "સૂત્રકૃતાંગ સૂત્ર ભાષાંતર",
+      "part": "3"
+    },
+    "x33ab8a3753": {
+      "_why": "read with Sarvam 2026-11-22 (was one of the 'needs OCR' books); name from its title page: સૂત્રકૃતાંગ સૂત્ર ભાગ-૪ (જીર્ણોદ્ધાર ૨૧૦)",
+      "title": "Sutrakritang Sutra Bhashantar",
+      "native_title": "સૂત્રકૃતાંગ સૂત્ર ભાષાંતર",
+      "part": "4"
+    },
+    "xc28ed2ad60": {
+      "_why": "read with Sarvam 2026-11-22 (was one of the 'needs OCR' books); name from its title page: સૂત્રકૃતાંગ સૂત્ર ભાગ-૫ (જીર્ણોદ્ધાર ૨૧૧)",
+      "title": "Sutrakritang Sutra Bhashantar",
+      "native_title": "સૂત્રકૃતાંગ સૂત્ર ભાષાંતર",
+      "part": "5"
     }
   }
 }
