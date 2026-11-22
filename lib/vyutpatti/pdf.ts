@@ -55,7 +55,7 @@ const BLACK = rgb(0, 0, 0);
 
 // ------------------------------------------------------------------ table
 
-const TABLE_SIZE = 8.5;
+const TABLE_SIZE = 9.5;
 const TABLE_LEADING = 1.3;
 const CELL_PAD_X = 3;
 const CELL_PAD_Y = 2.5;
@@ -74,8 +74,8 @@ const LEGEND_GAP = 12;
 const NUMBER_SIZE = 40;
 const TITLE_SIZE = 40;
 const MIN_TITLE_SIZE = 24;
-const LABEL_SIZE = 12;
-const LINE_SIZE = 12.5;
+const LABEL_SIZE = 13;
+const LINE_SIZE = 13.5;
 const LINE_LEADING = 1.55;
 const LABEL_WIDTH = 92;
 const MARK_GAP = 16;
@@ -111,13 +111,13 @@ export const EXPORT_READER_PAGES = false;
 
 // ------------------------------------------------------------------ plain
 
-const PLAIN_SIZE = 11.5;
+const PLAIN_SIZE = 12.5;
 const PLAIN_LEADING = 1.55;
-const PLAIN_HEADING_SIZE = 15;
+const PLAIN_HEADING_SIZE = 16;
 const PLAIN_INDENT = 24; // the entry's lines hang under its text, clear of the serial
 const ENTRY_GAP = 9;
 const SECTION_GAP = 22;
-const PLAIN_FOOTER_SIZE = 9;
+const PLAIN_FOOTER_SIZE = 10;
 
 /** The Gujarati anuvaad of each entry as anuvaad blocks, for the table layout's anuvaad pages. */
 function anuvaadBlocks(section: VyutpattiPdfSection): AnuvaadBlock[] {

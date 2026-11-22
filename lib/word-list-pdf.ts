@@ -470,11 +470,12 @@ export type LineListRow = {
 /** `heading` is the granth's 3-digit book number, printed in the footer of each of its pages. */
 export type LineListSection = { heading: string; rows: LineListRow[] };
 
-const LINE_TEXT_SIZE = 10.5;
-const WORD_ROW_SIZE = 11;
+// one size up throughout (22 Nov 2026: "increase the font size in exports by one")
+const LINE_TEXT_SIZE = 11.5;
+const WORD_ROW_SIZE = 12;
 // tight leading so as many lines as possible fit on a page
 const LINE_LEADING = 1.25;
-const LINE_HEADING_SIZE = 12;
+const LINE_HEADING_SIZE = 13;
 // the line list: space above and below each record, and the rule between records
 const LINE_RECORD_PAD = 4;
 const LINE_RULE = 0.35;
@@ -671,6 +672,96 @@ export async function buildLineListPdf(options: { word: string; sections: LineLi
   }
   for (const [p, headings] of footers) drawFooter(text, p, headings.filter(Boolean).join(" · "), MARGIN, pageWidth - MARGIN);
 
+  numberPages(text, doc);
+  embedder.finish();
+  return doc.save({ useObjectStreams: false });
+}
+
+// ------------------------------------------------------------------ spreadsheet as a PDF
+
+const TABLE_SIZE = 11.5;
+const TABLE_HEAD_SIZE = 11.5;
+const CELL_PAD = 3;
+
+/**
+ * The search spreadsheet as a printed table (Diksha, 17 Nov 2026: "Iski pdf
+ * file chahiye"): the same columns the reader chose for the CSV, a header row
+ * repeated on every page, the line text wrapped in its column. Short columns
+ * (numbers) take their width; the rest of the page goes to the text. The
+ * page number is at the foot.
+ */
+export async function buildTablePdf(options: { title: string; headers: string[]; rows: string[][] }) {
+  const faces = await loadFaces();
+  const doc = await PDFDocument.create();
+  doc.setTitle(options.title);
+  doc.setProducer("Granth library word search");
+  const embedder = new FontEmbedder(doc);
+  const text = new TextDrawer(faces, embedder);
+  // many columns: the page on its side
+  const wide = options.headers.length > 6;
+  const [pageWidth, pageHeight] = wide ? [A4[1], A4[0]] : A4;
+  const room = pageWidth - 2 * MARGIN;
+  const reference = faces.devanagari.regular;
+  const ascent = (reference.ascender / reference.upem) * TABLE_SIZE;
+  const lineHeight = TABLE_SIZE * 1.4;
+  const measure = (value: string, weight: Weight, size: number) => text.width(text.layout(value, weight), size);
+
+  // each column's natural width: the widest of its header words and (a sample of) its cells
+  const sample = options.rows.slice(0, 400);
+  const natural = options.headers.map((header, c) => {
+    const headWord = Math.max(...header.split(/\s+/).map((w) => measure(w, "bold", TABLE_HEAD_SIZE)));
+    const cells = sample.map((row) => measure(row[c] ?? "", "regular", TABLE_SIZE));
+    return Math.max(headWord, ...cells, 12) + 2 * CELL_PAD;
+  });
+  // the longest column (the line text) shares out what the short ones leave
+  const longest = natural.indexOf(Math.max(...natural));
+  const widths = [...natural];
+  const others = natural.reduce((sum, w, c) => (c === longest ? sum : sum + Math.min(w, room * 0.22)), 0);
+  natural.forEach((w, c) => (widths[c] = c === longest ? Math.max(80, room - others) : Math.min(w, room * 0.22)));
+  const scale = room / widths.reduce((a, b) => a + b, 0);
+  for (let c = 0; c < widths.length; c += 1) widths[c] *= scale;
+
+  const wrapCell = (value: string, c: number, weight: Weight, size: number) =>
+    wrapPieces(text, [{ text: value || " ", weight }], size, widths[c] - 2 * CELL_PAD);
+
+  const drawRow = (page: PDFPage, cells: Word[][][], top: number, height: number, size: number, shade: boolean) => {
+    let x = MARGIN;
+    if (shade) page.drawRectangle({ x, y: top - height, width: room, height, color: rgb(0.92, 0.92, 0.92) });
+    cells.forEach((lines, c) => {
+      strokeRect(page, x, top - height, widths[c], height, 0.5);
+      lines.forEach((words, i) => {
+        const baseline = top - CELL_PAD - ascent - i * lineHeight;
+        let at = x + CELL_PAD;
+        words.forEach((w, k) => {
+          if (k) at += w.space;
+          for (const part of w.parts) at = text.draw(page, part.runs, at, baseline, size);
+        });
+      });
+      x += widths[c];
+    });
+  };
+
+  const head = options.headers.map((h, c) => wrapCell(h, c, "bold", TABLE_HEAD_SIZE));
+  const headHeight = Math.max(...head.map((l) => l.length)) * lineHeight + 2 * CELL_PAD;
+  const bottom = MARGIN + FOOTER_ROOM;
+  let page: PDFPage | null = null;
+  let y = 0;
+  const newPage = () => {
+    page = doc.addPage([pageWidth, pageHeight]);
+    y = pageHeight - MARGIN;
+    drawRow(page, head, y, headHeight, TABLE_HEAD_SIZE, true);
+    y -= headHeight;
+    return page;
+  };
+  for (const row of options.rows) {
+    const cells = options.headers.map((_, c) => wrapCell(row[c] ?? "", c, "regular", TABLE_SIZE));
+    const height = Math.max(...cells.map((l) => l.length)) * lineHeight + 2 * CELL_PAD;
+    let current: PDFPage = page ?? newPage();
+    if (y - height < bottom) current = newPage();
+    drawRow(current, cells, y, height, TABLE_SIZE, false);
+    y -= height;
+  }
+  if (!page) newPage();
   numberPages(text, doc);
   embedder.finish();
   return doc.save({ useObjectStreams: false });

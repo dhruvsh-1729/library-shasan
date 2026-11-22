@@ -67,11 +67,11 @@ export async function chat(opts: ChatOpts) {
 /**
  * Sarvam answers 429 when too many requests arrive at once (a vishay with ten
  * kosh entries sends ten). Instead of failing the entry, wait and ask again:
- * 1.5 s, then 3.5 s, or as long as the reply's Retry-After says (up to 8 s),
+ * 1.5 s, then 3.5 s, then 8 s, or as long as the reply's Retry-After says (up to 8 s),
  * so that with the callers' own retries a vishay stays inside the server's
  * time limit.
  */
-const RATE_LIMIT_WAITS_MS = [1500, 3500];
+const RATE_LIMIT_WAITS_MS = [1500, 3500, 8000];
 
 async function chatOnce(opts: ChatOpts) {
   for (let attempt = 0; ; attempt += 1) {

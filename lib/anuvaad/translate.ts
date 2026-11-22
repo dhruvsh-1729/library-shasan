@@ -314,11 +314,18 @@ export async function translatePassage(input: PassageInput): Promise<Anuvaad> {
   if (passage.length > MAX_PASSAGE) throw new AnuvaadError("This passage is too long to translate at once. Split it into two rows.", 400);
   const saved = await savedGlossary(passage);
 
+  // One call reads the whole passage (as for a page); the many small Sarvam calls below ran into
+  // "Rate limit exceeded" when a box of 25 passages was translated two at a time (21 Nov 2026).
+  if (metaReady()) {
+    const meta = await translatePageWithMeta({ text: passage, source: [input.granth, input.vishay].filter(Boolean).join(" · ") }, passage, saved);
+    if (meta) return meta;
+  }
+
   let lastError: unknown = null;
   let literals: string[] | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      literals ??= await mapLimit(splitPassage(passage), 4, (piece) => literal(piece, 0, saved));
+      literals ??= await mapLimit(splitPassage(passage), 3, (piece) => literal(piece, 0, saved));
       const literalText = literals.join("\n");
       const system = STRUCTURE_RULES.replace("{EXAMPLE}", EXAMPLE_ANUVAAD) + saved;
       const user = [

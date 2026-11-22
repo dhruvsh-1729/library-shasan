@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createReadStream } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,6 +18,10 @@ import {
   validateSearchDownloadQueries,
 } from "@/lib/search-match-pages";
 import { protectApi } from "@/lib/auth-guard";
+import { buildTablePdf } from "@/lib/word-list-pdf";
+
+/** Rows a printed table can carry (a CSV takes up to MAX_CSV_ROWS). */
+const MAX_TABLE_PDF_ROWS = 5000;
 import { PERMISSIONS } from "@/lib/auth-permissions";
 
 export const config = {
@@ -103,8 +108,8 @@ function parseGranthSelections(value: unknown): GranthSelection[] {
   return selections;
 }
 
-function streamFile(res: NextApiResponse, filePath: string, filename: string, cleanupDir: string) {
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+function streamFile(res: NextApiResponse, filePath: string, filename: string, cleanupDir: string, type = "text/csv; charset=utf-8") {
+  res.setHeader("Content-Type", type);
   res.setHeader("Content-Disposition", contentDisposition(filename));
   res.setHeader("Cache-Control", "no-store");
 
@@ -127,6 +132,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   try {
     const body = (req.body || {}) as CsvBody;
+    // ?as=pdf: the same rows and columns as a printed table
+    const asPdf = req.query.as === "pdf";
+    const tableRows: string[][] = [];
     const delivery = body.delivery === "email" ? "email" : "download";
     const matchMode = parseOCRSearchModes(body.matchMode);
     const scripts = parseOCRSearchScripts(body.scripts);
@@ -206,6 +214,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           pdfFile: entry.pdfName,
         };
         await writer.writeRow(columns.map((id) => cell[id]));
+        if (asPdf && tableRows.length < MAX_TABLE_PDF_ROWS) tableRows.push(columns.map((id) => String(cell[id] ?? "")));
       }
     }
 
@@ -219,15 +228,23 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       resolvedRelPaths.length === 1
         ? safeFileName(resolvedRelPaths[0].granthName, "granth")
         : `${granthsWithRows || resolvedRelPaths.length}_granths`;
-    const filename = cleanFileName(String(body.fileName || ""), ".csv") || `granth_search_${queryLabel}_${scopeLabel}_page_lines.csv`;
+    const ext = asPdf ? ".pdf" : ".csv";
+    const filename = cleanFileName(String(body.fileName || ""), ext) || `granth_search_${queryLabel}_${scopeLabel}_page_lines${ext}`;
+    let filePath = csvPath;
+    if (asPdf) {
+      filePath = path.join(workDir, "search-matches.pdf");
+      const bytes = await buildTablePdf({ title: `${queries.join(", ")} - page and line list`, headers: searchCsvHeaders(columns), rows: tableRows });
+      await writeFile(filePath, bytes);
+      if (rowCount > tableRows.length) truncated = true;
+    }
 
     if (delivery === "email") {
       const recipientClientKey = getDownloadRecipientClientKey(req, res);
       const sent = await sendDownloadEmail({
         to: String(body.email || ""),
-        filePath: csvPath,
+        filePath,
         filename,
-        contentType: "text/csv",
+        contentType: asPdf ? "application/pdf" : "text/csv",
         title: `${queries.join(", ")} page and line list`,
         recipientClientKey,
       });
@@ -244,12 +261,12 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       });
     }
 
-    res.setHeader("X-Library-Csv-Rows", String(rowCount));
+    res.setHeader("X-Library-Csv-Rows", String(asPdf ? tableRows.length : rowCount));
     res.setHeader("X-Library-Csv-Granths", String(granthsWithRows));
     if (truncated) res.setHeader("X-Library-Csv-Truncated", "1");
     const cleanupDir = workDir;
     workDir = null;
-    streamFile(res, csvPath, filename, cleanupDir);
+    streamFile(res, filePath, filename, cleanupDir, asPdf ? "application/pdf" : undefined);
     return undefined;
   } catch (error) {
     if (workDir) await rm(workDir, { recursive: true, force: true });

@@ -12,11 +12,15 @@ import { MAX_CONTEXT_PAGE_RADIUS, normalizeContextPageRadius } from "@/lib/page-
  * word with its line, book and page; numbers: the same without the words;
  * linelist: each matched line with the lines around it and its reference.
  */
-export type ExportFormat = "pdf" | "csv" | "wordlist" | "numbers" | "linelist";
+export type ExportFormat = "pdf" | "csv" | "sheetpdf" | "wordlist" | "numbers" | "linelist";
+
+/** The formats made from the spreadsheet's rows, whose columns the reader picks. */
+export const usesCsvColumns = (format: ExportFormat | null) => format === "csv" || format === "sheetpdf";
 
 export const EXPORT_ENDPOINTS: Record<ExportFormat, string> = {
   pdf: "/api/search-match-pdf",
   csv: "/api/search-match-csv",
+  sheetpdf: "/api/search-match-csv?as=pdf",
   wordlist: "/api/search-match-wordlist",
   numbers: "/api/search-match-wordlist?layout=numbers",
   linelist: "/api/search-match-wordlist?layout=lines",
@@ -26,16 +30,18 @@ export const EXPORT_ENDPOINTS: Record<ExportFormat, string> = {
 export const EXPORT_INFO: Record<ExportFormat, { label: string; unit: string; ext: string; suffix: string }> = {
   pdf: { label: "Full PDF", unit: "page", ext: ".pdf", suffix: "pages" },
   csv: { label: "Spreadsheet (CSV)", unit: "row", ext: ".csv", suffix: "lines" },
+  sheetpdf: { label: "Spreadsheet as PDF", unit: "row", ext: ".pdf", suffix: "lines table" },
   wordlist: { label: "Word list", unit: "word", ext: ".pdf", suffix: "word list" },
   numbers: { label: "Page & line numbers", unit: "word", ext: ".pdf", suffix: "page numbers" },
   linelist: { label: "Line list", unit: "passage", ext: ".pdf", suffix: "line list" },
 };
 
 /** The extra choices behind "More", the same on both download screens. */
-export const MORE_EXPORT_DETAILS: Record<"wordlist" | "numbers" | "csv", string> = {
+export const MORE_EXPORT_DETAILS: Record<"wordlist" | "numbers" | "csv" | "sheetpdf", string> = {
   wordlist: "Each matching word, numbered, with its line, book and page number",
   numbers: "Only the line, book and page number of each match, numbered",
   csv: "Book, page and line numbers with the line, to open in Excel or Sheets",
+  sheetpdf: "The same columns as the spreadsheet, as a table ready to print",
 };
 
 /** "जीव 300 line list": the word, the book (or how many) and the kind of file. */
@@ -305,7 +311,7 @@ export function SearchExportDialog({
           matchMode,
           scripts,
           ...(format === "pdf" ? { contextPages, maxPagesPerGranth } : {}),
-          ...(format === "csv" ? { columns: csvColumns } : {}),
+          ...(usesCsvColumns(format) ? { columns: csvColumns } : {}),
           delivery,
           email,
           fileName,
@@ -345,7 +351,7 @@ export function SearchExportDialog({
             ? `${EXPORT_INFO[format].label} downloaded${rowCount ? ` with ${rowCount} word(s)` : ""}${cutOff}.`
             : format === "linelist"
               ? `Line list downloaded${rowCount ? ` with ${rowCount} passage(s)` : ""}${cutOff}.`
-              : `CSV downloaded${rowCount ? ` with ${rowCount} row(s)` : ""}${cutOff}.`
+              : `${format === "sheetpdf" ? "Table PDF" : "CSV"} downloaded${rowCount ? ` with ${rowCount} row(s)` : ""}${cutOff}.`
       );
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : String(exportError));
@@ -413,6 +419,13 @@ export function SearchExportDialog({
                 detail: MORE_EXPORT_DETAILS.csv,
                 busyLabel: "Building CSV",
                 ...choice("csv"),
+              },
+              {
+                id: "sheetpdf",
+                label: "Spreadsheet as PDF",
+                detail: MORE_EXPORT_DETAILS.sheetpdf,
+                busyLabel: "Building the table",
+                ...choice("sheetpdf"),
               },
             ]}
           />
@@ -524,7 +537,7 @@ export function SearchExportDialog({
             open={deliveryFormat !== null}
             title={EXPORT_INFO[deliveryFormat ?? "pdf"].label}
             extension={EXPORT_INFO[deliveryFormat ?? "pdf"].ext}
-            extra={deliveryFormat === "csv" ? <CsvColumnPicker columns={csvColumns} onChange={setCsvColumns} /> : null}
+            extra={usesCsvColumns(deliveryFormat) ? <CsvColumnPicker columns={csvColumns} onChange={setCsvColumns} /> : null}
             suggestedName={suggestFileName(
               deliveryFormat ?? "pdf",
               queries[0] ?? "",

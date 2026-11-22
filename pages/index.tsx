@@ -11,7 +11,7 @@ import { DownloadDeliveryDialog, type DeliveryMode } from "@/components/Download
 import { LightTableIcon } from "@/components/LightTableIcon";
 import { ExportActions, Sheet, Stepper } from "@/components/Sheet";
 import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog";
-import { EXPORT_ENDPOINTS, EXPORT_INFO, MORE_EXPORT_DETAILS, SearchExportDialog, suggestFileName, type ExportFormat } from "@/components/SearchExportDialog";
+import { EXPORT_ENDPOINTS, EXPORT_INFO, MORE_EXPORT_DETAILS, SearchExportDialog, suggestFileName, usesCsvColumns, type ExportFormat } from "@/components/SearchExportDialog";
 import { downloadBlob, fileSafe, filenameFromResponse } from "@/lib/download-file";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
 import { parseGranthPageInput, pdfPagesForGranthPages } from "@/lib/granth-pages";
@@ -991,7 +991,7 @@ export default function SearchPage() {
           scripts: downloadPreview.scripts,
           pages: downloadPreview.selectedPages,
           ...(format === "pdf" ? { contextPages: downloadPreview.contextPages } : {}),
-          ...(format === "csv" ? { columns: csvColumns } : {}),
+          ...(usesCsvColumns(format) ? { columns: csvColumns } : {}),
           delivery,
           email,
           fileName,
@@ -1685,6 +1685,7 @@ export default function SearchPage() {
                         { id: "wordlist", label: "Word list (PDF)", detail: MORE_EXPORT_DETAILS.wordlist, busyLabel: "Building word list", ...choice("wordlist") },
                         { id: "numbers", label: "Page & line numbers (PDF)", detail: MORE_EXPORT_DETAILS.numbers, busyLabel: "Building list", ...choice("numbers") },
                         { id: "csv", label: "Spreadsheet (CSV)", detail: MORE_EXPORT_DETAILS.csv, busyLabel: "Building CSV", ...choice("csv") },
+                        { id: "sheetpdf", label: "Spreadsheet as PDF", detail: MORE_EXPORT_DETAILS.sheetpdf, busyLabel: "Building the table", ...choice("sheetpdf") },
                       ]}
                     />
                   ) : null
@@ -1809,11 +1810,11 @@ export default function SearchPage() {
                       title={EXPORT_INFO[deliveryFormat ?? "pdf"].label}
                       extension={EXPORT_INFO[deliveryFormat ?? "pdf"].ext}
                       suggestedName={suggestFileName(deliveryFormat ?? "pdf", downloadPreview.queries[0] ?? "", downloadPreview.bookNo || downloadPreview.title)}
-                      extra={deliveryFormat === "csv" ? <CsvColumnPicker columns={csvColumns} onChange={setCsvColumns} /> : null}
+                      extra={usesCsvColumns(deliveryFormat) ? <CsvColumnPicker columns={csvColumns} onChange={setCsvColumns} /> : null}
                       fileLabel={
                         deliveryFormat === "pdf" || deliveryFormat === null
                           ? `${plural(finalPageCount, "PDF page")}`
-                          : `${plural(selectedCount, "chosen page")}, one row per matching ${deliveryFormat === "csv" || deliveryFormat === "linelist" ? "line" : "word"}`
+                          : `${plural(selectedCount, "chosen page")}, one row per matching ${usesCsvColumns(deliveryFormat) || deliveryFormat === "linelist" ? "line" : "word"}`
                       }
                       busy={busy}
                       error={downloadPreview.error}

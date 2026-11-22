@@ -38,6 +38,12 @@ export type LocatedPassage = {
   score: number;
   /** The box's Granth column names this book. */
   named?: boolean;
+  /**
+   * The part of the Granth column that names this book, when it names several
+   * ("भगवतीसूत्र …, सूत्र 16; योगशास्त्र …, श्लोक 36" → the Yogashastra part):
+   * its gatha numbers are the ones to cut this book's Gujarati by.
+   */
+  granthPart?: string;
   /** The library's book number ("196"), for the printed anuvaad. */
   bookNumber?: string;
   /** The page and its neighbours, in order. */
@@ -114,6 +120,13 @@ export function hintedGranths(catalog: GranthCatalog, granth: string) {
     if (named) keys.push(key);
   }
   return keys;
+}
+
+/** The part of the Granth column (split at ";") that names this granth; the whole column when there is one part or none names it. */
+export function granthPartFor(catalog: GranthCatalog, granth: string, key: string) {
+  const parts = granth.split(";").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return granth;
+  return parts.find((part) => hintedGranths(catalog, part).includes(key)) ?? granth;
 }
 
 /**
@@ -236,8 +249,16 @@ export async function locatePassage(passage: string, limit = 3, granth = ""): Pr
     .sort((a, b) => Number(hinted.has(b.granthKey)) - Number(hinted.has(a.granthKey)) || b.score - a.score);
   // nothing in the named books by words: by the gatha number the box gives
   if (hinted.size && !ranked.some((c) => hinted.has(c.granthKey))) {
-    const byNumber = await byGathaNumber(granth, words, [...hinted]);
-    if (byNumber) ranked.unshift(byNumber);
+    // each part of the column with the books it names: "सूत्र 16" of one book is not "श्लोक 36" of another
+    const parts = granth.split(";").map((p) => p.trim()).filter(Boolean);
+    for (const part of parts.length > 1 ? parts : [granth]) {
+      const keys = parts.length > 1 ? hintedGranths(catalog, part).filter((k) => hinted.has(k)) : [...hinted];
+      const byNumber = await byGathaNumber(part, words, keys);
+      if (byNumber) {
+        ranked.unshift(byNumber);
+        break;
+      }
+    }
   }
   const top = ranked.slice(0, limit);
 
@@ -263,6 +284,7 @@ export async function locatePassage(passage: string, limit = 3, granth = ""): Pr
       printedPage: pages.find((p) => p.page === c.page)?.printedPage ?? null,
       score: Math.round(c.score * 100) / 100,
       named: hinted.has(c.granthKey),
+      granthPart: hinted.has(c.granthKey) ? granthPartFor(catalog, granth, c.granthKey) : undefined,
       bookNumber: described?.entry.book_number || String(bookNumbers(described?.entry.source_rel_path ?? "")[0] ?? ""),
       pages,
     });

@@ -18,9 +18,12 @@ function readSections(raw: unknown): AnuvaadPdfSection[] | null {
   const sections = raw
     .map((s) => {
       const section = (s ?? {}) as Record<string, unknown>;
+      const aside = section.aside ? parseAnuvaad(String(section.aside).normalize("NFC").slice(0, 60_000)) : [];
+      const labels = Array.isArray(section.labels) && section.labels.length === 2 ? (section.labels.map((l) => String(l ?? "").slice(0, 120)) as [string, string]) : undefined;
       return {
         caption: String(section.caption ?? "").normalize("NFC").slice(0, 300),
         blocks: parseAnuvaad(String(section.markup ?? "").normalize("NFC").slice(0, 60_000)),
+        ...(aside.length ? { aside, labels } : {}),
       };
     })
     .filter((s) => s.blocks.length);

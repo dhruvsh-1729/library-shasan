@@ -5,6 +5,8 @@ import { PageThumb } from "@/components/PageThumb";
 import { addImagePage, fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
 import { parseAnuvaad } from "@/lib/anuvaad/markup";
 import { MAX_PAGES_PER_RUN, describePages, gujaratiNumber, pageText, parsePageList } from "@/lib/anuvaad/pages";
+import type { LocatedPassage } from "@/lib/anuvaad/locate";
+import { bookMarkup, choosePagePlace } from "@/lib/anuvaad/book-place";
 
 // "Pages of a PDF" on /anuvaad (Maharaj Saheb, 2 Nov 2026: "we have a PDF
 // directly; from it we need some fixed pages"). One question at a time:
@@ -34,7 +36,17 @@ type Item = {
   markup?: string;
   literal?: string;
   error?: string;
+  /**
+   * The book's own Gujarati for this page, when the page is one of our books
+   * and the book has it (22 Nov 2026, Maharaj Saheb: "it only returns AI, not
+   * the granth's own translation"): shown beside the AI's. Null: looked for,
+   * none; undefined: not yet looked for.
+   */
+  book?: string | null;
 };
+
+/** A page is "one of our books" when most of its words are on the library page found. */
+const SAME_PAGE = 0.45;
 
 const PARALLEL_PAGES = 2;
 const PARALLEL_READS = 3;
@@ -189,12 +201,40 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
   const neighbourText = (item: Item, step: -1 | 1) =>
     itemsRef.current.find((i) => i.n === item.n + step && (i.photoId === undefined) === (item.photoId === undefined))?.text ?? "";
 
+  /** One page; a failed anuvaad is tried once more after a pause (the AI turns away bursts). */
   async function processOne(key: string) {
+    await processOnce(key);
+    if (itemsRef.current.find((i) => i.key === key)?.status === "error" && itemsRef.current.find((i) => i.key === key)?.text) {
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+      await processOnce(key);
+    }
+  }
+
+  /** The book's own Gujarati for the page, if the page is in our library and the book has it there. */
+  async function findBook(text: string): Promise<string | null> {
+    try {
+      const res = await fetch("/api/anuvaad/locate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passage: text.slice(0, 6000), granth: "" }),
+      });
+      const json = await res.json().catch(() => ({}));
+      const places = (res.ok && Array.isArray(json.places) ? (json.places as LocatedPassage[]) : []).filter((p) => p.score >= SAME_PAGE);
+      if (!places.length) return null;
+      const { place, book } = choosePagePlace(places, text);
+      return place && book ? bookMarkup(place, book) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function processOnce(key: string) {
     const item = itemsRef.current.find((i) => i.key === key);
     if (!item) return;
     const text = item.text?.trim() ? item.text : await readPage(item);
     if (!text) return;
     updateItem(key, { status: "translating", error: undefined });
+    if (item.book === undefined) updateItem(key, { book: await findBook(text) });
     // A discussion can run over several pages (Maharaj Saheb, 14 Nov 2026):
     // the end of the page before and the start of the page after go with it.
     const before = neighbourText(item, -1);
@@ -252,7 +292,7 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
   const labelOf = (item: Item) => (source?.kind === "photos" ? `Photo ${item.n}` : `Page ${item.n}`);
 
   async function download() {
-    const done = items.filter((i) => i.status === "done" && i.markup && parseAnuvaad(i.markup).length);
+    const done = items.filter((i) => (i.status === "done" && i.markup && parseAnuvaad(i.markup).length) || (i.book && parseAnuvaad(i.book).length));
     if (!done.length || exporting || !source) return;
     setExporting(true);
     setExportError("");
@@ -263,7 +303,13 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           numbers: !withOriginal,
-          sections: done.map((i) => ({ caption: `પાનું ${gujaratiNumber(i.n)} · ${sourceName}`, markup: i.markup })),
+          sections: done.map((i) => {
+            const ai = i.status === "done" && i.markup ? i.markup : "";
+            const caption = `પાનું ${gujaratiNumber(i.n)} · ${sourceName}`;
+            // the book's own Gujarati on the left, the AI's on the right
+            if (i.book && ai) return { caption, markup: i.book, aside: ai, labels: ["ગ્રંથનો પોતાનો અનુવાદ", "AI અનુવાદ"] };
+            return { caption, markup: i.book || ai };
+          }),
         }),
       });
       if (!res.ok) {
@@ -573,7 +619,26 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
                   </button>
                 </div>
               ) : null}
-              {item.status === "done" && item.markup !== undefined ? <AnuvaadView markup={item.markup} literal={item.literal} onChange={(markup) => updateItem(item.key, { markup })} /> : null}
+              {item.book && (item.status === "done" || item.status === "translating" || item.status === "error") ? (
+                <div className="anSide">
+                  <section>
+                    <h3 className="anSideHead">ગ્રંથનો પોતાનો અનુવાદ <small>(the book&apos;s own Gujarati, no AI)</small></h3>
+                    <AnuvaadView markup={item.book} onChange={(book) => updateItem(item.key, { book })} />
+                  </section>
+                  <section>
+                    <h3 className="anSideHead">AI અનુવાદ</h3>
+                    {item.status === "done" && item.markup !== undefined ? (
+                      <AnuvaadView markup={item.markup} literal={item.literal} onChange={(markup) => updateItem(item.key, { markup })} />
+                    ) : item.status === "translating" ? (
+                      <p className="vyHint">Being written…</p>
+                    ) : (
+                      <p className="vyHint">The AI anuvaad could not be made; the book&apos;s own Gujarati is here.</p>
+                    )}
+                  </section>
+                </div>
+              ) : item.status === "done" && item.markup !== undefined ? (
+                <AnuvaadView markup={item.markup} literal={item.literal} onChange={(markup) => updateItem(item.key, { markup })} />
+              ) : null}
               {item.text !== undefined && item.status !== "reading" ? (
                 <details className="vyDetails anOriginal">
                   <summary>Original text (as read from the page)</summary>

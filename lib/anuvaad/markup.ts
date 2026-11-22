@@ -6,6 +6,7 @@
 //   ## ૧. part                → section
 //   > text                    → main (the passage's own part of a book page,
 //                               drawn bold among the page's other lines)
+//   | text                    → boxed (an APC entry's śāstra text, in a frame)
 //   - **label:** text         → point (level 1)
 //     - **label:** text       → point (level 2)
 //   anything else             → paragraph
@@ -18,6 +19,7 @@ export type AnuvaadBlock =
   | { kind: "section"; text: string }
   | { kind: "para"; text: string }
   | { kind: "main"; text: string }
+  | { kind: "boxed"; text: string }
   | { kind: "point"; label: string; text: string; level: 1 | 2 };
 
 const LABELLED = /^\*\*(.+?)\*\*\s*[:：]?\s*(.*)$/;
@@ -37,6 +39,9 @@ export function parseAnuvaad(markup: string): AnuvaadBlock[] {
       blocks.push({ kind: "title", text: clean(line.replace(/^#\s+/, "")) });
     } else if (/^#{2,}\s+/.test(line)) {
       blocks.push({ kind: "section", text: clean(line.replace(/^#{2,}\s+/, "")) });
+    } else if (/^\|\s+/.test(line)) {
+      const text = clean(line.replace(/^\|\s+/, ""));
+      if (text) blocks.push({ kind: "boxed", text });
     } else if (/^>\s*/.test(line)) {
       const text = clean(line.replace(/^>\s*/, ""));
       if (text) blocks.push({ kind: "main", text });
@@ -75,6 +80,8 @@ export function toMarkup(blocks: AnuvaadBlock[]) {
           return `## ${b.text}`;
         case "main":
           return `> ${b.text}`;
+        case "boxed":
+          return `| ${b.text}`;
         case "point":
           return `${b.level === 2 ? "  " : ""}- ${b.label ? `**${b.label}:** ` : ""}${b.text}`;
         default:

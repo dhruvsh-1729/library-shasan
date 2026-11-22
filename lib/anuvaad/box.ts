@@ -199,6 +199,9 @@ function looseText(markdown: string) {
     .join("\n");
 }
 
+/** "10.8.1 - हेतुअहिंसा", "1.1 अचौर्य": a vishay's number and name, alone in a row. */
+const VISHAY_BAND = /^\d{1,3}(?:\.\d{1,3})+\s*[-–—:]?\s*[ऀ-ॿ][ऀ-ॿ\s()-]{0,60}$/;
+
 export function parseBoxPages(pages: BoxPage[]): ParsedBox {
   const rows: BoxRow[] = [];
   const loose: ParsedBox["loose"] = [];
@@ -227,6 +230,12 @@ export function parseBoxPages(pages: BoxPage[]): ParsedBox {
           continue;
         }
         if (tr.cells.every((c) => !c)) continue;
+        // the vishay band across the table ("10.8.1 - हेतुअहिंसा") is not a passage: it went to the AI as one
+        const filled = tr.cells.filter((c) => c.trim());
+        if (filled.length === 1 && VISHAY_BAND.test(filled[0].trim())) {
+          if (!vishay) vishay = filled[0].trim();
+          continue;
+        }
         const cells = assign(columns, tr.cells);
         const row: BoxRow = {
           sr: (cells.sr ?? "").replace(/\.$/, ""),

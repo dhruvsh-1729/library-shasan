@@ -532,3 +532,41 @@
   gap: 8px;
   align-items: baseline;
 }
+
+/* "Side by side": the book's own Gujarati and the AI's, in two columns (one under the other on a phone). */
+.anSide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.anSide > section + section {
+  border-left: 1px solid var(--border);
+  padding-left: 18px;
+}
+.anSideHead {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+.anSideHead small {
+  font-weight: 400;
+  opacity: 0.7;
+}
+@media (max-width: 760px) {
+  .anSide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .anSide > section + section {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+}
+
+/* An APC entry's śāstra text, framed as Maharaj Saheb marked it. */
+.anPara.isBoxed {
+  border: 1.5px solid var(--lt-ink);
+  border-radius: 4px;
+  padding: 8px 12px;
+}

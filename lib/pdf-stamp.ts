@@ -9,7 +9,7 @@ import { type PDFDocument, type PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { describeGranth, getGranthCatalog } from "@/lib/granth-catalog";
 import { getTursoClient } from "@/lib/turso";
 
-const SIZE = 7;
+const SIZE = 8;
 const GREY = rgb(0.4, 0.4, 0.4);
 
 /** The stamp's text for each PDF page of a granth. */

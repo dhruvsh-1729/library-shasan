@@ -111,6 +111,25 @@ const AFTER_BHAVARTH = /^(?:ગાથા|ગાથાર્થ|ટીકા|ટ�
 /** A running head with its numbers taken out, to see it repeat from page to page. */
 const headKey = (text: string) => ascii(text).replace(/[\d\s.\-–/]+/g, "");
 
+/** "૧.લલિતવિસ્તરા લોગસ્સસૂત્ર.", "* જુઓ …", "1. …": a footnote's first line. */
+const FOOTNOTE = /^(?:\*+|[૧-૯1-9१-९]\s*[.)]|\(\s*[૧-૯1-9१-९]\s*\))\s*[઀-૿ऀ-ॿ]{2}/;
+
+/**
+ * The footnotes at a page's foot (Panchashak p.195: "૧.લલિતવિસ્તરા
+ * લોગસ્સસૂત્ર." was read into the middle of the passage's bold sentence).
+ * Within the page's last four lines, a line opening "૧." or "*" and all
+ * after it, when that is three lines or fewer.
+ */
+export function footnoteLines(raw: string[]): Set<number> {
+  const out = new Set<number>();
+  const solid = raw.map((t, i) => ({ t, i })).filter((x) => x.t.replace(/\s/g, "").length > 3);
+  const tail = solid.slice(-4);
+  const at = tail.findIndex((x) => FOOTNOTE.test(x.t) && !gathaMarks(x.t).some((k) => k.style === "open"));
+  if (at < 0 || tail.length - at > 3) return out;
+  for (let i = tail[at].i; i < raw.length; i += 1) out.add(i);
+  return out;
+}
+
 export function linesOf(pages: LocatedPage[]): Line[] {
   const out: Line[] = [];
   const perPage = pages.map((p) => ({
@@ -128,7 +147,12 @@ export function linesOf(pages: LocatedPage[]): Line[] {
     const solid = p.raw.map((t, i) => ({ t, i })).filter((x) => x.t.length > 3);
     const top = new Set(solid.slice(0, 2).map((x) => x.i));
     const foot = new Set(solid.slice(-1).map((x) => x.i));
+    const notes = footnoteLines(p.raw);
     p.raw.forEach((text, i) => {
+      if (notes.has(i)) {
+        out.push({ page: p.page, text, gu: false, dev: false, marks: [], head: true });
+        return;
+      }
       const gu = text.match(GU)?.length ?? 0;
       const dev = text.match(DEV)?.length ?? 0;
       const sentence = /[.?!।॥)]\s*$/.test(text) || LABEL.test(text) || /^\(/.test(text);
@@ -337,4 +361,18 @@ export function bookGujaratiText(pages: LocatedPage[], place: number, granth: st
   void start;
   void end;
   return { markup: out.join("\n"), pages: pageNumbers, by };
+}
+
+/**
+ * A whole page's own Gujarati ("Pages of a PDF", when the page is one of our
+ * books): every Gujarati line printed on it, running heads, footnotes and the
+ * ભાવાર્થ aside. Null when it has less than a few lines of Gujarati.
+ */
+export function pageGujaratiText(pages: LocatedPage[], page: number): BookText | null {
+  const ordered = [...pages].sort((a, b) => a.page - b.page);
+  const lines = linesOf(ordered);
+  const skip = bhavarthLines(lines);
+  const own = lines.filter((l, i) => l.page === page && l.gu && !l.head && !skip.has(i));
+  if (own.reduce((n, l) => n + (l.text.match(GU)?.length ?? 0), 0) < 200) return null;
+  return { markup: paragraphs(own).join("\n"), pages: [page], by: "words" };
 }

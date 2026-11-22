@@ -8,11 +8,13 @@ import { AppNav } from "@/components/AppNav";
 import { AnuvaadView } from "@/components/AnuvaadView";
 import { AnuvaadWords } from "@/components/AnuvaadWords";
 import { AnuvaadPages } from "@/components/AnuvaadPages";
+import { AnuvaadApc } from "@/components/AnuvaadApc";
 import { type BoxRow, parseBoxPages } from "@/lib/anuvaad/box";
 import { addImagePage, fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
 import type { LocatedPassage } from "@/lib/anuvaad/locate";
-import { type BookText, bookGujaratiText, passageWords } from "@/lib/anuvaad/book-text";
-import { gujaratiNumber, pageText } from "@/lib/anuvaad/pages";
+import type { BookText } from "@/lib/anuvaad/book-text";
+import { bookMarkup, choosePlace, whereFrom } from "@/lib/anuvaad/book-place";
+import { pageText } from "@/lib/anuvaad/pages";
 
 // Anuvaad, two ways, chosen first: "Pages of a PDF" (components/AnuvaadPages:
 // any PDF or page photos, pages picked by number, each page translated) and
@@ -50,6 +52,9 @@ type Row = BoxRow & {
   error?: string;
   markup?: string;
   literal?: string;
+  /** "Side by side": the AI's anuvaad, shown beside the book's own Gujarati (`markup`). */
+  aiMarkup?: string;
+  aiError?: string;
   /**
    * Where the passage is printed in the library (lib/anuvaad/locate): found,
    * null when it was looked for and not found, undefined while not yet looked for.
@@ -67,41 +72,15 @@ type Row = BoxRow & {
  * it; else the AI translates our library page (not the box scan); the box's
  * own text only when the passage is not in the library.
  */
-type Source = "book" | "page" | "box";
-
-const defaultSource = (row: Row): Source => (row.book ? "book" : row.place ? "page" : "box");
-const sourceOf = (row: Row): Source => row.source ?? defaultSource(row);
-
-/** "પાનું ૧૮૦–૧૮૧" from the printed page numbers (PDF numbers when a page has none). */
-function gujaratiPages(place: LocatedPassage, pdfPages: number[]) {
-  const printed = pdfPages.map((n) => Number(place.pages.find((p) => p.page === n)?.printedPage) || n);
-  const a = printed[0];
-  const b = printed[printed.length - 1];
-  return a === b ? `પાનું ${gujaratiNumber(a)}` : `પાનાં ${gujaratiNumber(a)}–${gujaratiNumber(b)}`;
-}
-
-/** Book name, number and pages, as the anuvaad's first line: every printed passage says where it is from. */
-function whereFrom(place: LocatedPassage, pdfPages: number[]) {
-  return `${place.granthName}${place.bookNumber ? ` (ગ્રંથ નં. ${place.bookNumber})` : ""}, ${gujaratiPages(place, pdfPages)}`;
-}
-
-/** The book's own Gujarati, the passage's part in bold, with where it is from. */
-function bookMarkup(place: LocatedPassage, book: BookText) {
-  return [`(પુસ્તકમાંથી: ${whereFrom(place, book.pages)})`, book.markup].join("\n");
-}
+type Source = "both" | "book" | "page" | "box";
 
 /**
- * Of the places found, the one to use: the first whose pages hold the book's
- * own Gujarati for the passage, as long as the box does not name another
- * book found; else the first.
+ * 22 Nov 2026 (Maharaj Saheb: "it only returns AI, not the granth's own
+ * translation"; Dhruv: "one option showing the book's translation and AI side
+ * by side"): where the book has its own Gujarati, both, the book's first.
  */
-function choosePlace(places: LocatedPassage[], row: Pick<Row, "granth" | "shastraPath">) {
-  const words = passageWords(row.shastraPath);
-  const withBook = places.map((place) => ({ place, book: bookGujaratiText(place.pages, place.page, row.granth, words) }));
-  const named = places.some((p) => p.named);
-  const pick = withBook.find((x) => x.book && (x.place.named || !named)) ?? withBook[0];
-  return pick ? { place: pick.place, book: pick.book } : { place: null, book: null };
-}
+const defaultSource = (row: Row): Source => (row.book ? "both" : row.place ? "page" : "box");
+const sourceOf = (row: Row): Source => row.source ?? defaultSource(row);
 
 const ACCEPT = "application/pdf,image/jpeg,image/png";
 const PARALLEL_ROWS = 2;
@@ -125,6 +104,7 @@ async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer) {
 }
 
 const SOURCE_LABEL: Record<Source, string> = {
+  both: "the book's own Gujarati (no AI, its passage in bold) and, beside it, the AI anuvaad of the same page",
   book: "the book's own Gujarati (no AI); the passage's part is in bold",
   page: "AI anuvaad of our library page (the book has no Gujarati there)",
   box: "AI anuvaad of the box text (the passage was not found in our library)",
@@ -206,9 +186,14 @@ function PlaceBox({ row, onFind, onSource }: { row: Row; onFind: () => void; onS
       <fieldset className="anSource">
         <legend>Make the anuvaad from</legend>
         {book ? (
-          <label>
-            <input type="radio" checked={source === "book"} onChange={() => onSource("book")} /> The book&apos;s own Gujarati (no AI)
-          </label>
+          <>
+            <label>
+              <input type="radio" checked={source === "both"} onChange={() => onSource("both")} /> The book&apos;s own Gujarati and the AI anuvaad, side by side
+            </label>
+            <label>
+              <input type="radio" checked={source === "book"} onChange={() => onSource("book")} /> Only the book&apos;s own Gujarati (no AI)
+            </label>
+          </>
         ) : null}
         <label>
           <input type="radio" checked={source === "page"} onChange={() => onSource("page")} /> AI anuvaad of our library page
@@ -327,7 +312,16 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     if (fresh.length) setView("rows");
   }
 
+  /** One passage's anuvaad; a failed AI anuvaad is tried once more after a pause (the AI turns away bursts). */
   async function translateOne(given: Row) {
+    if (!(await translateOnce(given))) {
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+      await translateOnce(given);
+    }
+  }
+
+  /** False when it failed (the row then shows the error). */
+  async function translateOnce(given: Row): Promise<boolean> {
     updateRow(given.key, { status: "running", error: undefined });
     // Maharaj Saheb, 20 Nov 2026: "only 5% was taken from the books, the rest went straight to AI". The
     // anuvaad was started before each passage had been looked up in the library, and a passage not yet
@@ -341,41 +335,61 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     try {
       const place = row.place;
       const book = row.book;
-      if (source === "book" && place && book) {
-        updateRow(row.key, { status: "done", markup: bookMarkup(place, book), literal: "" });
-        return;
+      if ((source === "book" || source === "both") && place && book) {
+        updateRow(row.key, { status: source === "both" ? "running" : "done", markup: bookMarkup(place, book), literal: "", aiMarkup: undefined, aiError: undefined });
+        if (source === "book") return true;
+        // beside it, the AI's anuvaad of the same library page; the book's own Gujarati stands even if the AI fails
+        let ai: { markup: string; literal: string } | null = null;
+        let problem = "";
+        for (let attempt = 0; attempt < 2 && !ai; attempt += 1) {
+          if (attempt) await new Promise((resolve) => setTimeout(resolve, 6000));
+          ai = await aiOfPage(place).catch((error) => {
+            problem = error instanceof Error ? error.message : "The AI anuvaad could not be prepared.";
+            return null;
+          });
+        }
+        updateRow(row.key, ai ? { status: "done", aiMarkup: ai.markup, literal: ai.literal } : { status: "done", aiError: problem || "The AI anuvaad could not be prepared." });
+        return true;
       }
-      if (source === "page" && place) {
-        // our library page, with the pages on either side for context
-        const at = place.pages.findIndex((p) => p.page === place.page);
-        const res = await fetch("/api/anuvaad/page", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: pageText(place.pages[at]?.text ?? ""),
-            before: pageText(place.pages[at - 1]?.text ?? ""),
-            after: pageText(place.pages[at + 1]?.text ?? ""),
-            source: `${place.granthName}, page ${place.printedPage ?? place.page}`,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json.error || "The anuvaad could not be prepared.");
-        const head = `(અમારી લાઇબ્રેરીના પાનાનો AI અનુવાદ: ${whereFrom(place, [place.page])})`;
-        updateRow(row.key, { status: "done", markup: `${head}\n${String(json.markup ?? "")}`, literal: String(json.literal ?? "") });
-        return;
-      }
-      const res = await fetch("/api/anuvaad/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vishay: row.vishay, granth: row.granth, passage: row.shastraPath }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "The anuvaad could not be prepared.");
-      const head = `(બોક્સના પાઠનો AI અનુવાદ${row.granth ? `: ${row.granth}` : ""})`;
-      updateRow(row.key, { status: "done", markup: `${head}\n${String(json.markup ?? "")}`, literal: String(json.literal ?? "") });
+      const ai = source === "page" && place ? await aiOfPage(place) : await aiOfBox(row);
+      updateRow(row.key, { status: "done", markup: ai.markup, literal: ai.literal, aiMarkup: undefined, aiError: undefined });
+      return true;
     } catch (error) {
       updateRow(row.key, { status: "error", error: error instanceof Error ? error.message : "The anuvaad could not be prepared." });
+      return false;
     }
+  }
+
+  /** The AI's anuvaad of our library page the passage is on, with the pages on either side for context. */
+  async function aiOfPage(place: LocatedPassage) {
+    const at = place.pages.findIndex((p) => p.page === place.page);
+    const res = await fetch("/api/anuvaad/page", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: pageText(place.pages[at]?.text ?? ""),
+        before: pageText(place.pages[at - 1]?.text ?? ""),
+        after: pageText(place.pages[at + 1]?.text ?? ""),
+        source: `${place.granthName}, page ${place.printedPage ?? place.page}`,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "The anuvaad could not be prepared.");
+    const head = `(અમારી લાઇબ્રેરીના પાનાનો AI અનુવાદ: ${whereFrom(place, [place.page])})`;
+    return { markup: `${head}\n${String(json.markup ?? "")}`, literal: String(json.literal ?? "") };
+  }
+
+  /** The AI's anuvaad of the box's own text (the passage is not in our library). */
+  async function aiOfBox(row: Row) {
+    const res = await fetch("/api/anuvaad/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vishay: row.vishay, granth: row.granth, passage: row.shastraPath }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "The anuvaad could not be prepared.");
+    const head = `(બોક્સના પાઠનો AI અનુવાદ${row.granth ? `: ${row.granth}` : ""})`;
+    return { markup: `${head}\n${String(json.markup ?? "")}`, literal: String(json.literal ?? "") };
   }
 
   /** Looks each passage up in the library, one after another (about a second each). */
@@ -440,7 +454,12 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sections: done.map((r) => ({ caption: [r.sr ? `Sr. ${r.sr}` : "", r.vishay, r.granth].filter(Boolean).join(" · "), markup: r.markup })),
+          sections: done.map((r) => ({
+            caption: [r.sr ? `Sr. ${r.sr}` : "", r.vishay, r.granth].filter(Boolean).join(" · "),
+            markup: r.markup,
+            // side by side: the book's Gujarati on the left, the AI's on the right
+            ...(sourceOf(r) === "both" && r.aiMarkup ? { aside: r.aiMarkup, labels: ["ગ્રંથનો પોતાનો અનુવાદ", "AI અનુવાદ"] } : {}),
+          })),
         }),
       });
       if (!res.ok) {
@@ -722,7 +741,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
                   {row.granth ? <span className="indic"> · {row.granth}</span> : null}
                   <span> · {SOURCE_LABEL[sourceOf(row)]}</span>
                 </p>
-                {row.status === "waiting" || row.status === "running" ? (
+                {row.status === "waiting" || (row.status === "running" && !(sourceOf(row) === "both" && row.markup !== undefined)) ? (
                   <p className="vyStatus">
                     <span className="chTyping" aria-hidden="true">
                       <span />
@@ -740,9 +759,34 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
                     </button>
                   </div>
                 ) : null}
+                {sourceOf(row) === "both" && row.markup !== undefined && (row.status === "done" || row.status === "running") ? (
+                  <div className="anSide">
+                    <section>
+                      <h3 className="anSideHead">ગ્રંથનો પોતાનો અનુવાદ <small>(the book&apos;s own Gujarati, no AI)</small></h3>
+                      <AnuvaadView markup={row.markup} onChange={(markup) => updateRow(row.key, { markup })} />
+                    </section>
+                    <section>
+                      <h3 className="anSideHead">AI અનુવાદ <small>(of the same library page)</small></h3>
+                      {row.aiMarkup !== undefined ? (
+                        <AnuvaadView markup={row.aiMarkup} literal={row.literal} onChange={(aiMarkup) => updateRow(row.key, { aiMarkup })} />
+                      ) : row.aiError ? (
+                        <p className="vyProblem">{row.aiError}</p>
+                      ) : (
+                        <p className="vyStatus">
+                          <span className="chTyping" aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                          Making the AI anuvaad
+                        </p>
+                      )}
+                    </section>
+                  </div>
+                ) : null}
                 {row.status === "done" && row.markup !== undefined ? (
                   <>
-                    <AnuvaadView markup={row.markup} literal={row.literal} onChange={(markup) => updateRow(row.key, { markup })} />
+                    {sourceOf(row) === "both" ? null : <AnuvaadView markup={row.markup} literal={row.literal} onChange={(markup) => updateRow(row.key, { markup })} />}
                     <div className="anRowFoot">
                       <button type="button" className="exGhost" onClick={() => translate([row])} disabled={translating} title="Makes this passage's anuvaad again from the start; your corrections to it are replaced">
                         Make this anuvaad again
@@ -758,14 +802,14 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
   );
 }
 
-type Mode = "box" | "pages" | "words";
+type Mode = "box" | "pages" | "apc" | "words";
 
 export default function AnuvaadPage() {
   const router = useRouter();
   // The way chosen lives in the address (?mode=pages or ?mode=box), so a link
   // can open it straight away. It replaces the address rather than adding to
   // the history: the phone's back button must not drop work on the page.
-  const mode: Mode | null = router.query.mode === "box" || router.query.mode === "pages" || router.query.mode === "words" ? router.query.mode : null;
+  const mode: Mode | null = router.query.mode === "box" || router.query.mode === "pages" || router.query.mode === "apc" || router.query.mode === "words" ? router.query.mode : null;
 
   // The action bar pins just under the page header, whose height changes with
   // the width (two rows of menu on a phone).
@@ -796,6 +840,7 @@ export default function AnuvaadPage() {
 
         {mode === "box" ? <BoxFlow onBack={() => choose(null)} /> : null}
         {mode === "pages" ? <AnuvaadPages onBack={() => choose(null)} /> : null}
+        {mode === "apc" ? <AnuvaadApc onBack={() => choose(null)} /> : null}
         {mode === "words" ? <AnuvaadWords onBack={() => choose(null)} /> : null}
         {mode === null ? (
           <main className="vyMain">
@@ -809,6 +854,10 @@ export default function AnuvaadPage() {
                 <button type="button" className="exChoice" onClick={() => choose("box")}>
                   <strong>Box files</strong>
                   <span>The printed box tables (Sr. No. · Granth · ShastraPath). Each passage is found in our books; the book&apos;s own Gujarati is used where it has one.</span>
+                </button>
+                <button type="button" className="exChoice" onClick={() => choose("apc")}>
+                  <strong>APC files (no AI)</strong>
+                  <span>Gitarth Ganga code files. Each entry&apos;s granth, adhyay and text are kept, found in our books and printed with the book&apos;s own pages. No AI is used.</span>
                 </button>
                 <button type="button" className="exChoice" onClick={() => choose("words")}>
                   <strong>Saved words</strong>

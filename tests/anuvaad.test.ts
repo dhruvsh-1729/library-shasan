@@ -272,3 +272,91 @@ test("a sideways photo: the reading made of kosh words is kept (18 Nov 2026)", a
   const readings = ["अकात्तरअहिंसा लौकिकअहिंसा अकोत्तरहिंसा लौकिकहिंसा", "लोकोत्तरहिंसा लोकोत्तरहिंसा लोकोत्तरहिंसा", "लोकोत्तरअहिंसा लौकिकअहिंसा लोकोत्तरहिंसा लौकिकहिंसा"];
   assert.equal(bestReading(readings), 2);
 });
+
+test("the vishay band across a box table is not a passage", () => {
+  const box = parseBoxPages([
+    {
+      page: 1,
+      markdown: `<table><thead><tr><th>Sr.</th><th>V.T</th><th>Granth</th><th>ShastraPath</th><th>Pub.Rem</th><th>In.Rem</th></tr></thead><tbody>
+<tr><td colspan="6">10.8.1 - हेतुअहिंसा</td></tr>
+<tr><td>2</td><td>व्या.</td><td>उपदेशरहस्य स्वोपज्ञ<br/>टीका, गाथा 4</td><td>एतद्वैलक्षण्यं चाऽहिंसायां योजनीयं, यतनाया हेतुत्वात्</td><td></td><td></td></tr>
+</tbody></table>`,
+    },
+  ]);
+  assert.deepEqual(box.rows.map((r) => r.sr), ["2"]);
+  assert.equal(box.vishay, "10.8.1 - हेतुअहिंसा");
+});
+
+test("a page's footnotes are not read into its text", async () => {
+  const { footnoteLines } = await import("@/lib/anuvaad/book-text");
+  // Panchashak p.195: the footnote came into the middle of gatha 41-42's bold sentence
+  const raw = ["ગાથાર્થ–પ્રશ્ન–પૂજામાં જીવહિંસા થાય છે. (તીર્થંકરોએ) જીવહિંસાનો નિષેધ કર્યો", "૧.લલિતવિસ્તરા લોગસ્સસૂત્ર."];
+  assert.deepEqual([...footnoteLines(raw)], [1]);
+  // a closing gatha mark alone at the foot, or a numbered heading mid-page, is not one
+  assert.equal(footnoteLines(["ટીકાર્થ– … કહ્યું છે.", "(૮)."]).size, 0);
+  assert.equal(footnoteLines(["૫. યતિના દ્વાર સ્વાશયવૃદ્ધિદ્વાર કહ્યું.", "ગાથાર્થ–જિનમંદિરનિર્માણમાં સર્વકાર્યોમાં", "આદરથી યતના કરવી જોઈએ.", "ટીકાર્થ–જિનભવનનિર્માણમાં", "કાષ્ઠાદિ દળ લાવવું,", "ભૂમિ ખોદવી, ભીંત ચણવી"]).size, 0);
+});
+
+test("an APC page keeps each entry's granth, adhyay and text, and nothing else", async () => {
+  const { parseApcPages } = await import("@/lib/anuvaad/apc");
+  // the 17 Nov 2026 sample, as read (its margin note in Gujarati and Hindi, and the "See Code Anuvaad" part)
+  const page = `गीतार्थ गंगा
+APC - 1
+
+SPK>M017>17.2D>Apc file (कथा-अकथा)
+
+12. Dummy extra
+Vishay Search By Code - With Dummy extra= धर्मकथा, आक्षेपणीकथा आदि चार
+
+(क्र.-1)
+
+ग्रंथ :- अनुयोगद्वारसूत्र जिनदासगणिमहत्तर चूर्णि भाग-1 (प्रकाशक:-महावीर जैन विद्यालय,
+
+LibNo:-B010073)
+
+Adhyay :- ग्रंथ प्रारंभ, सूत्र-14
+
+Pointers :- 12049 to 12343
+
+तमेवं आवस्सए त्ति सुतपदं अधिज्जित्ता से णं 'सः' अधीतश्रुतः
+वा वायणादी करेज्ज। णो अणुप्पेहाए त्ति दव्वावस्सयं ण लब्भति,
+
+See Code Anuvaad :-
+1. Pointers :- 12049 to 12343
+सूत्रनी वाचना, पृच्छना, परावर्तना, धर्मकथा उपयोग विना संभव ।
+UQ (परिणाम, धर्मकथा NDMS 12-2-26)
+
+(क्र.-2)
+
+ग्रंथ :- अनुयोगद्वारसूत्र हेमचंद्रसूरि - मलधारी टीका भाग-1 (प्रकाशक:-महावीर जैन विद्यालय,
+LibNo:-B010073)
+Adhyay :- ग्रंथ प्रारंभ,सूत्र-14
+Pointers :- 35638 to 35968
+तदेवं यस्य जन्तोरावश्यकशास्त्रं शिक्षितादिगुणोपेतं भवति स जन्तुस्तत्रावश्यकशास्त्रे वाचनया
+
+5 प्रकार के स्वाध्याय या
+અને સંમજિયા 5 4 મા ઉપયોગ
+
+Dt.17/2/26                                                               Page 1 of 254`;
+  const next = `प्रच्छनयाऽनवगताथदिर्गुरुं प्रति प्रश्नलक्षणया
+
+See Code Anuvaad :-`;
+  const entries = parseApcPages([
+    { page: 1, text: page },
+    { page: 2, text: next },
+  ]);
+  assert.deepEqual(entries.map((e) => e.no), ["1", "2"]);
+  assert.equal(entries[0].granth, "अनुयोगद्वारसूत्र जिनदासगणिमहत्तर चूर्णि भाग-1");
+  assert.equal(entries[0].adhyay, "ग्रंथ प्रारंभ, सूत्र-14");
+  assert.equal(entries[0].text, "तमेवं आवस्सए त्ति सुतपदं अधिज्जित्ता से णं 'सः' अधीतश्रुतः वा वायणादी करेज्ज। णो अणुप्पेहाए त्ति दव्वावस्सयं ण लब्भति,");
+  assert.equal(entries[1].adhyay, "ग्रंथ प्रारंभ, सूत्र-14");
+  // carried on to the next page; the margin note left out
+  assert.equal(entries[1].text, "तदेवं यस्य जन्तोरावश्यकशास्त्रं शिक्षितादिगुणोपेतं भवति स जन्तुस्तत्रावश्यकशास्त्रे वाचनया प्रच्छनयाऽनवगताथदिर्गुरुं प्रति प्रश्नलक्षणया");
+  assert.deepEqual(entries[1].pages, [1, 2]);
+});
+
+test("markup: '| ' frames a line, '> ' makes it bold", () => {
+  const blocks = parseAnuvaad("| तमेवं आवस्सए त्ति\n> ગાથાર્થ\nબીજું");
+  assert.deepEqual(blocks.map((b) => b.kind), ["boxed", "main", "para"]);
+  assert.equal(toMarkup(blocks), "| तमेवं आवस्सए त्ति\n> ગાથાર્થ\nબીજું");
+});

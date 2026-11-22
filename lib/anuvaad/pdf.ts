@@ -13,20 +13,27 @@ export type AnuvaadPdfSection = {
   /** A small line over the heading: the row's Sr. and the box's vishay, so the page can be matched to its row. */
   caption?: string;
   blocks: AnuvaadBlock[];
+  /**
+   * A second anuvaad of the same passage, set beside the first in two columns
+   * (22 Nov 2026: "one option showing the book's translation and AI side by
+   * side"); `labels` head the two columns.
+   */
+  aside?: AnuvaadBlock[];
+  labels?: [string, string];
 };
 
 const BLACK = rgb(0, 0, 0);
 
-const CAPTION_SIZE = 9;
-const TITLE_SIZE = 14;
-const VISHAY_SIZE = 13;
-const SECTION_SIZE = 13;
-const BODY_SIZE = 12;
+const CAPTION_SIZE = 10;
+const TITLE_SIZE = 15;
+const VISHAY_SIZE = 14;
+const SECTION_SIZE = 14;
+const BODY_SIZE = 13;
 const LEADING = 1.75;
 const SIDE = MARGIN + 14; // the scans have wide side margins
 const BULLET_INDENT = 22;
 const SUB_INDENT = 46;
-const FOOTER_SIZE = 10;
+const FOOTER_SIZE = 11;
 
 const GUJARATI_DIGITS = "૦૧૨૩૪૫૬૭૮૯";
 const gujaratiDigits = (n: number) => String(n).replace(/[0-9]/g, (d) => GUJARATI_DIGITS[Number(d)]);
@@ -64,66 +71,69 @@ export function drawAnuvaadPages(
 ) {
   const ctx: Ctx = { doc, text, ascent: ascentOf };
   const [pageWidth, pageHeight] = A4;
-  const right = pageWidth - SIDE;
   const top = pageHeight - MARGIN - 6;
   const bottom = MARGIN + 26;
   let number = firstNumber;
-  let page: PDFPage | null = null;
-  let y = top;
+  // the pages of the section being drawn, in order: two columns each flow down them on their own
+  let pages: PDFPage[] = [];
 
   const footer = (p: PDFPage) => {
     const runs = text.layout(gujaratiDigits(number), "regular");
     text.draw(p, runs, (pageWidth - text.width(runs, FOOTER_SIZE)) / 2, MARGIN - 4, FOOTER_SIZE);
     number += 1;
   };
-  const newPage = () => {
-    page = doc.addPage(A4);
-    if (options.numbers !== false) footer(page);
-    y = top;
-    return page;
-  };
-  /** Room for `height` more points on this page, or a fresh page. */
-  const room = (height: number) => {
-    if (!page || y - height < bottom) newPage();
-    return page!;
-  };
-
-  for (const section of sections) {
-    newPage();
-    options.starts?.push(doc.getPageCount() - 1);
-    if (section.caption) {
-      const runs = text.layout(section.caption, "regular");
-      const p = room(CAPTION_SIZE * 2);
-      text.draw(p, runs, SIDE, y - ascentOf(CAPTION_SIZE), CAPTION_SIZE);
-      y -= CAPTION_SIZE * 2.2;
+  const pageAt = (index: number) => {
+    while (pages.length <= index) {
+      const p = doc.addPage(A4);
+      if (options.numbers !== false) footer(p);
+      pages.push(p);
     }
+    return pages[index];
+  };
 
-    for (const block of section.blocks) {
-      let size = BODY_SIZE;
-      let x = SIDE;
+  /** Draws blocks down a column from (page index, y), turning pages as needed; returns where it ended. */
+  const flow = (blocks: AnuvaadBlock[], left: number, right: number, at: { index: number; y: number }, scale = 1) => {
+    let { index: pageIndex, y } = at;
+    const room = (height: number) => {
+      if (y - height < bottom) {
+        pageIndex += 1;
+        y = top;
+      }
+      return pageAt(pageIndex);
+    };
+    for (const block of blocks) {
+      let size = BODY_SIZE * scale;
+      let x = left;
       let pieces: Piece[];
       let before = 0;
-      let after = BODY_SIZE * 0.5;
+      let after = size * 0.5;
       let bullet: "dot" | "ring" | null = null;
+      // the APC entry's śāstra text, framed (Maharaj Saheb's marks, 17 Nov 2026)
+      const framed = block.kind === "boxed";
+      if (framed) {
+        x = left + 6;
+        before = size * 0.3;
+        after = size * 0.9;
+      }
       switch (block.kind) {
         case "title":
-          size = TITLE_SIZE;
+          size = TITLE_SIZE * scale;
           pieces = [{ text: block.text, weight: "bold" }];
-          after = TITLE_SIZE * 0.7;
+          after = size * 0.7;
           break;
         case "vishay":
-          size = VISHAY_SIZE;
+          size = VISHAY_SIZE * scale;
           pieces = [{ text: `વિષય: ${block.text}`, weight: "bold" }];
-          after = VISHAY_SIZE * 0.8;
+          after = size * 0.8;
           break;
         case "section":
-          size = SECTION_SIZE;
+          size = SECTION_SIZE * scale;
           pieces = [{ text: block.text, weight: "bold" }];
-          before = SECTION_SIZE * 0.5;
-          after = SECTION_SIZE * 0.45;
+          before = size * 0.5;
+          after = size * 0.45;
           break;
         case "point":
-          x = SIDE + (block.level === 2 ? SUB_INDENT : BULLET_INDENT);
+          x = left + (block.level === 2 ? SUB_INDENT : BULLET_INDENT) * scale;
           bullet = block.level === 2 ? "ring" : "dot";
           pieces = block.label
             ? [
@@ -138,7 +148,7 @@ export function drawAnuvaadPages(
         default:
           pieces = [{ text: block.text, weight: "regular" }];
       }
-      const lines = wrapPieces(text, pieces, size, right - x);
+      const lines = wrapPieces(text, pieces, size, right - x - (framed ? 6 : 0));
       const lineHeight = size * LEADING;
       y -= before;
       // A heading is kept with at least two lines of what follows it.
@@ -157,10 +167,53 @@ export function drawAnuvaadPages(
           else p.drawCircle({ x: cx, y: cy, size: 2.1, borderColor: BLACK, borderWidth: 0.8 });
         }
         drawLines(ctx, p, chunk, x, baseline, size);
+        if (framed) {
+          const h = chunk.length * lineHeight + 6;
+          p.drawRectangle({ x: left, y: y - h + 2, width: right - left, height: h + 2, borderWidth: 0.9, borderColor: BLACK });
+        }
         y -= chunk.length * lineHeight;
         index += chunk.length;
       }
       y -= after;
+    }
+    return { index: pageIndex, y };
+  };
+
+  for (const section of sections) {
+    pages = [];
+    pageAt(0);
+    options.starts?.push(doc.getPageCount() - 1);
+    let y = top;
+    if (section.caption) {
+      const runs = text.layout(section.caption, "regular");
+      text.draw(pages[0], runs, SIDE, y - ascentOf(CAPTION_SIZE), CAPTION_SIZE);
+      y -= CAPTION_SIZE * 2.2;
+    }
+    if (!section.aside?.length) {
+      flow(section.blocks, SIDE, pageWidth - SIDE, { index: 0, y });
+      continue;
+    }
+    // two columns side by side, each headed by its label, a thin rule between them
+    const left = MARGIN;
+    const right = pageWidth - MARGIN;
+    const gap = 16;
+    const width = (right - left - gap) / 2;
+    const columns: Array<[AnuvaadBlock[], number]> = [
+      [section.blocks, left],
+      [section.aside, left + width + gap],
+    ];
+    const ends = columns.map(([blocks, x], c) => {
+      const label = section.labels?.[c];
+      const heading: AnuvaadBlock[] = label ? [{ kind: "section", text: label }] : [];
+      return flow([...heading, ...blocks], x, x + width, { index: 0, y }, 0.92);
+    });
+    const lastPage = Math.max(...ends.map((e) => e.index));
+    for (let i = 0; i <= lastPage; i += 1) {
+      const p = pageAt(i);
+      const from = i === 0 ? y : top;
+      const to = i === lastPage ? Math.min(...ends.filter((e) => e.index === i).map((e) => e.y), from) : bottom;
+      const mid = left + width + gap / 2;
+      p.drawLine({ start: { x: mid, y: from }, end: { x: mid, y: Math.max(bottom, to) }, thickness: 0.4, color: rgb(0.6, 0.6, 0.6) });
     }
   }
   return number;

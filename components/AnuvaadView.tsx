@@ -63,6 +63,12 @@ export function AnuvaadView({
                     {b.text}
                   </p>
                 );
+              case "boxed":
+                return (
+                  <p key={i} className="anPara isBoxed" lang="sa">
+                    {b.text}
+                  </p>
+                );
               case "main":
                 return (
                   <p key={i} className="anPara isMain">
