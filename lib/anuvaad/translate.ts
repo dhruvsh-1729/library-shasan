@@ -618,7 +618,10 @@ const gujaratiLetters = (text: string) => text.match(GUJARATI)?.length ?? 0;
 export async function translatePage(input: PageInput): Promise<Anuvaad> {
   const text = input.text.replace(/[ \t]+/g, " ").trim();
   const devanagari = text.match(/[ऀ-ॿ]/g)?.length ?? 0;
-  if (devanagari < 20) throw new AnuvaadError("No Sanskrit or Prakrit text was found on this page.", 400);
+  if (devanagari < 20) {
+    const gujarati = text.match(GUJARATI)?.length ?? 0;
+    throw new AnuvaadError(gujarati > 100 ? "This page is already in Gujarati, so there is nothing for the AI to translate." : "No Sanskrit or Prakrit text was found on this page.", 400);
+  }
   if (text.length > MAX_PAGE_TEXT) throw new AnuvaadError("This page has too much text to translate at once.", 400);
   const saved = await savedGlossary(text);
 
