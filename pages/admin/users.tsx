@@ -168,6 +168,55 @@ function CredentialsCard({ credentials, roleLabel, onDone }: { credentials: Cred
   );
 }
 
+/** The login Maharaj Saheb's team shares; its password is changed after each session. */
+const SHARED_LOGIN = "ms@gg.com";
+
+/**
+ * One click to give the shared login a new password (22 Nov 2026: "make some
+ * easy option for me to reset the password for the ms@gg.com account"). The
+ * new password shows once, in the card above, with Copy / WhatsApp / Email.
+ */
+function SharedLogin({ users, busy, onReset }: { users: AdminUser[]; busy: boolean; onReset: (user: AdminUser) => void }) {
+  const [confirm, setConfirm] = useState(false);
+  const shared = users.find((u) => u.email.toLowerCase() === SHARED_LOGIN);
+  if (!shared) return null;
+  return (
+    <section className="adminPanel">
+      <div className="adminPanelHeader">
+        <span>Shared login</span>
+        <strong>{shared.email}</strong>
+      </div>
+      <p className="adminFieldHint">
+        Last signed in: {formatWhen(shared.last_login_at ?? null)}. A new password stops the old one, and everyone signed in with the old one is signed out within a minute.
+      </p>
+      <div className="adminFormActions">
+        {confirm ? (
+          <>
+            <button
+              type="button"
+              className="adminPrimaryButton"
+              disabled={busy}
+              onClick={() => {
+                setConfirm(false);
+                onReset(shared);
+              }}
+            >
+              Yes, set a new password
+            </button>
+            <button type="button" className="adminGhostButton" onClick={() => setConfirm(false)}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button type="button" className="adminPrimaryButton" disabled={busy} onClick={() => setConfirm(true)}>
+            New password for {shared.email}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function initialFor(user: AdminUser) {
   const source = user.name?.trim() || user.email;
   return source.slice(0, 1).toUpperCase();
@@ -358,6 +407,8 @@ export default function AdminUsersPage({ currentUser }: UsersPageProps) {
             onDone={() => setCredentials(null)}
           />
         ) : null}
+
+        {canManageRoles ? <SharedLogin users={users} busy={busyId !== null} onReset={(user) => void resetPassword(user)} /> : null}
 
         {canManageRoles && addOpen ? (
           <section className="adminPanel">

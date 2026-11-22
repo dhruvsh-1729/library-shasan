@@ -109,6 +109,17 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
 
+      // A new password signs out every session made with the old one, within a minute
+      // (22 Nov 2026: the shared login's password is changed after each session, to end it).
+      const stamp = record.password_hash ? record.password_hash.slice(-10) : "";
+      if (user || token.pw === undefined) token.pw = stamp;
+      else if (token.pw !== stamp) {
+        delete token.userId;
+        delete token.permissions;
+        token.status = "rejected";
+        return token;
+      }
+
       const sessionUser = await toSessionUser(record);
       token.userId = sessionUser.id;
       token.email = sessionUser.email;

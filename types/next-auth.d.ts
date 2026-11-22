@@ -23,6 +23,8 @@ declare module "next-auth/jwt" {
     status?: UserStatus;
     permissions?: string[];
     syncedAt?: number;
+    /** The end of the password hash the session was made with: a new password ends the session. */
+    pw?: string;
   }
 }
 

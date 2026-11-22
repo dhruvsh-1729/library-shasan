@@ -7,6 +7,7 @@ import { PdfPageDialog, type PdfDialogTarget } from "@/components/PdfPageDialog"
 import { getDocumentScanLabel, getDocumentStatusLabel, type DocumentScanState } from "@/lib/document-scan-state";
 import { bookNumbers } from "@/lib/granth-name-search";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import { AppNav } from "@/components/AppNav";
 
 type GranthItem = {
@@ -105,6 +106,14 @@ export default function HomePage() {
   const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
   const [nameQuery, setNameQuery] = useState("");
   const [pdfTarget, setPdfTarget] = useState<PdfDialogTarget | null>(null);
+  const router = useRouter();
+
+  // ?q=… (the granth list's "Find in our library") fills the name search
+  useEffect(() => {
+    if (!router.isReady) return;
+    const q = typeof router.query.q === "string" ? router.query.q : "";
+    if (q) setNameQuery(q);
+  }, [router.isReady, router.query.q]);
 
   useEffect(() => {
     let active = true;
@@ -212,6 +221,7 @@ export default function HomePage() {
             current="library"
             extra={
               <>
+                <Link href="/granth-list">Granth list</Link>
                 <Link href="/scannable-documents">Scan status</Link>
                 {canManageUsers ? <Link href="/admin/users">Users</Link> : null}
               </>
