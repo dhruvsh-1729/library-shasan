@@ -160,7 +160,9 @@ export function linesOf(pages: LocatedPage[]): Line[] {
       // ornaments of single letters down the margin ("न मे ऽस्तु", "जि न") are not text
       const ornament = text.replace(/\s/g, "").length < 8 && !/[.?!।॥)]\s*$/.test(text);
       // "ગાથા-૩૧-૩૩", "અધ્ય. ૪ ગાથા-૧ થી ૯": a name and numbers only
-      const numbered = /^[઀-૿ऀ-ॿ\s.]+[\s\-–./:]*[0-9૦-૯०-९][0-9૦-૯०-९\s\-–.,/થીसे]*$/.test(text) && text.length < 30;
+      // or a page number then the book's name: "૧૪૪ સૂત્રકૃતાંગ."
+      const numbered =
+        (/^[઀-૿ऀ-ॿ\s.]+[\s\-–./:]*[0-9૦-૯०-९][0-9૦-૯०-९\s\-–.,/થીसे]*$/.test(text) || /^[0-9૦-૯०-९]{1,4}\s+[઀-૿ऀ-ॿ][઀-૿ऀ-ॿ\s.\-]*$/.test(text)) && text.length < 30;
       const head = ornament || numbered || (!sentence && text.length < 40 && (top.has(i) || foot.has(i))) || (repeated && !sentence);
       out.push({ page: p.page, text, gu: gu >= 3 && gu >= dev, dev: dev > gu, marks: head ? [] : gathaMarks(text), head });
     });

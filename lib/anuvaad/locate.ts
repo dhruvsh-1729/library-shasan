@@ -167,17 +167,30 @@ async function byGathaNumber(granth: string, words: string[], keys: string[]): P
   return { id: best.id, granthKey: best.granthKey, page: best.page, score: 0 };
 }
 
-/** Pages of the named granths that print any of the passage's words, best first. */
+/**
+ * Pages of the named granths that print any of the passage's words: each book
+ * on its own (up to 80 pages each), so one book with many matching pages does
+ * not crowd out another (Sutrakritang, 22 Nov 2026: four editions named, the
+ * Gujarati one never reached).
+ */
 async function hintedCandidates(words: string[], keys: string[]): Promise<Candidate[]> {
   if (!keys.length) return [];
   const client = getTursoClient();
-  const r = await client.execute({
-    sql: `SELECT s.page_id AS id, s.granth_key AS granth_key, s.page_number AS page
-          FROM ocr_pages_folded_fts f JOIN ocr_pages_folded_state s ON s.page_id = f.rowid
-          WHERE ocr_pages_folded_fts MATCH ? AND s.granth_key IN (${keys.map(() => "?").join(",")}) LIMIT 400`,
-    args: [words.slice(0, 40).map(ftsWord).join(" OR "), ...keys],
-  });
-  return r.rows.map((row) => ({ id: Number(row.id), granthKey: String(row.granth_key), page: Number(row.page) }));
+  const match = words.slice(0, 40).map(ftsWord).join(" OR ");
+  const perBook = await Promise.all(
+    keys.slice(0, 16).map((key) =>
+      client
+        .execute({
+          sql: `SELECT s.page_id AS id, s.granth_key AS granth_key, s.page_number AS page
+                FROM ocr_pages_folded_fts f JOIN ocr_pages_folded_state s ON s.page_id = f.rowid
+                WHERE ocr_pages_folded_fts MATCH ? AND s.granth_key = ? ORDER BY rank LIMIT 80`,
+          args: [match, key],
+        })
+        .then((r) => r.rows.map((row) => ({ id: Number(row.id), granthKey: String(row.granth_key), page: Number(row.page) })))
+        .catch(() => [] as Candidate[])
+    )
+  );
+  return perBook.flat();
 }
 
 async function candidates(words: string[], excluded: Set<string>): Promise<Candidate[]> {
@@ -276,7 +289,9 @@ export async function locatePassage(passage: string, limit = 3, granth = ""): Pr
       }
     }
   }
-  const top = ranked.slice(0, limit);
+  // every book the box names comes back (up to 6), not only the best three by words: a Gujarati
+  // edition quotes few of the tika's words, and the page takes the first that has its own Gujarati
+  const top = [...ranked.slice(0, limit), ...ranked.slice(limit).filter((c) => hinted.has(c.granthKey))].slice(0, Math.max(limit, 6));
 
   const out: LocatedPassage[] = [];
   for (const c of top) {
