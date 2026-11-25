@@ -85,6 +85,22 @@ const defaultSource = (row: Row): Source => (row.book ? "both" : row.place ? "pa
 const sourceOf = (row: Row): Source => row.source ?? defaultSource(row);
 
 const ACCEPT = "application/pdf,image/jpeg,image/png";
+
+const lettersOf = (text: string) => text.replace(/[^\u0900-\u097f]/g, "");
+
+/**
+ * What to look a passage up by. A one-line passage (25 Nov 2026: 10.8.6 Sr. 21, one line of
+ * Sambodh Prakaran gatha 259, 47 letters) is too short to be found on its own; when another
+ * passage of the box holds it whole (Sr. 22, gathas 259-261), the longer one finds the page.
+ */
+function lookupFor(row: Pick<BoxRow, "shastraPath" | "granth">, all: Array<Pick<BoxRow, "shastraPath" | "granth">>) {
+  const own = lettersOf(row.shastraPath);
+  if (own.length >= 15 && own.length < 120) {
+    const holder = all.find((r) => r.shastraPath !== row.shastraPath && r.shastraPath.length > row.shastraPath.length && lettersOf(r.shastraPath).includes(own));
+    if (holder) return { passage: holder.shastraPath, granth: holder.granth };
+  }
+  return { passage: row.shastraPath, granth: row.granth };
+}
 // Diksha, 25 Nov 2026: "158 passages, 70 ready in 20-30 min" — three passages at a time (was two)
 const PARALLEL_ROWS = 3;
 
@@ -470,16 +486,20 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     const running = lookups.current.get(row.key);
     if (running) return running;
     updateRow(row.key, { finding: true });
+    const by = lookupFor(row, rowsRef.current);
     const job = (async () => {
       try {
         const res = await fetch("/api/anuvaad/locate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ passage: row.shastraPath, granth: row.granth }),
+          body: JSON.stringify(by),
         });
         const json = await res.json().catch(() => ({}));
         const places = res.ok && Array.isArray(json.places) ? (json.places as LocatedPassage[]) : [];
-        return places.length ? choosePlace(places, row) : { place: null, book: null };
+        if (!places.length) return { place: null, book: null };
+        const found = choosePlace(places, row);
+        // a one-line passage found through the passage that holds it: its Gujarati is cut by that passage's words
+        return found.book || by.passage === row.shastraPath ? found : choosePlace(places, { granth: by.granth, shastraPath: by.passage });
       } catch {
         return { place: null, book: null };
       }
