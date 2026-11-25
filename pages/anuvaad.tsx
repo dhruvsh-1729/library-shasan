@@ -779,7 +779,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
                   return `${file} p. ${pages.join(", ")}`;
                 })
                 .join(" · ")}
-              . These pages still go into the exported PDF with the rest of the scan.
+              . They hold no passage (a parichay or a note), so nothing is translated from them; with “Include the box scans”, only the box pages of the passages you translate go into the PDF.
             </p>
           ) : null}
           {rows.map((row) => (
