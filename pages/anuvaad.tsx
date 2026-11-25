@@ -135,8 +135,8 @@ function SourceOption({ checked, onChange, title, explain }: { checked: boolean;
 const EXPLAIN = {
   both: "Left: the Gujarati already printed in our Shrirang Library book — no AI. Right: the AI's Gujarati of the box's Sanskrit / Prakrit, made now.",
   book: "Only the Gujarati printed in the book. No AI at all. Where the book has no Gujarati for a passage, the PDF says so and shows the box text.",
-  page: "The AI translates the Sanskrit / Prakrit lines printed on the page of our book where this passage was found (the page's Gujarati is not given to it). Useful when the box scan is hard to read.",
-  box: "The AI translates exactly the Sanskrit / Prakrit written in this box row — nothing else.",
+  page: "Source = the page of OUR LIBRARY BOOK where this passage was found. The AI reads that page's Sanskrit / Prakrit (the whole page, so it may say a little more than the box). Use it only when the box text is badly read.",
+  box: "Source = THIS BOX ROW. The AI reads exactly the Sanskrit / Prakrit written in the box — nothing more, nothing less.",
 };
 const ON_THE_SPOT = "Shrirang Library = the Gujarati already printed in our books. Every AI anuvaad is made on the spot when you press “Make the Gujarati anuvaad” — nothing is kept ready in advance.";
 
@@ -228,8 +228,8 @@ function PlaceBox({ row, onFind, onSource }: { row: Row; onFind: () => void; onS
             explain="The book has no Gujarati for this passage, so the PDF only says so and shows the box text."
           />
         )}
-        <SourceOption checked={source === "page"} onChange={() => onSource("page")} title={`${book ? "3. " : ""}AI, from our book's page`} explain={EXPLAIN.page} />
-        <SourceOption checked={source === "box"} onChange={() => onSource("box")} title={`${book ? "4. " : ""}AI, from the box text`} explain={EXPLAIN.box} />
+        <SourceOption checked={source === "page"} onChange={() => onSource("page")} title={`${book ? "3. " : ""}AI translates our library book (not the box)`} explain={EXPLAIN.page} />
+        <SourceOption checked={source === "box"} onChange={() => onSource("box")} title={`${book ? "4. " : ""}AI translates the box (recommended for AI)`} explain={EXPLAIN.box} />
         <small className="vyHint">{ON_THE_SPOT}</small>
       </fieldset>
     </div>
@@ -764,7 +764,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
             <legend>Make the anuvaad of all passages from</legend>
             <SourceOption checked={from === "auto"} onChange={() => chooseFrom("auto")} title="Shrirang Library + AI, side by side" explain={`${EXPLAIN.both} Where the book has no Gujarati, only the AI.`} />
             <SourceOption checked={from === "book"} onChange={() => chooseFrom("book")} title="Shrirang Library only (no AI)" explain={EXPLAIN.book} />
-            <SourceOption checked={from === "ai"} onChange={() => chooseFrom("ai")} title="AI only, from the box text" explain={EXPLAIN.box} />
+            <SourceOption checked={from === "ai"} onChange={() => chooseFrom("ai")} title="AI only (AI translates the box)" explain={EXPLAIN.box} />
             <small className="vyHint">{ON_THE_SPOT} Each passage below can still be changed on its own.</small>
           </fieldset>
           <p className="anNote">
