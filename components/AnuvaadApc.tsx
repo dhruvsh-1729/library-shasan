@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { AnuvaadView } from "@/components/AnuvaadView";
 import { fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
+import { toJpeg } from "@/components/PhotoText";
 import { type ApcEntry, apcEntryMarkup, parseApcPages } from "@/lib/anuvaad/apc";
 import type { LocatedPassage } from "@/lib/anuvaad/locate";
 import type { BookText } from "@/lib/anuvaad/book-text";
@@ -119,15 +120,42 @@ export function AnuvaadApc({ onBack }: { onBack: () => void }) {
       // a scan: its pages are read as the box files are (reading only; nothing is translated)
       setReading("This copy is a scan: reading its pages…");
       try {
-        const res = await fetch("/api/anuvaad/ocr", { method: "POST", headers: { "Content-Type": f.type }, body: f.bytes });
-        let problem = "";
-        await readStream(res, (event) => {
-          if (event.type === "progress") setReading(`This copy is a scan: read ${event.done} of ${event.total} pages…`);
-          else if (event.type === "done") pages = (event.pages as string[]) ?? [];
-          else if (event.type === "error") problem = String(event.error ?? "The pages could not be read.");
-        });
-        if (!pages) throw new Error(problem || "The connection closed before the pages were read.");
-        parsed = parseApcPages((pages as string[]).map((text, i) => ({ page: i + 1, text })));
+        const ocr = async (body: Blob | ArrayBuffer, type: string) => {
+          const res = await fetch("/api/anuvaad/ocr", { method: "POST", headers: { "Content-Type": type }, body });
+          let problem = "";
+          let got: string[] | null = null;
+          await readStream(res, (event) => {
+            if (event.type === "progress") setReading(`This copy is a scan: read ${event.done} of ${event.total} pages…`);
+            else if (event.type === "done") got = (event.pages as string[]) ?? [];
+            else if (event.type === "error") problem = String(event.error ?? "The pages could not be read.");
+          });
+          if (!got) throw new Error(problem || "The connection closed before the pages were read.");
+          return got as string[];
+        };
+        if (f.type === "application/pdf") {
+          pages = await ocr(f.bytes, f.type);
+          parsed = parseApcPages(pages.map((text, i) => ({ page: i + 1, text })));
+        } else {
+          // Diksha, 24-25 Nov 2026: a phone photo of an APC page gave "No APC entries". The camera stores
+          // the photo on its side with a turn flag the reader ignored: the photo is turned upright here,
+          // and also read a quarter turn either way; the reading with the most entries is kept.
+          setReading("Reading the photo…");
+          const photo = new Blob([f.bytes], { type: f.type });
+          const tries = await Promise.all(
+            [0, 1, 3].map(async (turns) => {
+              try {
+                const got = await ocr(await toJpeg(photo, turns), "image/jpeg");
+                return { got, entries: parseApcPages(got.map((text, i) => ({ page: i + 1, text }))) };
+              } catch {
+                return null;
+              }
+            })
+          );
+          const best = tries.filter((t) => t !== null).sort((a, b) => b!.entries.length - a!.entries.length)[0];
+          if (!best) throw new Error("The photo could not be read. Please try again.");
+          pages = best.got;
+          parsed = best.entries;
+        }
       } catch (error) {
         setReading("");
         setReadError(error instanceof Error ? error.message : "The pages could not be read.");
@@ -259,7 +287,7 @@ export function AnuvaadApc({ onBack }: { onBack: () => void }) {
           <p className="vyLabel">
             <span>
               A Gitarth Ganga code file (APC). <strong>No AI is used.</strong> For each (क्र.) entry only the granth, the adhyay and the śāstra text are kept; it is found in our books and printed with
-              the book&apos;s own pages (and the book&apos;s own Gujarati, where it has one).
+              the book&apos;s own pages (and the Shrirang Library Gujarati — the book&apos;s printed translation — where it has one).
             </span>
           </p>
           <div

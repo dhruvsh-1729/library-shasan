@@ -567,7 +567,9 @@ async function metaPart(user: string, text: string, saved: string, extra = ""): 
  * the page prints (॥४२॥, (૪૨)) must be in the Gujarati, and a part that lost
  * one is translated again with that number named.
  */
-const PART_CHARS = 900;
+// 25 Nov 2026 (Diksha: "more pages, more mistakes — is there character and token control?"): parts made
+// smaller, about 600 letters, so each call has less to translate and nothing is hurried.
+const PART_CHARS = 600;
 const PART_NOTE = `
 
 THIS IS ONE PART OF A PAGE

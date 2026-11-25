@@ -13,7 +13,7 @@ const MAX_SIDE = 2400;
  * Any photo the phone gives (HEIC included, where the browser can draw it) →
  * a JPEG of at most 2400 px, turned a quarter `turns` times clockwise.
  */
-async function toJpeg(file: File, turns = 0): Promise<Blob> {
+export async function toJpeg(file: File | Blob, turns = 0): Promise<Blob> {
   try {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));

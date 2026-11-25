@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type DragEvent } from "react";
+import { toJpeg } from "@/components/PhotoText";
 import { fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
 import { type BoxRow, parseBoxPages } from "@/lib/anuvaad/box";
 import { BOX_TEXT_WIDTHS, boxTextFileName, boxTextRows } from "@/lib/anuvaad/box-text";
@@ -39,7 +40,8 @@ export function AnuvaadBoxText({ onBack }: { onBack: () => void }) {
     for (const file of Array.from(files)) {
       const type = fileType(file);
       if (!ACCEPT.split(",").includes(type)) continue;
-      fresh.push({ name: file.name, type, bytes: await file.arrayBuffer(), state: "waiting", note: "" });
+      const upright = type === "application/pdf" ? null : await toJpeg(file).catch(() => null);
+      fresh.push({ name: file.name, type: upright ? "image/jpeg" : type, bytes: await (upright ?? file).arrayBuffer(), state: "waiting", note: "" });
     }
     if (fresh.length) setUploads((list) => [...list, ...fresh]);
   }

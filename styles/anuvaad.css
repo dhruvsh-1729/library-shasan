@@ -602,3 +602,21 @@
     grid-column: 1 / -1;
   }
 }
+
+/* a choice with its plain explanation under it (Diksha, 25 Nov 2026) */
+.anSource .anOption {
+  align-items: flex-start;
+  padding: 4px 0;
+}
+.anOption > span {
+  display: grid;
+  gap: 2px;
+}
+.anOption small {
+  color: var(--muted, #5b6472);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+.awIntro p {
+  margin: 0 0 6px;
+}

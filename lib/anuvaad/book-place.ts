@@ -21,7 +21,7 @@ export function whereFrom(place: LocatedPassage, pdfPages: number[]) {
 
 /** The book's own Gujarati, the passage's part in bold, with where it is from. */
 export function bookMarkup(place: LocatedPassage, book: BookText) {
-  return [`(પુસ્તકમાંથી: ${whereFrom(place, book.pages)})`, book.markup].join("\n");
+  return [`(શ્રીરંગ લાઇબ્રેરી: ${whereFrom(place, book.pages)})`, book.markup].join("\n");
 }
 
 /**

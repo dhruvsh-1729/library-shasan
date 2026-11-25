@@ -307,7 +307,7 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
             const ai = i.status === "done" && i.markup ? i.markup : "";
             const caption = `પાનું ${gujaratiNumber(i.n)} · ${sourceName}`;
             // the book's own Gujarati on the left, the AI's on the right
-            if (i.book && ai) return { caption, markup: i.book, aside: ai, labels: ["ગ્રંથનો પોતાનો અનુવાદ", "AI અનુવાદ"] };
+            if (i.book && ai) return { caption, markup: i.book, aside: ai, labels: ["શ્રીરંગ લાઇબ્રેરી (ગ્રંથનો અનુવાદ)", "AI અનુવાદ"] };
             return { caption, markup: i.book || ai };
           }),
         }),
@@ -622,7 +622,7 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
               {item.book && (item.status === "done" || item.status === "translating" || item.status === "error") ? (
                 <div className="anSide">
                   <section>
-                    <h3 className="anSideHead">ગ્રંથનો પોતાનો અનુવાદ <small>(the book&apos;s own Gujarati, no AI)</small></h3>
+                    <h3 className="anSideHead">શ્રીરંગ લાઇબ્રેરી <small>(Shrirang Library — the book&apos;s printed Gujarati, no AI)</small></h3>
                     <AnuvaadView markup={item.book} onChange={(book) => updateItem(item.key, { book })} />
                   </section>
                   <section>
@@ -632,7 +632,7 @@ export function AnuvaadPages({ onBack }: { onBack: () => void }) {
                     ) : item.status === "translating" ? (
                       <p className="vyHint">Being written…</p>
                     ) : (
-                      <p className="vyHint">The AI anuvaad could not be made; the book&apos;s own Gujarati is here.</p>
+                      <p className="vyHint">The AI anuvaad could not be made; the Shrirang Library Gujarati is here.</p>
                     )}
                   </section>
                 </div>

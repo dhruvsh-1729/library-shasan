@@ -138,10 +138,21 @@ export function AnuvaadWords({ onBack }: { onBack: () => void }) {
       </button>
       <section className="vyForm exStep">
         <h1 className="exQuestion">Saved words</h1>
-        <p className="vyHint">
-          Maharaj Saheb&apos;s own Gujarati for the words of the box files. Vyutpatti shows it with the kosh entries of these words, and the Anuvaad uses it
-          when the word is in a passage.
-        </p>
+        {/* Diksha, 24 Nov 2026: "yeh toh samajh hi nahi aa raha" — what it is and what it is for, step by step */}
+        <div className="vyHint awIntro">
+          <p>
+            <strong>What this is:</strong> a small dictionary of Maharaj Saheb&apos;s own Gujarati for the hard words of the box files (for example{" "}
+            <span className="indic">वनस्पति</span> → the meaning she wrote).
+          </p>
+          <p>
+            <strong>Why:</strong> when the AI makes an anuvaad, it must use these meanings; and Vyutpatti shows them next to the kosh entries.
+          </p>
+          <p>
+            <strong>How to add:</strong> press the blue button, give a box file <em>and</em> Maharaj Saheb&apos;s finished Gujarati anuvaad of it. The words
+            and their Gujarati are picked out; you tick the right ones and save. To look a word up, type it in &ldquo;Find a saved word&rdquo;.
+          </p>
+          <p>Nothing here is needed for the normal anuvaad — it only makes the AI&apos;s Gujarati closer to Maharaj Saheb&apos;s.</p>
+        </div>
         {notice ? <p className="anNote">{notice}</p> : null}
 
         {!adding ? (

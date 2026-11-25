@@ -12,6 +12,7 @@ import { AnuvaadApc } from "@/components/AnuvaadApc";
 import { AnuvaadBoxText } from "@/components/AnuvaadBoxText";
 import { type BoxRow, parseBoxPages } from "@/lib/anuvaad/box";
 import { addImagePage, fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
+import { toJpeg } from "@/components/PhotoText";
 import type { LocatedPassage } from "@/lib/anuvaad/locate";
 import type { BookText } from "@/lib/anuvaad/book-text";
 import { bookMarkup, choosePlace, whereFrom } from "@/lib/anuvaad/book-place";
@@ -109,12 +110,35 @@ async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer, only?: (upload:
   return out.save();
 }
 
+// Diksha, 25 Nov 2026: "the ready translation taken from our PDFs — call it Shrirang Library"; "the 4
+// options, what is the difference, mainly the 4th"; "is the 3rd made on the spot or kept ready?"
 const SOURCE_LABEL: Record<Source, string> = {
-  both: "the book's own Gujarati (no AI, its passage in bold) and, beside it, the AI anuvaad of the box's Sanskrit / Prakrit",
-  book: "the book's own Gujarati (no AI); the passage's part is in bold",
-  page: "AI anuvaad of our library page (the book has no Gujarati there)",
-  box: "AI anuvaad of the box text (the passage was not found in our library)",
+  both: "Shrirang Library (no AI, the passage in bold) and, beside it, the AI anuvaad of the box's Sanskrit / Prakrit",
+  book: "Shrirang Library only (no AI); the passage's part is in bold",
+  page: "AI anuvaad of the Sanskrit / Prakrit on our book's page",
+  box: "AI anuvaad of the Sanskrit / Prakrit written in the box",
 };
+
+/** One choice, with a line under it saying plainly what it gives. */
+function SourceOption({ checked, onChange, title, explain }: { checked: boolean; onChange: () => void; title: string; explain: string }) {
+  return (
+    <label className="anOption">
+      <input type="radio" checked={checked} onChange={onChange} />
+      <span>
+        <strong>{title}</strong>
+        <small>{explain}</small>
+      </span>
+    </label>
+  );
+}
+
+const EXPLAIN = {
+  both: "Left: the Gujarati already printed in our Shrirang Library book — no AI. Right: the AI's Gujarati of the box's Sanskrit / Prakrit, made now.",
+  book: "Only the Gujarati printed in the book. No AI at all. Where the book has no Gujarati for a passage, the PDF says so and shows the box text.",
+  page: "The AI translates the Sanskrit / Prakrit lines printed on the page of our book where this passage was found (the page's Gujarati is not given to it). Useful when the box scan is hard to read.",
+  box: "The AI translates exactly the Sanskrit / Prakrit written in this box row — nothing else.",
+};
+const ON_THE_SPOT = "Shrirang Library = the Gujarati already printed in our books. Every AI anuvaad is made on the spot when you press “Make the Gujarati anuvaad” — nothing is kept ready in advance.";
 
 /** "Download it with 4 pages before and after": fetched here, so the phone shows that it is coming and when it is saved. */
 function NearbyPages({ place, first, last }: { place: LocatedPassage; first: number; last: number }) {
@@ -190,27 +214,23 @@ function PlaceBox({ row, onFind, onSource }: { row: Row; onFind: () => void; onS
         <p className="vyHint">The book has no Gujarati of its own for this passage in our library.</p>
       )}
       <fieldset className="anSource">
-        <legend>Make the anuvaad from</legend>
+        <legend>Make this passage&apos;s anuvaad from</legend>
         {book ? (
           <>
-            <label>
-              <input type="radio" checked={source === "both"} onChange={() => onSource("both")} /> The book&apos;s own Gujarati and the AI anuvaad, side by side
-            </label>
-            <label>
-              <input type="radio" checked={source === "book"} onChange={() => onSource("book")} /> Only the book&apos;s own Gujarati (no AI)
-            </label>
+            <SourceOption checked={source === "both"} onChange={() => onSource("both")} title="1. Shrirang Library + AI, side by side" explain={EXPLAIN.both} />
+            <SourceOption checked={source === "book"} onChange={() => onSource("book")} title="2. Shrirang Library only (no AI)" explain={EXPLAIN.book} />
           </>
         ) : (
-          <label>
-            <input type="radio" checked={source === "book"} onChange={() => onSource("book")} /> No AI (the PDF says the book has no Gujarati here)
-          </label>
+          <SourceOption
+            checked={source === "book"}
+            onChange={() => onSource("book")}
+            title="No AI"
+            explain="The book has no Gujarati for this passage, so the PDF only says so and shows the box text."
+          />
         )}
-        <label>
-          <input type="radio" checked={source === "page"} onChange={() => onSource("page")} /> AI anuvaad of our library page
-        </label>
-        <label>
-          <input type="radio" checked={source === "box"} onChange={() => onSource("box")} /> AI anuvaad of the box text
-        </label>
+        <SourceOption checked={source === "page"} onChange={() => onSource("page")} title={`${book ? "3. " : ""}AI, from our book's page`} explain={EXPLAIN.page} />
+        <SourceOption checked={source === "box"} onChange={() => onSource("box")} title={`${book ? "4. " : ""}AI, from the box text`} explain={EXPLAIN.box} />
+        <small className="vyHint">{ON_THE_SPOT}</small>
       </fieldset>
     </div>
   );
@@ -270,7 +290,9 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     for (const file of Array.from(files)) {
       const type = fileType(file);
       if (!ACCEPT.split(",").includes(type)) continue;
-      fresh.push({ id: nextId.current++, batch, name: file.name, type, bytes: await file.arrayBuffer(), status: "waiting", progress: "", pages: [] });
+      // a phone photo is stored on its side with a turn flag the reader ignores: turned upright here
+      const upright = type === "application/pdf" ? null : await toJpeg(file).catch(() => null);
+      fresh.push({ id: nextId.current++, batch, name: file.name, type: upright ? "image/jpeg" : type, bytes: await (upright ?? file).arrayBuffer(), status: "waiting", progress: "", pages: [] });
     }
     if (fresh.length) setUploads((list) => [...list, ...fresh]);
   }
@@ -359,7 +381,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
         // "only the granth's anuvaad": no AI; the page says the book has none, with the box text for reference
         const where = place ? `અમારી લાઇબ્રેરીમાં: ${place.granthName}, પાનું ${place.printedPage ?? place.page} — ત્યાં ગ્રંથનો ગુજરાતી અનુવાદ નથી.` : "આ પાઠ અમારી લાઇબ્રેરીના ગ્રંથોમાં મળ્યો નથી.";
         const text = row.shastraPath.replace(/\s+/g, " ").trim();
-        updateRow(row.key, { status: "done", markup: `(ગ્રંથનો ગુજરાતી અનુવાદ મળ્યો નથી. ${where})\n| ${text}`, literal: "", aiMarkup: undefined, aiError: undefined });
+        updateRow(row.key, { status: "done", markup: `(શ્રીરંગ લાઇબ્રેરીમાં આ પાઠનો ગુજરાતી અનુવાદ મળ્યો નથી. ${where})\n| ${text}`, literal: "", aiMarkup: undefined, aiError: undefined });
         return true;
       }
       if ((source === "book" || source === "both") && place && book) {
@@ -500,7 +522,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
             caption: [r.sr ? `Sr. ${r.sr}` : "", r.vishay, r.granth].filter(Boolean).join(" · "),
             markup: r.markup,
             // side by side: the book's Gujarati on the left, the AI's on the right
-            ...(sourceOf(r) === "both" && r.aiMarkup ? { aside: r.aiMarkup, labels: ["ગ્રંથનો પોતાનો અનુવાદ", "AI અનુવાદ"] } : {}),
+            ...(sourceOf(r) === "both" && r.aiMarkup ? { aside: r.aiMarkup, labels: ["શ્રીરંગ લાઇબ્રેરી (ગ્રંથનો અનુવાદ)", "AI અનુવાદ"] } : {}),
           })),
         }),
       });
@@ -739,16 +761,11 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
             </fieldset>
           ) : null}
           <fieldset className="anSource">
-            <legend>Make the anuvaad from</legend>
-            <label>
-              <input type="radio" checked={from === "auto"} onChange={() => chooseFrom("auto")} /> The book&apos;s own Gujarati and, beside it, the AI anuvaad of the Sanskrit / Prakrit
-            </label>
-            <label>
-              <input type="radio" checked={from === "book"} onChange={() => chooseFrom("book")} /> <strong>Only the book&apos;s own Gujarati — no AI</strong>
-            </label>
-            <label>
-              <input type="radio" checked={from === "ai"} onChange={() => chooseFrom("ai")} /> Only the AI anuvaad of the box&apos;s Sanskrit / Prakrit
-            </label>
+            <legend>Make the anuvaad of all passages from</legend>
+            <SourceOption checked={from === "auto"} onChange={() => chooseFrom("auto")} title="Shrirang Library + AI, side by side" explain={`${EXPLAIN.both} Where the book has no Gujarati, only the AI.`} />
+            <SourceOption checked={from === "book"} onChange={() => chooseFrom("book")} title="Shrirang Library only (no AI)" explain={EXPLAIN.book} />
+            <SourceOption checked={from === "ai"} onChange={() => chooseFrom("ai")} title="AI only, from the box text" explain={EXPLAIN.box} />
+            <small className="vyHint">{ON_THE_SPOT} Each passage below can still be changed on its own.</small>
           </fieldset>
           <p className="anNote">
             Check each passage against its page (<strong>View page</strong>) and correct the text if a line was missed or misread — the anuvaad is made from the text in these boxes. Untick a passage to leave it out.
@@ -857,7 +874,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
                 {sourceOf(row) === "both" && row.markup !== undefined && (row.status === "done" || row.status === "running") ? (
                   <div className="anSide">
                     <section>
-                      <h3 className="anSideHead">ગ્રંથનો પોતાનો અનુવાદ <small>(the book&apos;s own Gujarati, no AI)</small></h3>
+                      <h3 className="anSideHead">શ્રીરંગ લાઇબ્રેરી <small>(Shrirang Library — the book&apos;s printed Gujarati, no AI)</small></h3>
                       <AnuvaadView markup={row.markup} onChange={(markup) => updateRow(row.key, { markup })} />
                     </section>
                     <section>
@@ -949,7 +966,7 @@ export default function AnuvaadPage() {
                 </button>
                 <button type="button" className="exChoice" onClick={() => choose("box")}>
                   <strong>Box files</strong>
-                  <span>The printed box tables (Sr. No. · Granth · ShastraPath). Each passage is found in our books; the book&apos;s own Gujarati is used where it has one.</span>
+                  <span>The printed box tables (Sr. No. · Granth · ShastraPath). Each passage is found in our books; the Shrirang Library (the book&apos;s printed Gujarati) is used where it has one.</span>
                 </button>
                 <button type="button" className="exChoice" onClick={() => choose("boxtext")}>
                   <strong>Box text only (no AI)</strong>
