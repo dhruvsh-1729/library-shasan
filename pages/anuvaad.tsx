@@ -85,7 +85,8 @@ const defaultSource = (row: Row): Source => (row.book ? "both" : row.place ? "pa
 const sourceOf = (row: Row): Source => row.source ?? defaultSource(row);
 
 const ACCEPT = "application/pdf,image/jpeg,image/png";
-const PARALLEL_ROWS = 2;
+// Diksha, 25 Nov 2026: "158 passages, 70 ready in 20-30 min" — three passages at a time (was two)
+const PARALLEL_ROWS = 3;
 
 /** The uploaded files, then the anuvaad pages, as one PDF (made in the browser). */
 async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer, only?: (upload: Upload) => number[] | null) {
