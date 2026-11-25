@@ -14,6 +14,7 @@ import { type OCRSearchMode } from "@/lib/ocr-search";
 import { prepareRow, rankRows } from "@/lib/granth-name-search";
 import { type QueryFormsWord, composeQueries, defaultForms, isRomanQuery } from "@/lib/search-query";
 import { toDevanagari } from "@/lib/to-devanagari";
+import { PhotoTextButton } from "@/components/PhotoText";
 import { AppNav } from "@/components/AppNav";
 
 type GranthOption = { granth_key: string; granth_name: string; page_count: number };
@@ -892,6 +893,13 @@ export default function AskPage() {
                 </select>
                 <span aria-hidden="true">{languageLabel}</span>
               </label>
+              {/* Diksha, 24 Nov 2026: "Ask me camera ka option" — the photo's text goes into the question */}
+              <PhotoTextButton
+                className="chPill"
+                label="Photo"
+                disabled={loading}
+                onText={(text) => setQuestion((q) => [q.trim(), text.replace(/\n{2,}/g, "\n").trim()].filter(Boolean).join("\n"))}
+              />
               <button type="button" className={`chPill${deepMode ? " isSet" : ""}`} aria-pressed={deepMode} onClick={() => setDeepMode((d) => !d)}
                 title="Slower, more careful answers">
                 Think harder

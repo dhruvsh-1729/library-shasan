@@ -690,13 +690,24 @@ const CELL_PAD = 3;
  * (numbers) take their width; the rest of the page goes to the text. The
  * page number is at the foot.
  */
-export async function buildTablePdf(options: { title: string; headers: string[]; rows: string[][] }) {
+export type TableRow = string[] | { band: string };
+
+/**
+ * `headers: false` prints no header row (Maharaj Saheb, 25 Nov 2026: the box
+ * text "with no header, footer or column names"); `widths` fixes the share
+ * of the page each column takes. A `{ band }` row is one line across the
+ * table (a vishay over its passages). A row taller than a page runs on to
+ * the next page.
+ */
+export async function buildTablePdf(options: { title: string; headers: string[]; rows: TableRow[]; showHeaders?: boolean; widths?: number[]; numbers?: boolean }) {
   const faces = await loadFaces();
   const doc = await PDFDocument.create();
   doc.setTitle(options.title);
-  doc.setProducer("Granth library word search");
+  doc.setProducer("Granth library");
   const embedder = new FontEmbedder(doc);
   const text = new TextDrawer(faces, embedder);
+  const showHeaders = options.showHeaders !== false;
+  const plain = options.rows.filter((r): r is string[] => Array.isArray(r));
   // many columns: the page on its side
   const wide = options.headers.length > 6;
   const [pageWidth, pageHeight] = wide ? [A4[1], A4[0]] : A4;
@@ -706,29 +717,34 @@ export async function buildTablePdf(options: { title: string; headers: string[];
   const lineHeight = TABLE_SIZE * 1.4;
   const measure = (value: string, weight: Weight, size: number) => text.width(text.layout(value, weight), size);
 
-  // each column's natural width: the widest of its header words and (a sample of) its cells
-  const sample = options.rows.slice(0, 400);
-  const natural = options.headers.map((header, c) => {
-    const headWord = Math.max(...header.split(/\s+/).map((w) => measure(w, "bold", TABLE_HEAD_SIZE)));
-    const cells = sample.map((row) => measure(row[c] ?? "", "regular", TABLE_SIZE));
-    return Math.max(headWord, ...cells, 12) + 2 * CELL_PAD;
-  });
-  // the longest column (the line text) shares out what the short ones leave
-  const longest = natural.indexOf(Math.max(...natural));
-  const widths = [...natural];
-  const others = natural.reduce((sum, w, c) => (c === longest ? sum : sum + Math.min(w, room * 0.22)), 0);
-  natural.forEach((w, c) => (widths[c] = c === longest ? Math.max(80, room - others) : Math.min(w, room * 0.22)));
-  const scale = room / widths.reduce((a, b) => a + b, 0);
-  for (let c = 0; c < widths.length; c += 1) widths[c] *= scale;
+  let widths: number[];
+  if (options.widths?.length === options.headers.length) {
+    const total = options.widths.reduce((a, b) => a + b, 0);
+    widths = options.widths.map((w) => (w / total) * room);
+  } else {
+    // each column's natural width: the widest of its header words and (a sample of) its cells
+    const sample = plain.slice(0, 400);
+    const natural = options.headers.map((header, c) => {
+      const headWord = showHeaders ? Math.max(...header.split(/\s+/).map((w) => measure(w, "bold", TABLE_HEAD_SIZE))) : 0;
+      const cells = sample.map((row) => measure(row[c] ?? "", "regular", TABLE_SIZE));
+      return Math.max(headWord, ...cells, 12) + 2 * CELL_PAD;
+    });
+    // the longest column (the line text) shares out what the short ones leave
+    const longest = natural.indexOf(Math.max(...natural));
+    widths = [...natural];
+    const others = natural.reduce((sum, w, c) => (c === longest ? sum : sum + Math.min(w, room * 0.22)), 0);
+    natural.forEach((w, c) => (widths[c] = c === longest ? Math.max(80, room - others) : Math.min(w, room * 0.22)));
+    const scale = room / widths.reduce((a, b) => a + b, 0);
+    for (let c = 0; c < widths.length; c += 1) widths[c] *= scale;
+  }
 
-  const wrapCell = (value: string, c: number, weight: Weight, size: number) =>
-    wrapPieces(text, [{ text: value || " ", weight }], size, widths[c] - 2 * CELL_PAD);
+  const wrapCell = (value: string, width: number, weight: Weight, size: number) => wrapPieces(text, [{ text: value || " ", weight }], size, width - 2 * CELL_PAD);
 
-  const drawRow = (page: PDFPage, cells: Word[][][], top: number, height: number, size: number, shade: boolean) => {
+  const drawRow = (page: PDFPage, cells: Word[][][], cellWidths: number[], top: number, height: number, size: number, shade: boolean) => {
     let x = MARGIN;
     if (shade) page.drawRectangle({ x, y: top - height, width: room, height, color: rgb(0.92, 0.92, 0.92) });
     cells.forEach((lines, c) => {
-      strokeRect(page, x, top - height, widths[c], height, 0.5);
+      strokeRect(page, x, top - height, cellWidths[c], height, 0.5);
       lines.forEach((words, i) => {
         const baseline = top - CELL_PAD - ascent - i * lineHeight;
         let at = x + CELL_PAD;
@@ -737,11 +753,11 @@ export async function buildTablePdf(options: { title: string; headers: string[];
           for (const part of w.parts) at = text.draw(page, part.runs, at, baseline, size);
         });
       });
-      x += widths[c];
+      x += cellWidths[c];
     });
   };
 
-  const head = options.headers.map((h, c) => wrapCell(h, c, "bold", TABLE_HEAD_SIZE));
+  const head = options.headers.map((h, c) => wrapCell(h, widths[c], "bold", TABLE_HEAD_SIZE));
   const headHeight = Math.max(...head.map((l) => l.length)) * lineHeight + 2 * CELL_PAD;
   const bottom = MARGIN + FOOTER_ROOM;
   let page: PDFPage | null = null;
@@ -749,20 +765,36 @@ export async function buildTablePdf(options: { title: string; headers: string[];
   const newPage = () => {
     page = doc.addPage([pageWidth, pageHeight]);
     y = pageHeight - MARGIN;
-    drawRow(page, head, y, headHeight, TABLE_HEAD_SIZE, true);
-    y -= headHeight;
+    if (showHeaders) {
+      drawRow(page, head, widths, y, headHeight, TABLE_HEAD_SIZE, true);
+      y -= headHeight;
+    }
     return page;
   };
   for (const row of options.rows) {
-    const cells = options.headers.map((_, c) => wrapCell(row[c] ?? "", c, "regular", TABLE_SIZE));
-    const height = Math.max(...cells.map((l) => l.length)) * lineHeight + 2 * CELL_PAD;
-    let current: PDFPage = page ?? newPage();
-    if (y - height < bottom) current = newPage();
-    drawRow(current, cells, y, height, TABLE_SIZE, false);
-    y -= height;
+    const band = !Array.isArray(row);
+    const cellWidths = band ? [room] : widths;
+    const cells = band ? [wrapCell(row.band, room, "bold", TABLE_SIZE)] : options.headers.map((_, c) => wrapCell(row[c] ?? "", widths[c], "regular", TABLE_SIZE));
+    const total = Math.max(...cells.map((l) => l.length));
+    let done = 0;
+    while (done < total) {
+      let current: PDFPage = page ?? newPage();
+      let fits = Math.floor((y - bottom - 2 * CELL_PAD) / lineHeight);
+      // a band keeps with what follows; a row starts on a new page rather than with a line or two
+      if (fits < Math.min(total - done, band ? 3 : 2)) {
+        current = newPage();
+        fits = Math.floor((y - bottom - 2 * CELL_PAD) / lineHeight);
+      }
+      const take = Math.min(fits, total - done);
+      const slice = cells.map((lines) => lines.slice(done, done + take));
+      const height = take * lineHeight + 2 * CELL_PAD;
+      drawRow(current, slice, cellWidths, y, height, TABLE_SIZE, band);
+      y -= height;
+      done += take;
+    }
   }
   if (!page) newPage();
-  numberPages(text, doc);
+  if (options.numbers !== false) numberPages(text, doc);
   embedder.finish();
   return doc.save({ useObjectStreams: false });
 }

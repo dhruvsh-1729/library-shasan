@@ -198,7 +198,7 @@ export function AnuvaadApc({ onBack }: { onBack: () => void }) {
         body: JSON.stringify({
           numbers: false,
           sections: chosen.map((e) => ({
-            caption: `(क्र.-${e.no})`,
+            caption: e.no ? `(क्र.-${e.no})` : "",
             markup: [apcEntryMarkup(e), e.place && e.book ? bookMarkup(e.place, e.book) : ""].filter(Boolean).join("\n"),
           })),
         }),
@@ -325,7 +325,7 @@ export function AnuvaadApc({ onBack }: { onBack: () => void }) {
               <header className="vyCardHead">
                 <label className="anPick">
                   <input type="checkbox" checked={e.include} onChange={(ev) => update(e.key, { include: ev.target.checked })} />
-                  <span>(क्र.-{e.no})</span>
+                  <span>{e.no ? `(क्र.-${e.no})` : "(क्र. not on the page)"}</span>
                 </label>
               </header>
               <label className="anField">

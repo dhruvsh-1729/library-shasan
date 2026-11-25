@@ -96,6 +96,8 @@ type Props = {
 /** A button that takes or chooses a photo and hands back the text read from it. */
 export function PhotoTextButton({ onText, label = "Words from a photo", className = "exGhost", disabled }: Props) {
   const picker = useRef<HTMLInputElement>(null);
+  // Diksha, 24 Nov 2026: "can it have the camera directly?" — the camera opens at once, no chooser
+  const camera = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -126,6 +128,25 @@ export function PhotoTextButton({ onText, label = "Words from a photo", classNam
           if (file) void onFile(file);
         }}
       />
+      <input
+        ref={camera}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void onFile(file);
+        }}
+      />
+      <button type="button" className={`${className} photoTextCamera`} onClick={() => camera.current?.click()} disabled={disabled || busy} title="Opens the camera">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
+          <circle cx="12" cy="13" r="3.5" />
+        </svg>
+        Camera
+      </button>
       <button type="button" className={className} onClick={() => picker.current?.click()} disabled={disabled || busy} aria-busy={busy}>
         <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M4 8h3l2-3h6l2 3h3v11H4z" />

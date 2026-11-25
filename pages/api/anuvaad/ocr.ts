@@ -3,6 +3,7 @@ import { setNoStore } from "@/lib/api-cache";
 import { protectApi } from "@/lib/auth-guard";
 import { PERMISSIONS } from "@/lib/auth-permissions";
 import { OcrError, imageToPdf, ocrPdf } from "@/lib/anuvaad/ocr";
+import { boxFromTextLayer } from "@/lib/anuvaad/box-text-layer";
 
 // One uploaded box file (a PDF, or a photo of a page) read page by page,
 // streamed as NDJSON: {type:"progress", done, total} while the pages are read,
@@ -53,6 +54,17 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (!res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
   };
   try {
+    // A box file printed from the box software carries its own text: read in a second, letter-exact,
+    // instead of minutes of OCR (Maharaj Saheb, 25 Nov 2026: "the box file work, faster").
+    if (req.query.box === "1" && type.includes("pdf")) {
+      const box = await boxFromTextLayer(bytes).catch(() => null);
+      if (box) {
+        emit({ type: "progress", done: box.pages.length, total: box.pages.length });
+        emit({ type: "done", pages: box.pages, textLayer: true });
+        res.end();
+        return;
+      }
+    }
     const pdf = type.includes("pdf") ? bytes : await imageToPdf(bytes, type);
     // Gujarati pages (an anuvaad) are read as Gujarati; box pages as Sanskrit/Hindi
     const language = req.query.language === "gu-IN" ? "gu-IN" : "hi-IN";

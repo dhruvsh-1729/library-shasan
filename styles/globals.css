@@ -2829,9 +2829,12 @@ button {
 /* "Words from a photo" button (Search, Vyutpatti) */
 .photoText {
   display: inline-flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.photoTextError {
+  flex-basis: 100%;
 }
 .photoText > button {
   display: inline-flex;

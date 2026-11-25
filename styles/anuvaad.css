@@ -570,3 +570,35 @@
   border-radius: 4px;
   padding: 8px 12px;
 }
+
+/* the vishays of a file with several (25 Nov 2026: "10.8.1 - 10.8.6.pdf") */
+.anVishays {
+  margin-bottom: 0.75rem;
+}
+.anVishayAll {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+/* Box text only: Sr. | Granth | ShastraPath, as it will print */
+.anBoxTable {
+  display: grid;
+  border-top: 1px solid var(--border);
+  margin-top: 0.75rem;
+}
+.anBoxTableRow {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) minmax(0, 3fr);
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+@media (max-width: 640px) {
+  .anBoxTableRow {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+  }
+  .anBoxTableRow > :last-child {
+    grid-column: 1 / -1;
+  }
+}

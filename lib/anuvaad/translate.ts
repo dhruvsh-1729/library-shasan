@@ -472,6 +472,51 @@ export function dropBorrowed(blocks: AnuvaadBlock[], pageGujarati: string, examp
   });
 }
 
+// Maharaj Saheb, 25 Nov 2026 (10.8.1 Sr. 3): the AI anuvaad printed a mūla
+// "अणुव्रत-महव्वय-रूवेण । सव्वपाण-भूय-जीव-सत्ते, वोसिरिओ तिविहं तिविहेण ॥८॥"
+// that is "not in the box's text, not in the granth, not on the pages around
+// it". Any Sanskrit / Prakrit the anuvaad quotes must be the source's own: a
+// run of Devanagari that the source does not have is taken out, and a block
+// left with no Gujarati (a bare "મૂ —") goes too.
+
+function devanagariGrams(text: string) {
+  const letters = text.replace(/[^ऀ-ॿ]+/g, "");
+  const out = new Set<string>();
+  for (let i = 0; i + 4 <= letters.length; i += 1) out.add(letters.slice(i, i + 4));
+  return out;
+}
+
+const DEVANAGARI_RUN = /[ऀ-ॿ][ऀ-ॿ\s,;:'"‘’()\-–—।॥0-9०-९.]*[ऀ-ॿ।॥०-९]/g;
+
+/** The text with every quoted Sanskrit / Prakrit run that the source does not have taken out. */
+export function withoutUnsourced(text: string, source: Set<string>) {
+  return text
+    .replace(DEVANAGARI_RUN, (run) => {
+      const g = devanagariGrams(run);
+      if (g.size < 6) return run; // a word or two: a term, not a quoted verse
+      return share(g, source) >= 0.5 ? run : "";
+    })
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+export function dropUnsourced(blocks: AnuvaadBlock[], sourceText: string): AnuvaadBlock[] {
+  const source = devanagariGrams(sourceText);
+  if (!source.size) return blocks;
+  const out: AnuvaadBlock[] = [];
+  for (const b of blocks) {
+    if (b.kind === "point") {
+      const text = withoutUnsourced(b.text, source);
+      if (/[઀-૿]{3}/.test(text) || /[ऀ-ॿ]{3}/.test(text)) out.push({ ...b, text });
+      continue;
+    }
+    const text = withoutUnsourced(b.text, source);
+    // what is left must still say something: Gujarati, or the source's own verse
+    if (/[઀-૿]{3}/.test(text.replace(/^(મૂ|મૂળ|ટી|ટીકા|શ્લોક|ગાથા)[.૦\s:—-]*$/u, "")) || /[ऀ-ॿ]{3}/.test(text)) out.push({ ...b, text } as AnuvaadBlock);
+  }
+  return out;
+}
+
 function contextLines(input: PageInput) {
   const clip = (t: string | undefined, end: boolean) => {
     const text = String(t ?? "").replace(/\s+/g, " ").trim();
@@ -492,9 +537,12 @@ async function metaPart(user: string, text: string, saved: string, extra = ""): 
     try {
       const content = await metaChat({ system: PAGE_RULES + CONTINUITY + extra + saved, user, maxTokens: 8000 });
       const markup = stopRepeats(content.replace(/<think>[\s\S]*?<\/think>/g, "").trim(), true);
-      const blocks = dropBorrowed(
-        parseAnuvaad(markup).filter((b) => b.kind !== "title" && b.kind !== "vishay"),
-        ""
+      const blocks = dropUnsourced(
+        dropBorrowed(
+          parseAnuvaad(markup).filter((b) => b.kind !== "title" && b.kind !== "vishay"),
+          ""
+        ),
+        `${text}\n${user}`
       );
       const out = toMarkup(blocks);
       // the Sanskrit runs about as long as its Gujarati; far shorter has dropped part of it
@@ -615,11 +663,26 @@ function pagePieces(text: string, max = 550) {
 
 const gujaratiLetters = (text: string) => text.match(GUJARATI)?.length ?? 0;
 
+/**
+ * Maharaj Saheb and Diksha, 24-25 Nov 2026: "the AI section has the granth's
+ * own anuvaad copy-pasted — only the Prakrit / Sanskrit should be translated
+ * by the AI". A page of a Gujarati edition (the mūla in Devanagari, the
+ * book's Gujarati under it) goes to the AI with its Gujarati lines taken out.
+ */
+export function sourceLinesOnly(text: string) {
+  const gujarati = text.match(GUJARATI)?.length ?? 0;
+  if (gujarati < 100) return text;
+  return text
+    .split("\n")
+    .filter((line) => (line.match(/[ऀ-ॿ]/g)?.length ?? 0) > (line.match(GUJARATI)?.length ?? 0))
+    .join("\n");
+}
+
 export async function translatePage(input: PageInput): Promise<Anuvaad> {
-  const text = input.text.replace(/[ \t]+/g, " ").trim();
+  const text = sourceLinesOnly(input.text.replace(/[ \t]+/g, " ").trim());
   const devanagari = text.match(/[ऀ-ॿ]/g)?.length ?? 0;
   if (devanagari < 20) {
-    const gujarati = text.match(GUJARATI)?.length ?? 0;
+    const gujarati = input.text.match(GUJARATI)?.length ?? 0;
     throw new AnuvaadError(gujarati > 100 ? "This page is already in Gujarati, so there is nothing for the AI to translate." : "No Sanskrit or Prakrit text was found on this page.", 400);
   }
   if (text.length > MAX_PAGE_TEXT) throw new AnuvaadError("This page has too much text to translate at once.", 400);

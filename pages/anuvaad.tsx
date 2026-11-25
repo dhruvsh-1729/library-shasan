@@ -9,6 +9,7 @@ import { AnuvaadView } from "@/components/AnuvaadView";
 import { AnuvaadWords } from "@/components/AnuvaadWords";
 import { AnuvaadPages } from "@/components/AnuvaadPages";
 import { AnuvaadApc } from "@/components/AnuvaadApc";
+import { AnuvaadBoxText } from "@/components/AnuvaadBoxText";
 import { type BoxRow, parseBoxPages } from "@/lib/anuvaad/box";
 import { addImagePage, fileType, readStream, saveBlob } from "@/lib/anuvaad/browser";
 import type { LocatedPassage } from "@/lib/anuvaad/locate";
@@ -86,15 +87,20 @@ const ACCEPT = "application/pdf,image/jpeg,image/png";
 const PARALLEL_ROWS = 2;
 
 /** The uploaded files, then the anuvaad pages, as one PDF (made in the browser). */
-async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer) {
+async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer, only?: (upload: Upload) => number[] | null) {
   const { PDFDocument } = await import("pdf-lib");
   const out = await PDFDocument.create();
   out.setTitle("ગુજરાતી અનુવાદ");
   for (const upload of uploads) {
     if (upload.type === "application/pdf") {
       const src = await PDFDocument.load(upload.bytes, { ignoreEncryption: true });
-      for (const page of await out.copyPages(src, src.getPageIndices())) out.addPage(page);
+      // 25 Nov 2026: two vishays of an 81-page file chosen — only their own box pages go in front
+      const wanted = only?.(upload);
+      const indices = wanted ? src.getPageIndices().filter((i) => wanted.includes(i + 1)) : src.getPageIndices();
+      if (!indices.length) continue;
+      for (const page of await out.copyPages(src, indices)) out.addPage(page);
     } else {
+      if (only && !(only(upload) ?? [1]).length) continue;
       await addImagePage(out, upload.bytes, upload.type);
     }
   }
@@ -104,7 +110,7 @@ async function mergePdf(uploads: Upload[], anuvaad: ArrayBuffer) {
 }
 
 const SOURCE_LABEL: Record<Source, string> = {
-  both: "the book's own Gujarati (no AI, its passage in bold) and, beside it, the AI anuvaad of the same page",
+  both: "the book's own Gujarati (no AI, its passage in bold) and, beside it, the AI anuvaad of the box's Sanskrit / Prakrit",
   book: "the book's own Gujarati (no AI); the passage's part is in bold",
   page: "AI anuvaad of our library page (the book has no Gujarati there)",
   box: "AI anuvaad of the box text (the passage was not found in our library)",
@@ -194,7 +200,11 @@ function PlaceBox({ row, onFind, onSource }: { row: Row; onFind: () => void; onS
               <input type="radio" checked={source === "book"} onChange={() => onSource("book")} /> Only the book&apos;s own Gujarati (no AI)
             </label>
           </>
-        ) : null}
+        ) : (
+          <label>
+            <input type="radio" checked={source === "book"} onChange={() => onSource("book")} /> No AI (the PDF says the book has no Gujarati here)
+          </label>
+        )}
         <label>
           <input type="radio" checked={source === "page"} onChange={() => onSource("page")} /> AI anuvaad of our library page
         </label>
@@ -215,6 +225,8 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
   const [exporting, setExporting] = useState<"" | "download" | "print">("");
   const [exportError, setExportError] = useState("");
   const [withPages, setWithPages] = useState(true);
+  // Maharaj Saheb, 25 Nov 2026: "we want only the granth's anuvaad, not the AI's — make it in that option"
+  const [from, setFrom] = useState<"auto" | "book" | "ai">("auto");
   const [dragging, setDragging] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   // Pages with no box table (a cover, an anuvaad page already in the scan), by file.
@@ -232,6 +244,12 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
   const waiting = uploads.filter((u) => u.status === "waiting");
   const translated = rows.filter((r) => r.status === "done" && r.markup);
   const chosen = rows.filter((r) => r.include);
+  // the vishays of the file in their order, with their passages
+  const vishays = useMemo(() => {
+    const out = new Map<string, Row[]>();
+    for (const r of rows) out.set(r.vishay || "", [...(out.get(r.vishay || "") ?? []), r]);
+    return [...out.entries()].filter(([v]) => v);
+  }, [rows]);
 
   useEffect(() => {
     if (!uploads.length && !rows.length) return;
@@ -260,7 +278,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
   async function readOne(upload: Upload): Promise<string[] | null> {
     updateUpload(upload.id, { status: "reading", progress: "Sending", error: undefined });
     try {
-      const res = await fetch("/api/anuvaad/ocr", { method: "POST", headers: { "Content-Type": upload.type }, body: upload.bytes });
+      const res = await fetch("/api/anuvaad/ocr?box=1", { method: "POST", headers: { "Content-Type": upload.type }, body: upload.bytes });
       let pages: string[] | null = null;
       await readStream(res, (event) => {
         if (event.type === "progress") updateUpload(upload.id, { progress: `Read ${event.done} of ${event.total} pages` });
@@ -296,7 +314,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     const fresh: Row[] = parsed.rows.map((r) => ({
       ...r,
       key: nextRow.current++,
-      vishay: parsed.vishay,
+      vishay: r.vishay || parsed.vishay,
       files: [...new Set(r.pages.map((p) => fileOf.get(p) ?? ""))].filter(Boolean),
       // "box1.pdf p. 1, 2 · box2.pdf p. 1"
       where: [...new Set(r.pages.map((p) => fileOf.get(p) ?? ""))].map(
@@ -314,10 +332,12 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
 
   /** One passage's anuvaad; a failed AI anuvaad is tried once more after a pause (the AI turns away bursts). */
   async function translateOne(given: Row) {
-    if (!(await translateOnce(given))) {
-      await new Promise((resolve) => setTimeout(resolve, 6000));
-      await translateOnce(given);
+    // Diksha, 24 Nov 2026: "Failed to fetch" on the phone — a dropped connection is tried twice more
+    for (const pause of [6000, 15000]) {
+      if (await translateOnce(given)) return;
+      await new Promise((resolve) => setTimeout(resolve, pause));
     }
+    await translateOnce(given);
   }
 
   /** False when it failed (the row then shows the error). */
@@ -335,15 +355,24 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     try {
       const place = row.place;
       const book = row.book;
+      if (source === "book" && !(place && book)) {
+        // "only the granth's anuvaad": no AI; the page says the book has none, with the box text for reference
+        const where = place ? `અમારી લાઇબ્રેરીમાં: ${place.granthName}, પાનું ${place.printedPage ?? place.page} — ત્યાં ગ્રંથનો ગુજરાતી અનુવાદ નથી.` : "આ પાઠ અમારી લાઇબ્રેરીના ગ્રંથોમાં મળ્યો નથી.";
+        const text = row.shastraPath.replace(/\s+/g, " ").trim();
+        updateRow(row.key, { status: "done", markup: `(ગ્રંથનો ગુજરાતી અનુવાદ મળ્યો નથી. ${where})\n| ${text}`, literal: "", aiMarkup: undefined, aiError: undefined });
+        return true;
+      }
       if ((source === "book" || source === "both") && place && book) {
         updateRow(row.key, { status: source === "both" ? "running" : "done", markup: bookMarkup(place, book), literal: "", aiMarkup: undefined, aiError: undefined });
         if (source === "book") return true;
-        // beside it, the AI's anuvaad of the same library page; the book's own Gujarati stands even if the AI fails
+        // beside it, the AI's anuvaad of the box's own Sanskrit / Prakrit (25 Nov 2026: the AI given the
+        // book's page copied the book's Gujarati, and its gathas were the next page's); the book's own
+        // Gujarati stands even if the AI fails
         let ai: { markup: string; literal: string } | null = null;
         let problem = "";
         for (let attempt = 0; attempt < 2 && !ai; attempt += 1) {
           if (attempt) await new Promise((resolve) => setTimeout(resolve, 6000));
-          ai = await aiOfPage(place).catch((error) => {
+          ai = await aiOfBox(row).catch((error) => {
             problem = error instanceof Error ? error.message : "The AI anuvaad could not be prepared.";
             return null;
           });
@@ -355,7 +384,11 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
       updateRow(row.key, { status: "done", markup: ai.markup, literal: ai.literal, aiMarkup: undefined, aiError: undefined });
       return true;
     } catch (error) {
-      updateRow(row.key, { status: "error", error: error instanceof Error ? error.message : "The anuvaad could not be prepared." });
+      const dropped = error instanceof TypeError; // fetch() could not reach the server
+      updateRow(row.key, {
+        status: "error",
+        error: dropped ? "The connection dropped while this anuvaad was being made. Press Try again (keep the screen on while it works)." : error instanceof Error ? error.message : "The anuvaad could not be prepared.",
+      });
       return false;
     }
   }
@@ -392,10 +425,19 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
     return { markup: `${head}\n${String(json.markup ?? "")}`, literal: String(json.literal ?? "") };
   }
 
+  /** One choice for every passage (each can still be changed on its own below). */
+  function chooseFrom(next: "auto" | "book" | "ai") {
+    setFrom(next);
+    const source: Source | undefined = next === "book" ? "book" : next === "ai" ? "box" : undefined;
+    setRows((list) => list.map((r) => ({ ...r, source, status: r.status === "done" || r.status === "error" ? "idle" : r.status })));
+  }
+
   /** Looks each passage up in the library, one after another (about a second each). */
   async function findAll(list: Row[]) {
     for (const row of list) {
       if (!row.shastraPath.trim()) continue;
+      // a passage left out (another vishay of the file) is looked up only if it is chosen later
+      if (!(rowsRef.current.find((r) => r.key === row.key) ?? row).include) continue;
       await findOne(row);
     }
   }
@@ -468,10 +510,16 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
       }
       const anuvaad = await res.arrayBuffer();
       const used = withPages ? uploads.filter((u) => u.status === "done") : [];
-      const bytes = used.length ? await mergePdf(used, anuvaad) : new Uint8Array(anuvaad);
+      // the scan pages the chosen passages stand on, counted within each file
+      const global = new Set(done.flatMap((r) => r.pages));
+      const ownPages = (upload: Upload) => {
+        const first = uploads.filter((u) => u.status === "done" && u.id < upload.id).reduce((n, u) => n + u.pages.length, 0);
+        return upload.pages.map((_, i) => i + 1).filter((p) => global.has(first + p));
+      };
+      const bytes = used.length ? await mergePdf(used, anuvaad, ownPages) : new Uint8Array(anuvaad);
       const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
-      const vishay = done[0].vishay;
-      const name = `${vishay ? `${vishay} ` : ""}anuvaad.pdf`;
+      const vishays = [...new Set(done.map((r) => r.vishay).filter(Boolean))];
+      const name = `${vishays.length ? `${vishays.map((v) => v.split(/\s/)[0]).join(", ")} ` : ""}${from === "book" ? "granth anuvaad" : "anuvaad"}.pdf`;
       if (tab) tab.location.href = URL.createObjectURL(blob);
       else saveBlob(blob, name);
       const { PDFDocument } = await import("pdf-lib");
@@ -656,6 +704,52 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
               {translating ? "Translating…" : `Make the Gujarati anuvaad (${chosen.filter((r) => r.status !== "done").length})`}
             </button>
           </div>
+          {vishays.length > 1 ? (
+            <fieldset className="anSource anVishays">
+              <legend>This file has {vishays.length} vishays — which to translate?</legend>
+              {vishays.map(([vishay, list]) => {
+                const on = list.filter((r) => r.include).length;
+                return (
+                  <label key={vishay}>
+                    <input
+                      type="checkbox"
+                      checked={on > 0}
+                      ref={(el) => {
+                        if (el) el.indeterminate = on > 0 && on < list.length;
+                      }}
+                      onChange={(e) => {
+                        const include = e.target.checked;
+                        const keys = new Set(list.map((r) => r.key));
+                        setRows((all) => all.map((r) => (keys.has(r.key) ? { ...r, include: include && r.shastraPath.length > 0 } : r)));
+                        if (include) void findAll(list.map((r) => ({ ...r, include: true })));
+                      }}
+                    />{" "}
+                    <span className="indic">{vishay}</span> <small>({list.length} passages)</small>
+                  </label>
+                );
+              })}
+              <span className="anVishayAll">
+                <button type="button" className="vyLink" onClick={() => setRows((all) => all.map((r) => ({ ...r, include: r.shastraPath.length > 0 })))}>
+                  All
+                </button>{" "}
+                <button type="button" className="vyLink" onClick={() => setRows((all) => all.map((r) => ({ ...r, include: false })))}>
+                  None
+                </button>
+              </span>
+            </fieldset>
+          ) : null}
+          <fieldset className="anSource">
+            <legend>Make the anuvaad from</legend>
+            <label>
+              <input type="radio" checked={from === "auto"} onChange={() => chooseFrom("auto")} /> The book&apos;s own Gujarati and, beside it, the AI anuvaad of the Sanskrit / Prakrit
+            </label>
+            <label>
+              <input type="radio" checked={from === "book"} onChange={() => chooseFrom("book")} /> <strong>Only the book&apos;s own Gujarati — no AI</strong>
+            </label>
+            <label>
+              <input type="radio" checked={from === "ai"} onChange={() => chooseFrom("ai")} /> Only the AI anuvaad of the box&apos;s Sanskrit / Prakrit
+            </label>
+          </fieldset>
           <p className="anNote">
             Check each passage against its page (<strong>View page</strong>) and correct the text if a line was missed or misread — the anuvaad is made from the text in these boxes. Untick a passage to leave it out.
           </p>
@@ -677,6 +771,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
                 <label className="anPick">
                   <input type="checkbox" checked={row.include} onChange={(e) => updateRow(row.key, { include: e.target.checked })} />
                   <span>{row.sr ? `Sr. ${row.sr}` : "Sr. (not on the scan)"}</span>
+                  {vishays.length > 1 && row.vishay ? <span className="indic vyHint"> · {row.vishay}</span> : null}
                   {row.status === "done" ? <span className="vyTag isDone">translated</span> : null}
                 </label>
                 <button type="button" className="vyClose" aria-label="Remove this passage" onClick={() => setRows((list) => list.filter((r) => r.key !== row.key))}>
@@ -766,7 +861,7 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
                       <AnuvaadView markup={row.markup} onChange={(markup) => updateRow(row.key, { markup })} />
                     </section>
                     <section>
-                      <h3 className="anSideHead">AI અનુવાદ <small>(of the same library page)</small></h3>
+                      <h3 className="anSideHead">AI અનુવાદ <small>(of the box&apos;s Sanskrit / Prakrit text)</small></h3>
                       {row.aiMarkup !== undefined ? (
                         <AnuvaadView markup={row.aiMarkup} literal={row.literal} onChange={(aiMarkup) => updateRow(row.key, { aiMarkup })} />
                       ) : row.aiError ? (
@@ -802,14 +897,14 @@ function BoxFlow({ onBack }: { onBack: () => void }) {
   );
 }
 
-type Mode = "box" | "pages" | "apc" | "words";
+type Mode = "box" | "pages" | "apc" | "words" | "boxtext";
 
 export default function AnuvaadPage() {
   const router = useRouter();
   // The way chosen lives in the address (?mode=pages or ?mode=box), so a link
   // can open it straight away. It replaces the address rather than adding to
   // the history: the phone's back button must not drop work on the page.
-  const mode: Mode | null = router.query.mode === "box" || router.query.mode === "pages" || router.query.mode === "apc" || router.query.mode === "words" ? router.query.mode : null;
+  const mode: Mode | null = router.query.mode === "box" || router.query.mode === "pages" || router.query.mode === "apc" || router.query.mode === "words" || router.query.mode === "boxtext" ? router.query.mode : null;
 
   // The action bar pins just under the page header, whose height changes with
   // the width (two rows of menu on a phone).
@@ -842,6 +937,7 @@ export default function AnuvaadPage() {
         {mode === "pages" ? <AnuvaadPages onBack={() => choose(null)} /> : null}
         {mode === "apc" ? <AnuvaadApc onBack={() => choose(null)} /> : null}
         {mode === "words" ? <AnuvaadWords onBack={() => choose(null)} /> : null}
+        {mode === "boxtext" ? <AnuvaadBoxText onBack={() => choose(null)} /> : null}
         {mode === null ? (
           <main className="vyMain">
             <section className="vyForm exStep">
@@ -854,6 +950,10 @@ export default function AnuvaadPage() {
                 <button type="button" className="exChoice" onClick={() => choose("box")}>
                   <strong>Box files</strong>
                   <span>The printed box tables (Sr. No. · Granth · ShastraPath). Each passage is found in our books; the book&apos;s own Gujarati is used where it has one.</span>
+                </button>
+                <button type="button" className="exChoice" onClick={() => choose("boxtext")}>
+                  <strong>Box text only (no AI)</strong>
+                  <span>From a box file, only Sr. no., Granth and ShastraPath — as a PDF with no headers, or a Word / Excel file to edit.</span>
                 </button>
                 <button type="button" className="exChoice" onClick={() => choose("apc")}>
                   <strong>APC files (no AI)</strong>

@@ -550,7 +550,9 @@ export default function VyutpattiPage({ aiOn = false }: { aiOn?: boolean }) {
                 const lines = text
                   .split("\n")
                   .map((line) => line.replace(/^[\s•*·-]+/, "").replace(/\s+/g, " ").trim())
-                  .filter((line) => /[ऀ-ॿ઀-૿A-Za-z]/.test(line));
+                  .filter((line) => /[ऀ-ॿ઀-૿A-Za-z]/.test(line))
+                  // the list's own heading ("क्र.", "विषय") is not a vishay (Diksha, 24 Nov 2026)
+                  .filter((line) => !/^(क्र|क्रम|क्रमांक|क्रमाङ्क|अनु|अनुक्रम|विषय|शब्द|नाम|sr|no|s\.? ?no)\.?\s*(नं|सं|no)?\.?$/i.test(line.replace(/[0-9०-९().:|]/g, "").trim()));
                 setInput((value) => [value.trim(), ...lines].filter(Boolean).join("\n"));
               }}
             />

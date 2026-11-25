@@ -103,6 +103,12 @@ export function parseApcPages(pages: Array<{ page: number; text: string }>): Apc
         start(entry, page);
         continue;
       }
+      // Diksha, 24 Nov 2026: a photo of one page began at "ग्रंथ :-" (its "(क्र.-N)" was on the page
+      // before, or cut off) and nothing was found — a new granth line starts an entry of its own
+      const g0 = line.match(GRANTH);
+      if (g0 && (!cur || (cur as ApcEntry).granth)) {
+        start("", page);
+      }
       if (!cur) continue;
       const e = cur as ApcEntry;
       if (!line) {

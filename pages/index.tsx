@@ -1127,17 +1127,18 @@ export default function SearchPage() {
             </button>
           ) : null}
           {canOpenPdf ? (
-            <button type="button" className="ltLink" onClick={() => void openDownloadPreview(result, result.page_number)}>
-              Download this page
+            // Diksha, 24 Nov 2026: "Download this page aur Download pages me farak kya hai" — each says what it gives
+            <button type="button" className="ltLink" onClick={() => void openDownloadPreview(result, result.page_number)} title="A PDF of this one page, the word ringed">
+              Download this page (PDF)
             </button>
           ) : null}
           {canOpenPdf ? (
-            <button type="button" className="ltLink" onClick={() => void openDownloadPreview(result)}>
-              Download pages
+            <button type="button" className="ltLink" onClick={() => void openDownloadPreview(result)} title="Choose several pages of this book: every page with the word, or pages by number">
+              Download more pages of this book
             </button>
           ) : (
             // Diksha, 16 Nov 2026: "one card has only Read this page, another three options — why?"
-            <span className="ltCardNote">This book&apos;s PDF is not in the library yet: its text can be read, its pages not downloaded.</span>
+            <span className="ltCardNote">Only the text of this book is in the library (no scanned PDF yet), so &ldquo;Read this page&rdquo; works but its pages cannot be downloaded.</span>
           )}
         </footer>
       </article>
@@ -1745,7 +1746,7 @@ export default function SearchPage() {
                         <input
                           id="granth-pages-input"
                           inputMode="numeric"
-                          placeholder="86 88 301-303"
+                          placeholder="Type page numbers"
                           value={downloadPreview.granthPagesInput}
                           onChange={(event) => {
                             const value = event.target.value;
@@ -1756,7 +1757,7 @@ export default function SearchPage() {
                       </div>
                       <p className="sheetSmall">
                         {downloadPreview.granthPagesNote ??
-                          "Type the page numbers printed in the book (with or without the word), e.g. 86 88 301-303, and press Choose. Only those pages stay ticked; then press “Full PDF” at the bottom to download them."}
+                          "Type the page numbers printed in the book — any pages, with or without the word (for example: 86 88 301-303) — and press Choose. Those pages are added to the list below and ticked; then press “Full PDF” at the bottom to download them."}
                       </p>
                     </form>
 

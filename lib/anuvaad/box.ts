@@ -17,6 +17,11 @@ export type BoxRow = {
   inRem: string;
   /** Pages of the upload the row was read from (1-based, across all files). */
   pages: number[];
+  /**
+   * The vishay band the row stands under ("10.8.3 - अनुबंधअहिंसा"). One file
+   * can hold several vishays (25 Nov 2026: "10.8.1 - 10.8.6.pdf", six of them).
+   */
+  vishay?: string;
 };
 
 export type BoxPage = { page: number; markdown: string };
@@ -208,6 +213,8 @@ export function parseBoxPages(pages: BoxPage[]): ParsedBox {
   let vishay = "";
   let box = "";
   let columns: Array<Column | null> = [];
+  // the vishay band the rows now stand under
+  let current = "";
 
   for (const { page, markdown } of pages) {
     const boxNo = markdown.match(/BOX\s*No\.?\s*[-–:]?\s*([0-9]+)/i);
@@ -233,7 +240,8 @@ export function parseBoxPages(pages: BoxPage[]): ParsedBox {
         // the vishay band across the table ("10.8.1 - हेतुअहिंसा") is not a passage: it went to the AI as one
         const filled = tr.cells.filter((c) => c.trim());
         if (filled.length === 1 && VISHAY_BAND.test(filled[0].trim())) {
-          if (!vishay) vishay = filled[0].trim();
+          current = filled[0].trim();
+          if (!vishay) vishay = current;
           continue;
         }
         const cells = assign(columns, tr.cells);
@@ -245,6 +253,7 @@ export function parseBoxPages(pages: BoxPage[]): ParsedBox {
           pubRem: cells.pubRem ?? "",
           inRem: cells.inRem ?? "",
           pages: [page],
+          ...(current ? { vishay: current } : {}),
         };
         // The V.T cell sometimes swallows the Granth's first line ("स्व. गिरिसूरि टीका…").
         const vtHead = row.vt.match(/^([ऀ-ॿ]{1,6}\.)\s+(.+)$/);
